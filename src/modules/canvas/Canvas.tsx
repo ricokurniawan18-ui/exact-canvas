@@ -937,11 +937,22 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
       // Kalau sisi lain sempat menyimpan sejak salinan ini dimuat, hasilnya
       // digabung dulu — bukan ditimpa. Ini yang membuat goresan dari tablet dan
       // dari Mac sama-sama bertahan.
+      //
+      // Dicek lewat SATU angka di SQLite dulu (sama seperti jaring pengaman
+      // lima detik di bawah), bukan langsung bacaKanvas — sketsa puluhan
+      // halaman bisa belasan MB, dan mem-parse seluruhnya cuma untuk
+      // membandingkan satu stempel waktu (kasus paling umum: tidak ada sisi
+      // lain yang menulis) berarti menahan thread utama tiap kali jeda
+      // menulis berakhir. bacaKanvas yang mahal itu baru dipanggil kalau
+      // angkanya memang berbeda.
       const basis = basisRef.current
-      const diVault = await bacaKanvas(idKanvas).catch(() => null)
-      if (diVault && basis && diVault.updated_at !== basis.updated_at) {
-        tulis = { ...gabungkan(basis, saya, diVault), updated_at: saat }
-        terapkanBerkas(tulis)
+      const baris = basis ? await q1<{ updated_at: number }>('SELECT updated_at FROM canvases WHERE id = ?', [idKanvas]).catch(() => null) : null
+      if (baris && basis && baris.updated_at !== basis.updated_at) {
+        const diVault = await bacaKanvas(idKanvas).catch(() => null)
+        if (diVault && diVault.updated_at !== basis.updated_at) {
+          tulis = { ...gabungkan(basis, saya, diVault), updated_at: saat }
+          terapkanBerkas(tulis)
+        }
       }
       await simpanKanvas(tulis)
       basisRef.current = tulis
@@ -1330,6 +1341,22 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
 
     const kunci = `${v.tampilan.skala.toFixed(4)}:${Math.round(v.tampilan.x)}:${Math.round(v.tampilan.y)}:${lapisanInfo.map((l) => (l.tampak ? '1' : '0')).join('')}`
 
+    // Kotak dunia yang benar-benar terlihat di layar saat ini, dengan sedikit
+    // marjin. Sketsa dengan puluhan halaman gampang punya ribuan goresan di
+    // halaman yang sedang tidak dilihat — baik saat dipanggang (tiap pan/zoom
+    // mengubah "kunci" di atas dan memaksa panggang ulang) maupun saat
+    // digambar langsung di bawah ambang panggang — jadi goresan yang kotaknya
+    // tidak menyentuh layar dilewati sama seperti halaman di gambarLatar.
+    const margin = 40 / v.tampilan.skala
+    const layarX1 = (0 - v.tampilan.x) / v.tampilan.skala - margin
+    const layarY1 = (0 - v.tampilan.y) / v.tampilan.skala - margin
+    const layarX2 = (el.width / dpr - v.tampilan.x) / v.tampilan.skala + margin
+    const layarY2 = (el.height / dpr - v.tampilan.y) / v.tampilan.skala + margin
+    const terlihatLayar = (c: Coretan) => {
+      const k = kotakCoretan(c)
+      return k.x2 >= layarX1 && k.x1 <= layarX2 && k.y2 >= layarY1 && k.y1 <= layarY2
+    }
+
     // Coretan lama dipanggang sekali jadi bitmap seukuran layar; selama pan/zoom
     // tidak berubah, menambah goresan baru tidak menggambar ulang semuanya.
     if (coretan.length > AMBANG_PANGGANG) {
@@ -1347,7 +1374,7 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
           bctx.translate(v.tampilan.x, v.tampilan.y)
           bctx.scale(v.tampilan.skala, v.tampilan.skala)
           for (let i = 0; i < batas; i++) {
-            if (terlihat(coretan[i])) gambarCoretan(bctx, coretan[i])
+            if (terlihat(coretan[i]) && terlihatLayar(coretan[i])) gambarCoretan(bctx, coretan[i])
           }
         }
         panggang.current = { bitmap, kunci, sampai: batas }
@@ -1365,7 +1392,7 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
       ctx.translate(v.tampilan.x, v.tampilan.y)
       ctx.scale(v.tampilan.skala, v.tampilan.skala)
       for (let i = batas; i < coretan.length; i++) {
-        if (terlihat(coretan[i])) gambarCoretan(ctx, coretan[i])
+        if (terlihat(coretan[i]) && terlihatLayar(coretan[i])) gambarCoretan(ctx, coretan[i])
       }
       ctx.restore()
       gambarSemuaObjek(ctx)
@@ -1377,7 +1404,7 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
     ctx.translate(v.tampilan.x, v.tampilan.y)
     ctx.scale(v.tampilan.skala, v.tampilan.skala)
     for (const c of coretan) {
-      if (!terlihat(c)) continue
+      if (!terlihat(c) || !terlihatLayar(c)) continue
       gambarCoretan(ctx, c)
       if (pilihan.has(c.id)) {
         ctx.save()
