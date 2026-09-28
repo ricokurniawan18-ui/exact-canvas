@@ -811,11 +811,21 @@ const GEOMETRY_PRESETS = {
         points: [
           { name: 'A', x: 0, y: 0 }, { name: 'B', x: bawah, y: 0 },
           { name: 'C', x: bawah - offset, y: tinggi }, { name: 'D', x: offset, y: tinggi },
+          // Kaki garis tinggi dari D tegak lurus ke AB: titik bantu, tidak
+          // ikut poligon. Tanpa ini "tinggi" cuma dipakai membentuk gambar
+          // tapi tidak pernah kelihatan angkanya — soal sisi miring/luas yang
+          // butuh tinggi jadi tidak bisa dijawab dari gambarnya saja.
+          { name: 'H', x: offset, y: 0, hidden: true },
         ],
+        // Poligon dikunci ke 4 titik asli: tanpa ini titik bantu H ikut
+        // masuk daftar titik jadi bangun 5 sisi (bawaan tanpa "polygons"
+        // eksplisit memakai SEMUA titik berurutan).
+        polygons: [['A', 'B', 'C', 'D']],
         segments: [
           { from: 'A', to: 'B', label: `${bawah}` }, { from: 'B', to: 'C', label: '' },
           { from: 'C', to: 'D', label: `${atas}` }, { from: 'D', to: 'A', label: '' },
         ],
+        bantu: [{ from: 'D', to: 'H', arah: 'B', label: `${tinggi}` }],
       };
     },
   },
@@ -862,7 +872,7 @@ const GEOMETRY_PRESETS = {
 // semicircle. Sub-shape syntax: "nama:key=val,key=val|nama2:key=val,...".
 function buildGabungan(bagianRaw) {
   const parts = String(bagianRaw || '').split('|').map((s) => s.trim()).filter(Boolean);
-  const points = [], polygons = [], segments = [], circles = [];
+  const points = [], polygons = [], segments = [], circles = [], bantu = [];
   parts.forEach((partStr, idx) => {
     const colonIdx = partStr.indexOf(':');
     const shapeName = (colonIdx > -1 ? partStr.slice(0, colonIdx) : partStr).trim();
@@ -896,8 +906,11 @@ function buildGabungan(bagianRaw) {
     (shape.circles || []).forEach((c) => {
       circles.push({ center: nameMap[c.center], radius: c.radius, label: c.label });
     });
+    (shape.bantu || []).forEach((h) => {
+      bantu.push({ from: nameMap[h.from], to: nameMap[h.to], arah: h.arah ? nameMap[h.arah] : undefined, label: h.label });
+    });
   });
-  return { points, polygons, segments, circles };
+  return { points, polygons, segments, circles, bantu };
 }
 
 // Kotak batas gambar. Setiap elemen yang digambar melaporkan luasnya lewat
@@ -1085,6 +1098,14 @@ function renderGeometrySVG(cfg) {
     }
   });
 
+  // Kalau soal sudah menempel anotasi "ukuran" (garis ukur + tulisan sendiri,
+  // dipakai supaya keterangan persis meniru naskah asal — satuan, huruf
+  // variabel seperti "c" untuk sisi yang dicari, dsb.), label bawaan bangun
+  // (cuma angka polos) dilewati: dua-duanya selalu jatuh di titik tengah sisi
+  // yang sama, jadi keterangan dari soal ketiban angka polos "ukuran aslinya".
+  // Anotasi datang dari cfg yang sama (dipakai ulang oleh renderDiagramTag).
+  const pakaiKeteranganSendiri = !!cfg.ukuran;
+
   (shape.circles || []).forEach((c) => {
     const center = pxMap[c.center];
     const R = c.radius * scale;
@@ -1094,7 +1115,7 @@ function renderGeometrySVG(cfg) {
     // atas ruas — bukan angka mengambang di tengah — seperti naskah ujian.
     isi += `<line x1="${center[0].toFixed(1)}" y1="${center[1].toFixed(1)}" x2="${(center[0] + R).toFixed(1)}" y2="${center[1].toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garisBantu}"/>`;
     isi += `<circle cx="${center[0].toFixed(1)}" cy="${center[1].toFixed(1)}" r="2.2" fill="${GAYA.hitam}"/>`;
-    if (c.label) {
+    if (c.label && !pakaiKeteranganSendiri) {
       const pos = letakTeksLuar(center[0] + R / 2, center[1], 0, -1, 5);
       isi += teksGeoSVG(pos, c.label, GAYA.teks);
       b.teks(pos.x, pos.y, c.label, GAYA.teks, pos.anchor);
@@ -1102,7 +1123,7 @@ function renderGeometrySVG(cfg) {
   });
 
   (shape.segments || []).forEach((seg) => {
-    if (!seg.label) return;
+    if (!seg.label || pakaiKeteranganSendiri) return;
     if ((hitungSeg[kunciSeg(seg.from, seg.to)] || 0) > 1) return;
     const p1 = pxMap[seg.from], p2 = pxMap[seg.to];
     const mx = (p1[0] + p2[0]) / 2, my = (p1[1] + p2[1]) / 2;
@@ -1115,6 +1136,21 @@ function renderGeometrySVG(cfg) {
     const pos = letakTeksLuar(mx, my, nx, ny, 9);
     isi += teksGeoSVG(pos, seg.label, GAYA.teks);
     b.teks(pos.x, pos.y, seg.label, GAYA.teks, pos.anchor);
+  });
+
+  // Garis bantu putus-putus (mis. tinggi trapesium dari titik puncak tegak
+  // lurus ke alas): angka yang dipakai membentuk gambar tapi bukan sisi
+  // bangun itu sendiri, jadi tidak boleh diam-diam hilang dari gambar —
+  // tanpa ini siswa tidak punya cara mendapatkan angkanya untuk menjawab.
+  (shape.bantu || []).forEach((h) => {
+    if (!h.label || pakaiKeteranganSendiri) return;
+    const p1 = pxMap[h.from], p2 = pxMap[h.to];
+    isi += `<line x1="${p1[0].toFixed(1)}" y1="${p1[1].toFixed(1)}" x2="${p2[0].toFixed(1)}" y2="${p2[1].toFixed(1)}" stroke="${GAYA.abu}" stroke-width="${GAYA.garisBantu}" stroke-dasharray="${GAYA.putus}"/>`;
+    if (h.arah && pxMap[h.arah]) isi += rightAngleSVG(p2[0], p2[1], p1[0], p1[1], pxMap[h.arah][0], pxMap[h.arah][1], 7);
+    const [nx, ny] = unit(p2[1] - p1[1], p1[0] - p2[0]);
+    const pos = letakTeksLuar((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2, nx, ny, 9);
+    isi += teksGeoSVG(pos, h.label, GAYA.teks, false, true);
+    b.teks(pos.x, pos.y, h.label, GAYA.teks, pos.anchor);
   });
 
   shape.points.forEach((p) => {
@@ -1138,7 +1174,8 @@ function renderGeometrySVG(cfg) {
     b.teks(pos.x, pos.y, p.name, 12.5, pos.anchor);
   });
 
-  const adaUkuran = (shape.segments || []).some((s) => s.label) || (shape.circles || []).some((c) => c.label);
+  const adaUkuran = pakaiKeteranganSendiri
+    || (shape.segments || []).some((s) => s.label) || (shape.circles || []).some((c) => c.label);
   return bungkusGambarSVG(isi, b, adaUkuran);
 }
 
