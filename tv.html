@@ -47,6 +47,19 @@
       #bilah button { flex: 1; font: inherit; font-size: 15px; padding: 11px 8px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); }
       #bilah button.utama { background: var(--accent); color: #fff; border-color: var(--accent); }
       #bilah button:disabled { opacity: 0.45; }
+      /* HP potret: begitu murid diizinkan mencoret, bilah punya 9 tombol
+         berlabel penuh (flex:1) yang tidak muat di layar sempit — melebar
+         jadi dua baris dan menutupi #status-saya di atasnya (yang jaraknya
+         "bottom" tetap dihitung seolah bilahnya satu baris). Tulisannya
+         TETAP ditampilkan (ikon saja sering bikin salah klik) — yang
+         diperkecil cuma huruf & jaraknya; sisanya yang masih kurang muat
+         tinggal digeser (overflow-x, sama seperti #alat-coret di bawah).
+         white-space:nowrap memastikan tulisan tiap tombol tidak melipat ke
+         baris kedua, supaya tinggi bilahnya tetap satu baris. */
+      @media (max-width: 480px) {
+        #bilah { overflow-x: auto; gap: 4px; padding: 8px 6px calc(8px + env(safe-area-inset-bottom)); }
+        #bilah button { flex: 0 0 auto; padding: 8px 10px; font-size: 11px; white-space: nowrap; }
+      }
       #status-saya { position: absolute; left: 12px; right: 12px; bottom: calc(70px + env(safe-area-inset-bottom)); text-align: center; font-size: 14px; color: var(--ink-soft); pointer-events: none; }
       #status-saya b { color: var(--accent); }
 
@@ -79,7 +92,11 @@
       .grup-baris button { padding: 6px 12px; font-size: 13px; }
 
       #kabar { position: absolute; left: 12px; right: 12px; top: 12px; padding: 12px 14px; border-radius: 12px; background: var(--accent); color: #fff; font-size: 16px;
-        text-align: center; transform: translateY(-140%); transition: transform 300ms; pointer-events: none; box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
+        text-align: center; transform: translateY(-140%); transition: transform 300ms; pointer-events: none; box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+        /* #ikuti ("Follow the teacher") duduk di kotak yang sama (top:12px kanan)
+           dan lebih belakangan di DOM, jadi tanpa ini ia menutupi kabar
+           begitu keduanya sama-sama tampil. */
+        z-index: 50; }
       #kabar.tampil { transform: none; }
       #tunggu { position: absolute; inset: 0; display: none; place-items: center; text-align: center; background: #000; color: #666; padding: 32px; }
       #tunggu.tampil { display: grid; }
