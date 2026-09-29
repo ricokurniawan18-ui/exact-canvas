@@ -15,7 +15,6 @@ import {
   kosongkanAntrean,
   daftarAkun,
   daftarGrup,
-  daftarMurid,
   daftarMuridSemua,
   daftarTanya,
   hapusGrup,
@@ -54,13 +53,16 @@ export function PanelKelas({
   const { data: daftarSketsa } = useData('canvas', daftarKanvas, [])
   const klien = useSinkron((s) => s.klien)
   const qAntrian = useData('kelas', daftarTanya, [])
-  const qMurid = useData('kelas', daftarMurid, [])
   const qGrup = useData('kelas', daftarGrup, [])
   const qAnggota = useData('kelas', anggotaGrup, [])
   const qAkun = useData('kelas', daftarAkun, [])
+  // Daftar SEMUA murid yang pernah bergabung, bukan cuma yang terlihat 10 jam
+  // terakhir: murid yang lupa sandi (justru yang paling butuh direset) tidak
+  // akan pernah "terlihat" karena dia tidak pernah berhasil masuk — kalau
+  // daftarnya dibatasi ke yang aktif belakangan, dia tidak akan pernah muncul
+  // untuk direset sama sekali.
   const qSemuaMurid = useData('kelas', daftarMuridSemua, [])
   const { data: antrian } = qAntrian
-  const { data: murid } = qMurid
   const { data: grup } = qGrup
   const { data: anggota } = qAnggota
   const { data: akun } = qAkun
@@ -72,10 +74,10 @@ export function PanelKelas({
    *
    * `useData` sudah menyimpan galatnya, tapi panel ini dulu hanya membaca
    * `data` — yang tetap `[]` saat kueri gagal. Hasilnya guru membaca "No
-   * students yet today" padahal kelasnya penuh, dan satu-satunya petunjuk
-   * bahwa ada yang salah adalah rasa "kok kadang-kadang begini".
+   * students yet" padahal kelasnya penuh, dan satu-satunya petunjuk bahwa
+   * ada yang salah adalah rasa "kok kadang-kadang begini".
    */
-  const kueri = [qAntrian, qMurid, qGrup, qAnggota, qAkun, qSemuaMurid]
+  const kueri = [qAntrian, qGrup, qAnggota, qAkun, qSemuaMurid]
   const galat = kueri.find((k) => k.galat)?.galat ?? null
   const memuat = kueri.some((k) => k.memuat)
   const muatUlangSemua = () => kueri.forEach((k) => k.muatUlang())
@@ -91,7 +93,7 @@ export function PanelKelas({
         {(
           [
             ['antrian', `Queue${menunggu ? ` · ${menunggu}` : ''}`],
-            ['murid', `Students · ${murid.length}`],
+            ['murid', `Students · ${semuaMurid.length}`],
             ['grup', `Groups · ${grup.length}`],
           ] as [Tab, string][]
         ).map(([id, label]) => (
@@ -185,12 +187,12 @@ export function PanelKelas({
               ))}
             </div>
           )}
-          {murid.length === 0 && !galat && !memuat && (
+          {semuaMurid.length === 0 && !galat && !memuat && (
             <p className="ex-label" style={{ color: 'var(--ink-faint)' }}>
-              No students yet today. They join from the TV link on their phone.
+              No students yet. They join from the TV link on their phone.
             </p>
           )}
-          {murid.length > 0 && (
+          {semuaMurid.length > 0 && (
             <input
               className="ex-input"
               style={{ padding: '4px 8px', fontSize: 'var(--fs-label)' }}
@@ -199,7 +201,7 @@ export function PanelKelas({
               onChange={(e) => setCariMurid(e.target.value)}
             />
           )}
-          {murid
+          {semuaMurid
             .filter((m) => m.name.toLowerCase().includes(cariMurid.trim().toLowerCase()))
             .map((m) => {
             const k = hadir.get(m.id)
