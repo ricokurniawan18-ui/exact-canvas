@@ -1248,11 +1248,9 @@ function pasangGrup() {
   const riwayatDiv = el('grup-riwayat')
   const riwayatDaftarDiv = el('grup-riwayat-daftar')
 
+  // Dipanggil baik untuk murid bergrup maupun sendiri — endpoint-nya sendiri
+  // yang memilih riwayat grup atau riwayat pribadi (lihat api_grup_riwayat).
   async function muatRiwayat() {
-    if (!grupSaya) {
-      riwayatDiv.hidden = true
-      return
-    }
     try {
       const daftar = await api<{ id: string; judul: string; diubah: number }[]>(
         `/api/kelas/grup/riwayat?murid=${encodeURIComponent(muridId)}`,
@@ -1288,9 +1286,9 @@ function pasangGrup() {
       await muatRiwayat()
       return
     }
-    riwayatDiv.hidden = true
     sekarangDiv.hidden = true
     buatDiv.hidden = false
+    await muatRiwayat()
     try {
       const daftar = await api<{ id: string; nama: string; warna: string | null; anggota: number }[]>('/api/kelas/grup/daftar')
       daftarDiv.replaceChildren()

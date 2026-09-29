@@ -78,6 +78,13 @@ pub fn migrations() -> Vec<Migration> {
             kind: MigrationKind::Up,
             sql: "ALTER TABLE students ADD COLUMN sketch_day TEXT;",
         },
+        Migration {
+            version: 12,
+            description: "riwayat kanvas pribadi murid: tiap kanvas harian dicap muridnya (grup sudah punya group_id sejak migrasi 9, tapi tidak pernah benar-benar ditulis — diperbaiki bersamaan)",
+            kind: MigrationKind::Up,
+            sql: "ALTER TABLE canvases ADD COLUMN student_id TEXT;
+                  CREATE INDEX IF NOT EXISTS idx_canvases_murid ON canvases(student_id);",
+        },
     ]
 }
 

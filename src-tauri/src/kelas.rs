@@ -288,13 +288,13 @@ fn pastikan_sketsa_murid(c: &rusqlite::Connection, murid: &str) -> Result<(Optio
         .ok();
     let id = match &grup {
         Some((gid, gnama)) => {
-            let id = buat_sketsa_kosong(c, &format!("Grup · {gnama} · {}", tanggal_pendek()))?;
+            let id = buat_sketsa_kosong(c, &format!("Grup · {gnama} · {}", tanggal_pendek()), Some(gid.as_str()), None)?;
             c.execute("UPDATE groups SET sketch_id = ?1, sketch_day = ?2 WHERE id = ?3", rusqlite::params![id, hari_ini(), gid])
                 .map_err(|e| e.to_string())?;
             id
         }
         None => {
-            let id = buat_sketsa_kosong(c, &format!("Tanya · {nama} · {}", tanggal_pendek()))?;
+            let id = buat_sketsa_kosong(c, &format!("Tanya · {nama} · {}", tanggal_pendek()), None, Some(murid))?;
             c.execute("UPDATE students SET sketch_id = ?1, sketch_day = ?2 WHERE id = ?3", rusqlite::params![id, hari_ini(), murid])
                 .map_err(|e| e.to_string())?;
             id
@@ -341,7 +341,13 @@ fn catat_izin(murid: &str, boleh: bool, sketsa: Option<String>) {
 }
 
 /// Sketsa kosong A4 buatan server, sama bentuknya dengan `buatKanvas` di sisi depan.
-fn buat_sketsa_kosong(c: &rusqlite::Connection, judul: &str) -> Result<String, String> {
+/// `grup`/`murid` mencap kanvas ini SUPAYA riwayatnya bisa ditemukan lagi
+/// lewat `api_grup_riwayat` (kolom `group_id`/`student_id` di tabel
+/// `canvases`) — dulu kolomnya ada tapi tidak pernah benar-benar ditulis di
+/// sini, jadi riwayat grup MAUPUN pribadi selalu kembali kosong. `None, None`
+/// untuk kanvas biasa yang guru buat sendiri lewat editor (tidak tercatat
+/// riwayat murid/grup).
+fn buat_sketsa_kosong(c: &rusqlite::Connection, judul: &str, grup: Option<&str>, murid: Option<&str>) -> Result<String, String> {
     let kini = sekarang();
     let acak: String = format!("{:x}", SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0));
     let id = format!("cnv_{}{}", radix36(kini as u128), &acak[acak.len().saturating_sub(5)..]);
@@ -352,8 +358,8 @@ fn buat_sketsa_kosong(c: &rusqlite::Connection, judul: &str) -> Result<String, S
     });
     vault::canvas_write(id.clone(), berkas.to_string())?;
     c.execute(
-        "INSERT OR REPLACE INTO canvases (id, title, updated_at) VALUES (?1, ?2, ?3)",
-        rusqlite::params![id, judul, kini],
+        "INSERT OR REPLACE INTO canvases (id, title, updated_at, group_id, student_id) VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![id, judul, kini, grup, murid],
     )
     .map_err(|e| e.to_string())?;
     Ok(id)
@@ -986,9 +992,12 @@ pub struct QueryGrupRiwayat {
     pub sesi: Option<String>,
 }
 
-/// Riwayat kanvas grup murid ini — satu per hari (dicap saat dibuat lewat
-/// `bahasTanya`), terbaru dulu. Murid tanpa grup, atau grup yang belum pernah
-/// dicap (dibuat sebelum fitur ini ada), dapat daftar kosong.
+/// Riwayat kanvas murid ini — satu per hari, terbaru dulu. Bergrup → riwayat
+/// kanvas GRUPnya (semua anggota melihat yang sama); sendiri → riwayat kanvas
+/// PRIBADInya. Kanvas yang dibuat sebelum kolom `group_id`/`student_id` ini
+/// benar ditulis (lihat `buat_sketsa_kosong`) tidak tercap apa pun dan tidak
+/// akan pernah muncul di sini — riwayat baru mulai tercatat sejak perbaikan
+/// itu, bukan mundur ke kanvas lama.
 pub async fn api_grup_riwayat(State(hub): State<Arc<Hub>>, headers: HeaderMap, Query(q): Query<QueryGrupRiwayat>) -> Response {
     if !crate::server::sah_lengkap(&hub, &headers, q.pin.as_deref(), q.sesi.as_deref(), None) {
         return tolak();
@@ -1003,12 +1012,16 @@ pub async fn api_grup_riwayat(State(hub): State<Arc<Hub>>, headers: HeaderMap, Q
                 |r| r.get(0),
             )
             .ok();
-        let Some(gid) = grup else { return Ok(vec![]) };
         let mut st = c
-            .prepare("SELECT id, title, updated_at FROM canvases WHERE group_id = ?1 ORDER BY updated_at DESC")
+            .prepare(if grup.is_some() {
+                "SELECT id, title, updated_at FROM canvases WHERE group_id = ?1 ORDER BY updated_at DESC"
+            } else {
+                "SELECT id, title, updated_at FROM canvases WHERE student_id = ?1 ORDER BY updated_at DESC"
+            })
             .map_err(|e| e.to_string())?;
+        let kunci = grup.unwrap_or(murid);
         let baris = st
-            .query_map(rusqlite::params![gid], |r| {
+            .query_map(rusqlite::params![kunci], |r| {
                 Ok(json!({ "id": r.get::<_, String>(0)?, "judul": r.get::<_, String>(1)?, "diubah": r.get::<_, i64>(2)? }))
             })
             .map_err(|e| e.to_string())?
