@@ -779,6 +779,39 @@ const GEOMETRY_PRESETS = {
       };
     },
   },
+  // Segitiga untuk soal luas SD (Luas = alas x tinggi / 2): alas selalu
+  // mendatar di bawah, tinggi digambar sebagai garis putus-putus tegak lurus
+  // dari puncak C ke alas (atau perpanjangannya) dengan tanda siku di kaki
+  // garis tinggi H. "geser" (posisi x puncak, diukur dari ujung kiri alas)
+  // yang menentukan bentuknya: 0..alas -> kaki tinggi jatuh DI DALAM alas
+  // (0/alas = siku-siku, tengah = sama kaki/lancip); di luar rentang itu ->
+  // segitiga tumpul, kaki tinggi jatuh DI LUAR alas, jadi alasnya digambar
+  // diperpanjang putus-putus sampai ke kaki garis tinggi (persis cara buku
+  // SD menggambar "tinggi di luar segitiga").
+  'segitiga-tinggi': {
+    build: (p) => {
+      const alas = numOrDefault(p.alas, 8), tinggi = numOrDefault(p.tinggi, 5);
+      const geser = numOrDefault(p.geser, alas / 2);
+      const bantu = [];
+      if (geser < 0) bantu.push({ from: 'A', to: 'H', label: '' });
+      else if (geser > alas) bantu.push({ from: 'B', to: 'H', label: '' });
+      const arah = geser < alas / 2 ? 'B' : 'A';
+      bantu.push({ from: 'C', to: 'H', arah, label: `${tinggi}` });
+      return {
+        points: [
+          { name: 'A', x: 0, y: 0 }, { name: 'B', x: alas, y: 0 }, { name: 'C', x: geser, y: tinggi },
+          { name: 'H', x: geser, y: 0, hidden: true },
+        ],
+        polygons: [['A', 'B', 'C']],
+        segments: [
+          { from: 'A', to: 'B', label: `${alas}` },
+          { from: 'B', to: 'C', label: '' },
+          { from: 'C', to: 'A', label: '' },
+        ],
+        bantu,
+      };
+    },
+  },
   persegi: {
     build: (p) => {
       const s = numOrDefault(p.sisi, 5);
@@ -826,6 +859,35 @@ const GEOMETRY_PRESETS = {
           { from: 'C', to: 'D', label: `${atas}` }, { from: 'D', to: 'A', label: '' },
         ],
         bantu: [{ from: 'D', to: 'H', arah: 'B', label: `${tinggi}` }],
+      };
+    },
+  },
+  // Segiempat yang dipecah diagonalnya jadi DUA segitiga siku-siku berbagi
+  // diagonal sebagai sisi miring bersama (lingkaran Thales): sudut siku di B
+  // (antara kaki1a & kaki1b) dan di D (antara kaki2 & sisi yang dicari) —
+  // bukan di A/C, titik diagonalnya sendiri. Soal khasnya: hitung diagonal
+  // dulu dari segitiga ABC, lalu pakai lagi di segitiga ACD untuk sisi
+  // "dicari". Diagonalnya digambar putus-putus, panjangnya sengaja TIDAK
+  // ditulis — itu justru langkah yang harus dihitung sendiri oleh siswa.
+  'segiempat-diagonal': {
+    build: (p) => {
+      const kaki1a = numOrDefault(p.kaki1a, 6), kaki1b = numOrDefault(p.kaki1b, 7), kaki2 = numOrDefault(p.kaki2, 9);
+      const dicari = String(p.dicari || 'a').trim();
+      const L = Math.hypot(kaki1a, kaki1b) || 1;
+      const kaki2b = Math.sqrt(Math.max(0, L * L - kaki2 * kaki2)) || 1;   // dipakai membentuk gambar saja
+      const Bx = (kaki1a * kaki1a) / L, By = (kaki1a * kaki1b) / L;
+      const Dx = L - (kaki2 * kaki2) / L, Dy = -(kaki2 * kaki2b) / L;
+      return {
+        points: [
+          { name: 'A', x: 0, y: 0 }, { name: 'B', x: Bx, y: By },
+          { name: 'C', x: L, y: 0 }, { name: 'D', x: Dx, y: Dy },
+        ],
+        polygons: [['A', 'B', 'C', 'D']],
+        segments: [
+          { from: 'A', to: 'B', label: `${kaki1a}` }, { from: 'B', to: 'C', label: `${kaki1b}` },
+          { from: 'C', to: 'D', label: `${kaki2}` }, { from: 'D', to: 'A', label: dicari },
+        ],
+        bantu: [{ from: 'A', to: 'C', label: '' }],
       };
     },
   },
@@ -1143,10 +1205,14 @@ function renderGeometrySVG(cfg) {
   // bangun itu sendiri, jadi tidak boleh diam-diam hilang dari gambar —
   // tanpa ini siswa tidak punya cara mendapatkan angkanya untuk menjawab.
   (shape.bantu || []).forEach((h) => {
-    if (!h.label || pakaiKeteranganSendiri) return;
+    if (pakaiKeteranganSendiri) return;
     const p1 = pxMap[h.from], p2 = pxMap[h.to];
     isi += `<line x1="${p1[0].toFixed(1)}" y1="${p1[1].toFixed(1)}" x2="${p2[0].toFixed(1)}" y2="${p2[1].toFixed(1)}" stroke="${GAYA.abu}" stroke-width="${GAYA.garisBantu}" stroke-dasharray="${GAYA.putus}"/>`;
     if (h.arah && pxMap[h.arah]) isi += rightAngleSVG(p2[0], p2[1], p1[0], p1[1], pxMap[h.arah][0], pxMap[h.arah][1], 7);
+    // Garis bantu tanpa label (mis. diagonal bantu segiempat-diagonal): cuma
+    // garisnya yang perlu tergambar, angkanya justru bagian yang dicari
+    // sendiri oleh siswa lewat dua kali Pythagoras — jangan ditulis di sini.
+    if (!h.label) return;
     const [nx, ny] = unit(p2[1] - p1[1], p1[0] - p2[0]);
     const pos = letakTeksLuar((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2, nx, ny, 9);
     isi += teksGeoSVG(pos, h.label, GAYA.teks, false, true);
@@ -1233,10 +1299,79 @@ function iconBook(cx, cy, s) {
   return svg;
 }
 
+function iconBotol(cx, cy, s) {
+  // Botol tampak depan: leher sempit, bahu melebar, badan lurus — dipakai soal
+  // "dua botol sebangun" (kapasitas/volume), bukan piktogram, tapi bentuknya
+  // dipakai ulang di renderSebangunSVG karena sudah ada di sini.
+  const bodyW = s * 0.62, neckW = s * 0.24, neckH = s * 0.2, bahuH = s * 0.14;
+  const atas = cy - s / 2, leherBawah = atas + neckH, bahuBawah = leherBawah + bahuH, bawah = cy + s / 2;
+  const nx0 = cx - neckW / 2, nx1 = cx + neckW / 2, x0 = cx - bodyW / 2, x1 = cx + bodyW / 2;
+  const d = `M${nx0.toFixed(1)} ${atas.toFixed(1)} L${nx1.toFixed(1)} ${atas.toFixed(1)} L${nx1.toFixed(1)} ${leherBawah.toFixed(1)}`
+    + ` L${x1.toFixed(1)} ${bahuBawah.toFixed(1)} L${x1.toFixed(1)} ${bawah.toFixed(1)} L${x0.toFixed(1)} ${bawah.toFixed(1)}`
+    + ` L${x0.toFixed(1)} ${bahuBawah.toFixed(1)} L${nx0.toFixed(1)} ${leherBawah.toFixed(1)} Z`;
+  return `<path d="${d}" fill="none" stroke="#000000" stroke-width="1.3"/>`;
+}
+
 const ICON_DRAWERS = {
   bintang: iconStar, lingkaran: iconCircle, kotak: iconSquare, segitiga: iconTriangle,
   hati: iconHeart, apel: iconApple, buah: iconApple, orang: iconPerson, buku: iconBook,
+  botol: iconBotol,
 };
+
+// ---------------------------------------------------------------------
+// 2a-1. Bangun sebangun (dua bentuk sama, ukuran beda) — faktor skala
+// ---------------------------------------------------------------------
+// Soal "dua bangun sebangun, luas/volume diketahui, cari tinggi/luas yang
+// lain" sering memakai bentuk tidak baku (hati, botol) yang bentuk persisnya
+// tidak penting secara matematis — makanya dipinjam dari ikon piktogram yang
+// sudah ada, bukan preset "bangun" baru. Yang penting tinggi & luas/volumenya
+// tertulis, dan ukuran gambarnya kira-kira sebanding.
+function renderSebangunSVG(cfg) {
+  const gambar = ICON_DRAWERS[cfg.bentuk] || ICON_DRAWERS.hati;
+  const tinggiA = String(cfg.tinggiA ?? '9').trim();
+  const tinggiB = String(cfg.tinggiB ?? 'x').trim();
+  const nA = parseFloat(tinggiA), nB = parseFloat(tinggiB);
+  // Ukuran GAMBAR sebanding dengan tinggi asli: kalau kedua tinggi memang
+  // angka, yang tingginya lebih besar digambar lebih besar (bukan selalu A).
+  // Kalau salah satunya huruf (nilai yang dicari, mis. "x"), pakai rasio
+  // tetap yang wajar supaya bangun kedua tetap kelihatan beda ukuran.
+  let sA, sB;
+  if (isFinite(nA) && isFinite(nB) && nA > 0 && nB > 0) {
+    const rasio = Math.max(0.28, Math.min(3.5, nB / nA));
+    if (rasio >= 1) { sB = 100; sA = Math.max(38, 100 / rasio); }
+    else { sA = 100; sB = Math.max(38, 100 * rasio); }
+  } else {
+    sA = 100; sB = 72;
+  }
+
+  const b = kotakBatas();
+  let isi = '';
+  const jarakPanah = 20, celah = 40;
+  let cursor = jarakPanah;
+
+  const satu = (s, tinggiTeks, labelUkuran) => {
+    const ax = cursor;
+    const cx = ax + jarakPanah + s / 2, cy = 0;
+    isi += gambar(cx, cy, s);
+    b.titik(cx - s / 2, cy - s / 2); b.titik(cx + s / 2, cy + s / 2);
+    // Panah tinggi di kiri bangun, dua ujung berpanah seperti garis ukur teknik.
+    isi += arrowSVG(ax, cy - s / 2, ax, cy + s / 2, { headLen: 6 });
+    isi += arrowSVG(ax, cy + s / 2, ax, cy - s / 2, { headLen: 6 });
+    const posT = letakTeksLuar(ax, cy, -1, 0, 6);
+    isi += teksGeoSVG(posT, tinggiTeks, GAYA.teks);
+    b.teks(posT.x, posT.y, tinggiTeks, GAYA.teks, posT.anchor);
+    // Label luas/volume di tengah bangun (mis. "36 cm²" atau "1.35 l").
+    if (labelUkuran) {
+      isi += `<text x="${cx.toFixed(1)}" y="${(cy + s * 0.12).toFixed(1)}" font-size="${GAYA.teks}" text-anchor="middle" fill="${GAYA.hitam}">${escText(labelUkuran)}</text>`;
+      b.teks(cx, cy + s * 0.12, labelUkuran, GAYA.teks, 'middle');
+    }
+    cursor = cx + s / 2 + celah;
+  };
+  satu(sA, tinggiA, cfg.labelA || '');
+  satu(sB, tinggiB, cfg.labelB || '');
+
+  return bungkusGambarSVG(isi, b, true);
+}
 
 let pictogramClipCounter = 0;
 
@@ -1350,6 +1485,38 @@ const SOLID_PRESETS = {
         { pos: C, name: 'C', n: [1, -0.2] }, { pos: D, name: 'D', n: [-1, 0.3] },
         { pos: E, name: 'E', n: [-0.8, 0.6] }, { pos: F, name: 'F', n: [1, -0.4] },
         { pos: G, name: 'G', n: [0.7, 0.7] }, { pos: H, name: 'H', n: [-0.3, 1] },
+      ],
+    };
+  },
+  // Balok berundak (dua kotak bersusun, yang atas lebih sempit, rata kiri) —
+  // soal "dua bangun ruang sebangun berundak, volume diberikan sebagai
+  // angka, cari tinggi/volume yang lain". Proporsi lebar/kedalaman tetap
+  // (NOT TO SCALE) — cuma tinggi total yang dipakai menskalakan gambar dan
+  // ditulis sebagai label; volume/keterangan lain ditulis lewat `label`
+  // karena bukan hasil hitungan dari gambarnya, melainkan angka soal sendiri.
+  berundak: (p) => {
+    const tinggi = numOrDefault(p.tinggi, 10);
+    const labelTinggi = String(p.labelTinggi ?? p.tinggi ?? tinggi).trim();
+    const keterangan = String(p.label || '').trim();
+    const Wb = 8, Ws = 3.6, Dp = 4;
+    const h1 = tinggi * 0.55, h2 = tinggi * 0.45;
+    const A = [0, 0], B = [Wb, 0], C = obliquePt(Wb, 0, Dp), Dd = obliquePt(0, 0, Dp);
+    const F = [Wb, h1], G = obliquePt(Wb, h1, Dp);
+    const F2 = [Ws, h1], G2 = obliquePt(Ws, h1, Dp);
+    const F3 = [Ws, h1 + h2], G3 = obliquePt(Ws, h1 + h2, Dp);
+    const E3 = [0, h1 + h2], H3 = obliquePt(0, h1 + h2, Dp);
+    return {
+      edges: [
+        { a: A, b: B }, { a: B, b: F }, { a: B, b: C }, { a: F, b: G }, { a: G, b: C },
+        { a: F, b: F2 }, { a: G, b: G2 }, { a: F2, b: G2 },
+        { a: F2, b: F3 }, { a: F3, b: G3 }, { a: G2, b: G3 },
+        { a: F3, b: E3 }, { a: G3, b: H3 }, { a: H3, b: E3 },
+        { a: E3, b: A },
+        { a: C, b: Dd, dashed: true }, { a: Dd, b: A, dashed: true }, { a: Dd, b: H3, dashed: true },
+      ],
+      labels: [
+        { pos: [0, (h1 + h2) / 2], text: labelTinggi, n: [-1, 0] },
+        ...(keterangan ? [{ pos: [Wb * 0.55, h1 * 0.45], text: keterangan, n: [0, -1] }] : []),
       ],
     };
   },
@@ -3315,6 +3482,283 @@ function renderCellSVG(cfg) {
   return svg;
 }
 
+// Struktur bunga: mahkota (kelopak bunga, whorl luar berwarna) mengelilingi
+// benang sari & putik di tengah, kelopak (sepal, hijau) mengintip di
+// sela-sela mahkota, tangkai + daun di bawah. Simetri radial n=6 kelopak,
+// posisi tiap bagian dihitung dari sudut supaya proporsional untuk n berapa
+// pun kalau nanti perlu diubah, bukan dikoordinat-tetapkan manual.
+function renderFlowerSVG(cfg) {
+  const showLabel = String(cfg.label || 'ya').toLowerCase() !== 'tidak';
+  const width = 380, height = 380;
+  const cx = width / 2, fy = 145; // fy = pusat kepala bunga
+
+  let svg = `<svg class="ws-diagram-svg" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">`;
+  svg += `<rect x="0.5" y="0.5" width="${width - 1}" height="${height - 1}" fill="#ffffff" stroke="#d8dce1"/>`;
+  svg += `<text x="${(width / 2).toFixed(1)}" y="20" text-anchor="middle" font-size="12" font-weight="700" fill="#000000">Struktur Bunga</text>`;
+
+  const parts = [];
+  const n = 6;
+
+  // Tangkai (stem) — bawah sekali, digambar duluan.
+  svg += `<line x1="${cx}" y1="${fy + 60}" x2="${cx}" y2="${height - 24}" stroke="#166534" stroke-width="4"/>`;
+  parts.push({ x: cx, y: fy + 170, label: 'Tangkai', lx: cx + 95, ly: fy + 180, anchor: 'start' });
+
+  // Daun (leaf), menempel di tangkai.
+  const leafY = fy + 110;
+  svg += `<path d="M ${cx} ${leafY} Q ${cx - 58} ${leafY - 8} ${cx - 74} ${leafY + 18} Q ${cx - 56} ${leafY + 38} ${cx} ${leafY + 6} Z" fill="#86efac" stroke="#166534" stroke-width="1.2"/>`;
+  parts.push({ x: cx - 58, y: leafY + 14, label: 'Daun', lx: cx - 150, ly: leafY + 40, anchor: 'start' });
+
+  // Kelopak (sepal) — di sela-sela mahkota, digambar SEBELUM mahkota supaya
+  // ujungnya saja yang mengintip di tepi luar.
+  for (let i = 0; i < n; i++) {
+    const theta = (i + 0.5) * ((2 * Math.PI) / n);
+    const dist = 42, sudutDerajat = (theta * 180) / Math.PI;
+    const sx = cx + dist * Math.sin(theta), sy = fy - dist * Math.cos(theta);
+    svg += `<ellipse cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" rx="9" ry="20" fill="#4ade80" stroke="#166534" stroke-width="1" transform="rotate(${sudutDerajat.toFixed(1)} ${sx.toFixed(1)} ${sy.toFixed(1)})"/>`;
+    if (i === n - 1) {
+      const lx2 = cx + (dist + 22) * Math.sin(theta), ly2 = fy - (dist + 22) * Math.cos(theta);
+      parts.push({ x: lx2, y: ly2, label: 'Kelopak', lx: cx + 130, ly: fy - 55, anchor: 'start' });
+    }
+  }
+
+  // Mahkota (petal) — whorl utama, menutupi sebagian besar kelopak.
+  for (let i = 0; i < n; i++) {
+    const theta = i * ((2 * Math.PI) / n);
+    const dist = 46, sudutDerajat = (theta * 180) / Math.PI;
+    const px = cx + dist * Math.sin(theta), py = fy - dist * Math.cos(theta);
+    svg += `<ellipse cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" rx="23" ry="48" fill="#fbcfe8" stroke="#9d174d" stroke-width="1.3" transform="rotate(${sudutDerajat.toFixed(1)} ${px.toFixed(1)} ${py.toFixed(1)})"/>`;
+    if (i === 0) {
+      const lx2 = cx + (dist + 46) * Math.sin(theta), ly2 = fy - (dist + 46) * Math.cos(theta);
+      parts.push({ x: lx2, y: ly2, label: 'Mahkota', lx: cx, ly: fy - 108, anchor: 'middle' });
+    }
+  }
+
+  // Benang sari (stamen) — cincin garis tipis dari pusat, ujungnya kepala
+  // sari (anther) bulat kuning.
+  const stamenCount = 8;
+  for (let i = 0; i < stamenCount; i++) {
+    const theta = i * ((2 * Math.PI) / stamenCount);
+    const r1 = 6, r2 = 27;
+    const x1 = cx + r1 * Math.sin(theta), y1 = fy - r1 * Math.cos(theta);
+    const x2 = cx + r2 * Math.sin(theta), y2 = fy - r2 * Math.cos(theta);
+    svg += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#a16207" stroke-width="1.3"/>`;
+    svg += `<circle cx="${x2.toFixed(1)}" cy="${y2.toFixed(1)}" r="3.4" fill="#eab308" stroke="#a16207" stroke-width="0.6"/>`;
+    if (i === 1) parts.push({ x: x2, y: y2, label: 'Benang Sari', lx: cx + 95, ly: fy + 40, anchor: 'start' });
+  }
+
+  // Putik (pistil) — kapsul kecil tepat di pusat, di atas semua bagian lain.
+  svg += `<ellipse cx="${cx}" cy="${fy}" rx="7" ry="17" fill="#fef08a" stroke="#000000" stroke-width="1.3"/>`;
+  parts.push({ x: cx, y: fy - 16, label: 'Putik', lx: cx - 95, ly: fy + 42, anchor: 'end' });
+
+  if (showLabel) {
+    parts.forEach((p) => {
+      svg += cellLeader(p.x, p.y, p.lx, p.ly);
+      svg += cellPartLabel(p.lx + (p.anchor === 'end' ? -3 : 3), p.ly + 3, p.label, p.anchor);
+    });
+  }
+
+  svg += '</svg>';
+  return svg;
+}
+
+// Daur hidup / metamorfosis — generik untuk hewan/tumbuhan apa pun, bukan
+// cuma kupu-kupu: N tahap (tahapan=Telur,Larva,...) diletakkan melingkar,
+// dihubungkan panah searah jarum jam (tahap terakhir kembali ke pertama,
+// karena memang siklus). Labelnya di LUAR tiap simpul (bukan di dalam
+// lingkaran) supaya nama tahap yang panjang tidak perlu dipotong/mengecil.
+function renderLifeCycleSVG(cfg) {
+  const stages = String(cfg.tahapan || 'Telur,Larva,Pupa,Dewasa').split(',').map((s) => s.trim()).filter(Boolean);
+  const n = Math.max(2, stages.length);
+  const judul = String(cfg.judul || 'Daur Hidup').trim();
+  const width = 480, height = 420;
+  const cx = width / 2, cy = height / 2 + 10;
+  const R = 100, nodeR = 28;
+
+  let svg = `<svg class="ws-diagram-svg" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">`;
+  svg += `<rect x="0.5" y="0.5" width="${width - 1}" height="${height - 1}" fill="#ffffff" stroke="#d8dce1"/>`;
+  svg += `<text x="${(width / 2).toFixed(1)}" y="20" text-anchor="middle" font-size="12" font-weight="700" fill="#000000">${escText(judul)}</text>`;
+
+  const pos = [];
+  for (let i = 0; i < n; i++) {
+    const theta = i * ((2 * Math.PI) / n) - Math.PI / 2; // mulai di atas, searah jarum jam
+    pos.push({ x: cx + R * Math.cos(theta), y: cy + R * Math.sin(theta), theta });
+  }
+
+  // Panah antar tahap, dipendekkan supaya berhenti di TEPI lingkaran simpul
+  // (bukan pusatnya) di kedua ujung — termasuk yang terakhir kembali ke awal.
+  for (let i = 0; i < n; i++) {
+    const a = pos[i], b = pos[(i + 1) % n];
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const x1 = a.x + ux * (nodeR + 4), y1 = a.y + uy * (nodeR + 4);
+    const x2 = b.x - ux * (nodeR + 4), y2 = b.y - uy * (nodeR + 4);
+    svg += arrowSVG(x1, y1, x2, y2, { headLen: 9, strokeWidth: 1.6 });
+  }
+
+  const warna = ['#fde68a', '#bbf7d0', '#bfdbfe', '#fbcfe8', '#fecaca', '#ddd6fe', '#fed7aa', '#a7f3d0'];
+  pos.forEach((p, i) => {
+    svg += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${nodeR}" fill="${warna[i % warna.length]}" stroke="#000000" stroke-width="1.3"/>`;
+    svg += `<text x="${p.x.toFixed(1)}" y="${(p.y + 4).toFixed(1)}" text-anchor="middle" font-size="10.5" font-weight="700" fill="#000000">${i + 1}</text>`;
+    // Nama tahap ditulis di LUAR simpul, menjauhi pusat lingkaran besar —
+    // anchor menyesuaikan sisi mana simpulnya (kiri/kanan/atas/bawah) supaya
+    // teksnya tidak menabrak panah atau simpul tetangga.
+    const lx = cx + (R + nodeR + 14) * Math.cos(p.theta), ly = cy + (R + nodeR + 14) * Math.sin(p.theta);
+    const cosT = Math.cos(p.theta);
+    const anchor = cosT > 0.3 ? 'start' : cosT < -0.3 ? 'end' : 'middle';
+    svg += cellLeader(p.x + nodeR * Math.cos(p.theta), p.y + nodeR * Math.sin(p.theta), lx, ly);
+    svg += cellPartLabel(lx + (anchor === 'end' ? -3 : anchor === 'start' ? 3 : 0), ly + 3, stages[i] || `Tahap ${i + 1}`, anchor);
+  });
+
+  svg += '</svg>';
+  return svg;
+}
+
+// Panah bersiku (garis lurus per segmen, kepala panah cuma di ujung
+// terakhir) — dipakai untuk pipa/saluran yang perlu berbelok tanpa
+// menembus kotak lain (pembuluh darah di sekitar jantung, saluran
+// pencernaan), karena arrowSVG cuma tahu garis lurus satu segmen.
+function elbowArrowSVG(points, opts) {
+  opts = opts || {};
+  const color = opts.color || '#000000';
+  const strokeWidth = opts.strokeWidth || 1.8;
+  let s = '';
+  for (let i = 0; i < points.length - 2; i++) {
+    const [x1, y1] = points[i], [x2, y2] = points[i + 1];
+    s += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${color}" stroke-width="${strokeWidth}"/>`;
+  }
+  const [lx1, ly1] = points[points.length - 2], [lx2, ly2] = points[points.length - 1];
+  s += arrowSVG(lx1, ly1, lx2, ly2, { color, strokeWidth, headLen: opts.headLen || 8 });
+  return s;
+}
+
+// Peredaran darah ganda (sirkulasi pulmonal + sistemik): jantung di tengah
+// dipecah 4 ruang (serambi/bilik kiri-kanan), paru-paru di atas, tubuh di
+// bawah. Jalur MERAH (kaya oksigen) selalu di sisi KIRI gambar: paru-paru
+// -> serambi kiri -> (internal) -> bilik kiri -> tubuh. Jalur BIRU (miskin
+// oksigen) selalu di sisi KANAN: tubuh -> serambi kanan -> (internal) ->
+// bilik kanan -> paru-paru — sengaja dipisah kiri/kanan biar jalurnya tidak
+// perlu saling menyilang untuk dibaca.
+function renderCirculationSVG(cfg) {
+  const width = 520, height = 460;
+  let svg = `<svg class="ws-diagram-svg" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">`;
+  svg += `<rect x="0.5" y="0.5" width="${width - 1}" height="${height - 1}" fill="#ffffff" stroke="#d8dce1"/>`;
+  svg += `<text x="${(width / 2).toFixed(1)}" y="20" text-anchor="middle" font-size="12" font-weight="700" fill="#000000">Peredaran Darah Ganda</text>`;
+
+  const MERAH = '#dc2626', BIRU = '#2563eb';
+  const cx = width / 2;
+
+  // Paru-paru (dua bentuk paru sederhana berdampingan).
+  const paruY = 90;
+  svg += `<ellipse cx="${cx - 55}" cy="${paruY}" rx="55" ry="38" fill="#fecaca" stroke="#000000" stroke-width="1.3"/>`;
+  svg += `<ellipse cx="${cx + 55}" cy="${paruY}" rx="55" ry="38" fill="#fecaca" stroke="#000000" stroke-width="1.3"/>`;
+  svg += `<text x="${cx.toFixed(1)}" y="${(paruY + 4).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="#000000">Paru-paru</text>`;
+
+  // Jantung: kotak 2x2 (serambi atas, bilik bawah), septum tengah memisah
+  // kiri (merah)/kanan (biru).
+  const hL = cx - 90, hR = cx + 90, hT = 190, hMidY = 255, hB = 320, hMidX = cx;
+  svg += `<rect x="${hL}" y="${hT}" width="${hR - hL}" height="${hB - hT}" rx="10" fill="none" stroke="#000000" stroke-width="2"/>`;
+  svg += `<line x1="${hMidX}" y1="${hT}" x2="${hMidX}" y2="${hB}" stroke="#000000" stroke-width="1.5"/>`;
+  svg += `<line x1="${hL}" y1="${hMidY}" x2="${hR}" y2="${hMidY}" stroke="#000000" stroke-width="1.5"/>`;
+  svg += `<rect x="${hL + 2}" y="${hT + 2}" width="${hMidX - hL - 4}" height="${hMidY - hT - 4}" fill="#fee2e2"/>`; // serambi kiri
+  svg += `<rect x="${hMidX + 2}" y="${hT + 2}" width="${hR - hMidX - 4}" height="${hMidY - hT - 4}" fill="#dbeafe"/>`; // serambi kanan
+  svg += `<rect x="${hL + 2}" y="${hMidY + 2}" width="${hMidX - hL - 4}" height="${hB - hMidY - 4}" fill="#fecaca"/>`; // bilik kiri
+  svg += `<rect x="${hMidX + 2}" y="${hMidY + 2}" width="${hR - hMidX - 4}" height="${hB - hMidY - 4}" fill="#bfdbfe"/>`; // bilik kanan
+  svg += `<text x="${(hL + (hMidX - hL) / 2).toFixed(1)}" y="${(hT + 18).toFixed(1)}" text-anchor="middle" font-size="9.5" fill="#000000">Serambi Kiri</text>`;
+  svg += `<text x="${(hMidX + (hR - hMidX) / 2).toFixed(1)}" y="${(hT + 18).toFixed(1)}" text-anchor="middle" font-size="9.5" fill="#000000">Serambi Kanan</text>`;
+  svg += `<text x="${(hL + (hMidX - hL) / 2).toFixed(1)}" y="${(hB - 10).toFixed(1)}" text-anchor="middle" font-size="9.5" fill="#000000">Bilik Kiri</text>`;
+  svg += `<text x="${(hMidX + (hR - hMidX) / 2).toFixed(1)}" y="${(hB - 10).toFixed(1)}" text-anchor="middle" font-size="9.5" fill="#000000">Bilik Kanan</text>`;
+  svg += `<text x="${hMidX.toFixed(1)}" y="${(hT - 8).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="#000000">Jantung</text>`;
+
+  // Internal: serambi -> bilik (katup), tiap sisi.
+  const serambiKiriX = hL + (hMidX - hL) / 2, serambiKananX = hMidX + (hR - hMidX) / 2;
+  svg += arrowSVG(serambiKiriX, hMidY - 20, serambiKiriX, hMidY + 20, { color: MERAH, strokeWidth: 1.6, headLen: 7 });
+  svg += arrowSVG(serambiKananX, hMidY - 20, serambiKananX, hMidY + 20, { color: BIRU, strokeWidth: 1.6, headLen: 7 });
+
+  // Tubuh (kotak jaringan tubuh).
+  const tubuhY = 400;
+  svg += `<rect x="${cx - 120}" y="${tubuhY - 28}" width="240" height="56" rx="10" fill="#fde68a" stroke="#000000" stroke-width="1.3"/>`;
+  svg += `<text x="${cx.toFixed(1)}" y="${(tubuhY + 4).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="#000000">Seluruh Tubuh (Jaringan)</text>`;
+
+  // Jalur MERAH (kiri): paru-paru -> serambi kiri -> tubuh.
+  svg += elbowArrowSVG([[cx - 55, paruY + 38], [serambiKiriX, hT - 4]], { color: MERAH });
+  svg += cellPartLabel(serambiKiriX - 70, (paruY + hT) / 2, 'Vena Pulmonalis', 'start');
+  svg += elbowArrowSVG([[serambiKiriX, hB + 4], [cx - 55, tubuhY - 28 - 4]], { color: MERAH });
+  svg += cellPartLabel(serambiKiriX - 55, (hB + tubuhY - 28) / 2, 'Aorta', 'start');
+
+  // Jalur BIRU (kanan): tubuh -> serambi kanan -> paru-paru. Keduanya
+  // lewat sisi LUAR kanan jantung lewat lorong berbeda (x berbeda) supaya
+  // tidak menembus bilik/serambi yang bukan tujuannya — cuma bersilangan
+  // satu kali di luar kotak jantung, yang wajar untuk pembuluh nyata.
+  svg += elbowArrowSVG([[cx + 55, tubuhY - 28 - 4], [hR + 50, tubuhY - 28 - 4], [hR + 50, hT + 15], [hR - 4, hT + 15]], { color: BIRU });
+  svg += cellPartLabel(hR + 54, (hB + tubuhY - 28) / 2, 'Vena Kava', 'start');
+  svg += elbowArrowSVG([[hR - 4, hMidY + 22], [hR + 30, hMidY + 22], [hR + 30, paruY + 20], [cx + 55, paruY + 38]], { color: BIRU });
+  svg += cellPartLabel(hR + 34, hMidY + 18, 'Arteri', 'start');
+  svg += cellPartLabel(hR + 34, hMidY + 32, 'Pulmonalis', 'start');
+
+  return svg + '</svg>';
+}
+
+// Sistem pencernaan (jalur tunggal dari mulut ke anus): usus besar digambar
+// sebagai bingkai (frame) di sekeliling usus halus yang berkelok-kelok di
+// dalamnya — sengaja meniru posisi anatomis asli (usus besar naik di kanan,
+// melintang di atas, turun di kiri), bukan cuma dua kotak terpisah, supaya
+// tetap dikenali sebagai "organ yang membungkus organ lain".
+function renderDigestiveSVG(cfg) {
+  const width = 380, height = 560;
+  const cx = width / 2;
+  let svg = `<svg class="ws-diagram-svg" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">`;
+  svg += `<rect x="0.5" y="0.5" width="${width - 1}" height="${height - 1}" fill="#ffffff" stroke="#d8dce1"/>`;
+  svg += `<text x="${(width / 2).toFixed(1)}" y="20" text-anchor="middle" font-size="12" font-weight="700" fill="#000000">Sistem Pencernaan Manusia</text>`;
+
+  const parts = [];
+
+  // Usus besar (large intestine) — bingkai "U" terbalik di sekeliling usus
+  // halus, digambar DULUAN (lapisan bawah) supaya usus halus tampak berada
+  // di dalamnya.
+  const bL = 75, bR = 305, bT = 205, bB = 460;
+  svg += `<path d="M ${bR} ${bB} L ${bR} ${bT} L ${bL} ${bT} L ${bL} ${bB} Q ${bL} ${bB + 30} ${cx} ${bB + 30} L ${cx} ${height - 40}"
+    fill="none" stroke="#d97706" stroke-width="17" stroke-linejoin="round" stroke-linecap="round"/>`;
+  parts.push({ x: bL, y: (bT + bB) / 2, label: 'Usus Besar', lx: 12, ly: (bT + bB) / 2 - 30, anchor: 'start' });
+
+  // Usus halus (small intestine) — garis berkelok di DALAM bingkai usus besar.
+  const rows = 6, rowTop = bT + 30, rowGap = (bB - 30 - rowTop) / (rows - 1);
+  const zL = bL + 45, zR = bR - 45;
+  let ususPath = `M ${zL} ${rowTop}`;
+  for (let i = 0; i < rows; i++) {
+    const y = rowTop + i * rowGap;
+    const goRight = i % 2 === 0;
+    ususPath += ` L ${goRight ? zR : zL} ${y}`;
+    if (i < rows - 1) ususPath += ` L ${goRight ? zR : zL} ${y + rowGap}`;
+  }
+  svg += `<path d="${ususPath}" fill="none" stroke="#f59e0b" stroke-width="9" stroke-linejoin="round" stroke-linecap="round"/>`;
+  parts.push({ x: (zL + zR) / 2, y: rowTop + 2 * rowGap, label: 'Usus Halus', lx: cx + 95, ly: rowTop + 2 * rowGap, anchor: 'start' });
+  const ususHalusEndY = rowTop + (rows - 1) * rowGap;
+  const ususHalusEndX = (rows - 1) % 2 === 0 ? zR : zL;
+
+  // Mulut -> kerongkongan -> lambung -> usus halus.
+  svg += `<ellipse cx="${cx}" cy="30" rx="16" ry="9" fill="#fecaca" stroke="#000000" stroke-width="1.3"/>`;
+  parts.push({ x: cx, y: 30, label: 'Mulut', lx: cx + 60, ly: 30, anchor: 'start' });
+  svg += `<line x1="${cx}" y1="39" x2="${cx}" y2="95" stroke="#000000" stroke-width="4"/>`;
+  parts.push({ x: cx, y: 67, label: 'Kerongkongan', lx: cx + 60, ly: 67, anchor: 'start' });
+  svg += `<ellipse cx="${cx - 5}" cy="140" rx="48" ry="34" fill="#fda4af" stroke="#000000" stroke-width="1.4" transform="rotate(-18 ${cx - 5} 140)"/>`;
+  parts.push({ x: cx - 5, y: 140, label: 'Lambung', lx: cx + 95, ly: 140, anchor: 'start' });
+  svg += `<line x1="${cx + 15}" y1="168" x2="${zL}" y2="${rowTop - 4}" stroke="#000000" stroke-width="4"/>`;
+
+  // Usus halus -> usus besar (sambungan sekum, kanan bawah bingkai).
+  svg += `<line x1="${ususHalusEndX}" y1="${ususHalusEndY}" x2="${bR - 8}" y2="${bB - 8}" stroke="#000000" stroke-width="2" stroke-dasharray="3,3"/>`;
+
+  // Anus, ujung bawah bingkai.
+  svg += `<ellipse cx="${cx}" cy="${height - 40}" rx="10" ry="7" fill="#d97706" stroke="#000000" stroke-width="1.2"/>`;
+  parts.push({ x: cx, y: height - 40, label: 'Anus', lx: cx + 55, ly: height - 40, anchor: 'start' });
+
+  parts.forEach((p) => {
+    svg += cellLeader(p.x, p.y, p.lx, p.ly);
+    svg += cellPartLabel(p.lx + (p.anchor === 'end' ? -3 : 3), p.ly + 3, p.label, p.anchor);
+  });
+
+  return svg + '</svg>';
+}
+
 // ---------------------------------------------------------------------
 // 9. Transformasi Geometri (translasi/refleksi/rotasi/dilatasi)
 // ---------------------------------------------------------------------
@@ -3655,6 +4099,7 @@ function renderBearingSVG(cfg) {
     return { label: (bits[0] || '').trim(), sudut: numOrDefault(bits[1], 0), jarak: numOrDefault(bits[2], 5) };
   });
   const list = legs.length ? legs : [{ label: 'B', sudut: 65, jarak: 8 }];
+  const satuan = String(cfg.satuan || 'km').trim();
 
   let x = 0, y = 0;
   const pts = [{ x, y, label: cfg.titikAwal || 'A' }];
@@ -3699,7 +4144,7 @@ function renderBearingSVG(cfg) {
     let nx = -uy, ny = ux;
     if (ny < 0) { nx = -nx; ny = -ny; }
     if (Math.abs(ny) < 1e-6) { nx = 0; ny = 1; }
-    const jarak = `${leg.jarak} km`;
+    const jarak = `${leg.jarak} ${satuan}`;
     const posJ = letakTeksLuar((x1 + x2) / 2, (y1 + y2) / 2, nx, ny, 7, GAYA.teks);
     isi += teksGeoSVG(posJ, jarak, GAYA.teks, false, true);
     b.teks(posJ.x, posJ.y, jarak, GAYA.teks, posJ.anchor);
@@ -5904,10 +6349,15 @@ const DIAGRAM_TYPE_ALIASES = {
   bentukmolekul: 'bentukmolekul', vsepr: 'bentukmolekul', molekul: 'bentukmolekul',
   tingkatenergi: 'tingkatenergi', energilevel: 'tingkatenergi', diagramenergi: 'tingkatenergi',
   sel: 'sel', selhewan: 'sel', seltumbuhan: 'sel',
+  bunga: 'bunga',
+  daurhidup: 'daurhidup', metamorfosis: 'daurhidup',
+  peredarandarah: 'peredarandarah', sirkulasidarah: 'peredarandarah',
+  pencernaan: 'pencernaan', sistempencernaan: 'pencernaan',
   transformasi: 'transformasi', transformation: 'transformasi',
   pohonpeluang: 'pohonpeluang', treediagram: 'pohonpeluang', peluang: 'pohonpeluang',
   vektor: 'vektor', vector: 'vektor',
   bearing: 'bearing', arahmataangin: 'bearing',
+  sebangun: 'sebangun', similar: 'sebangun',
   ogive: 'ogive', frekuensikumulatif: 'ogive',
   boxplot: 'boxplot', kotakgaris: 'boxplot',
   sinar: 'sinar', raydiagram: 'sinar', lensa: 'sinar',
@@ -6043,10 +6493,15 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'bentukmolekul') svg = renderMoleculeShapeSVG(params);
     else if (type === 'tingkatenergi') svg = renderEnergyLevelSVG(params);
     else if (type === 'sel') svg = renderCellSVG(params);
+    else if (type === 'bunga') svg = renderFlowerSVG(params);
+    else if (type === 'daurhidup') svg = renderLifeCycleSVG(params);
+    else if (type === 'peredarandarah') svg = renderCirculationSVG(params);
+    else if (type === 'pencernaan') svg = renderDigestiveSVG(params);
     else if (type === 'transformasi') svg = renderTransformSVG(params);
     else if (type === 'pohonpeluang') svg = renderProbTreeSVG(params);
     else if (type === 'vektor') svg = renderVectorSVG(params);
     else if (type === 'bearing') svg = renderBearingSVG(params);
+    else if (type === 'sebangun') svg = renderSebangunSVG(params);
     else if (type === 'ogive') svg = renderOgiveSVG(params);
     else if (type === 'boxplot') svg = renderBoxplotSVG(params);
     else if (type === 'sinar') svg = renderRaySVG(params);
