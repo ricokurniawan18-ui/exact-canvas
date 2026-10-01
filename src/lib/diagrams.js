@@ -862,6 +862,54 @@ const GEOMETRY_PRESETS = {
       };
     },
   },
+  // Trapesium SIKU (bukan simetris seperti "trapesium" di atas): sisi kiri
+  // tegak lurus alas, jadi sudut sikunya otomatis kelihatan lewat deteksi
+  // sudut-siku bawaan renderGeometrySVG (dua sisi tegak lurus yang bertemu
+  // di satu titik) — tidak perlu garis bantu terpisah untuk tingginya,
+  // karena di sini tinggi memang salah satu sisi asli (kiri), bukan garis
+  // bantu dari tengah seperti versi simetris.
+  'trapesium-siku': {
+    build: (p) => {
+      const atas = numOrDefault(p.atas, 4), bawah = numOrDefault(p.bawah, 8), tinggi = numOrDefault(p.tinggi, 5);
+      return {
+        points: [
+          { name: 'A', x: 0, y: 0 }, { name: 'B', x: bawah, y: 0 },
+          { name: 'C', x: atas, y: tinggi }, { name: 'D', x: 0, y: tinggi },
+        ],
+        polygons: [['A', 'B', 'C', 'D']],
+        segments: [
+          { from: 'A', to: 'B', label: `${bawah}` }, { from: 'B', to: 'C', label: '' },
+          { from: 'C', to: 'D', label: `${atas}` }, { from: 'D', to: 'A', label: `${tinggi}` },
+        ],
+      };
+    },
+  },
+  // Jajar genjang: alas mendatar di bawah, sisi atas digeser "geser" satuan
+  // ke kanan (sejajar, sama panjang dengan alas). Tinggi selalu digambar
+  // sebagai garis bantu putus-putus (seperti trapesium) karena hampir semua
+  // soal luas jajar genjang memberikan tinggi, bukan sisi miringnya —
+  // sisinya (AD/BC) cuma dilabeli kalau "sisi" diisi eksplisit.
+  jajargenjang: {
+    build: (p) => {
+      const alas = numOrDefault(p.alas, 8), tinggi = numOrDefault(p.tinggi, 4);
+      const geser = numOrDefault(p.geser, alas * 0.3);
+      const sisi = p.sisi != null ? String(p.sisi).trim() : '';
+      const arah = geser < alas / 2 ? 'B' : 'A';
+      return {
+        points: [
+          { name: 'A', x: 0, y: 0 }, { name: 'B', x: alas, y: 0 },
+          { name: 'C', x: alas + geser, y: tinggi }, { name: 'D', x: geser, y: tinggi },
+          { name: 'H', x: geser, y: 0, hidden: true },
+        ],
+        polygons: [['A', 'B', 'C', 'D']],
+        segments: [
+          { from: 'A', to: 'B', label: `${alas}` }, { from: 'B', to: 'C', label: sisi },
+          { from: 'C', to: 'D', label: '' }, { from: 'D', to: 'A', label: sisi },
+        ],
+        bantu: [{ from: 'D', to: 'H', arah, label: `${tinggi}` }],
+      };
+    },
+  },
   // Segiempat yang dipecah diagonalnya jadi DUA segitiga siku-siku berbagi
   // diagonal sebagai sisi miring bersama (lingkaran Thales): sudut siku di B
   // (antara kaki1a & kaki1b) dan di D (antara kaki2 & sisi yang dicari) —
@@ -1373,6 +1421,175 @@ function renderSebangunSVG(cfg) {
   return bungkusGambarSVG(isi, b, true);
 }
 
+// Sektor lingkaran (juring) untuk soal panjang busur/luas juring — pusat O
+// di atas, dua jari-jari turun simetris ke kiri-kanan, busur asli (bukan
+// poligon pendekatan) menghubungkan ujungnya. jari & sudut dipakai untuk
+// MENGGAMBAR (angka wajar dipakai kalau yang diberikan bukan angka bersih,
+// mis. "r" yang dicari) sekaligus sebagai TEKS label kalau memang angka —
+// pola yang sama seperti tinggiA/tinggiB di sebangun.
+function renderSectorSVG(cfg) {
+  const rGambar = numOrDefault(cfg.jari, 6);
+  const labelJari = String(cfg.jari ?? rGambar).trim();
+  const sudutGambar = Math.min(300, Math.max(20, numOrDefault(cfg.sudut, 90)));
+  const labelSudut = String(cfg.sudut ?? sudutGambar).trim();
+  const labelBusur = cfg.busur != null ? String(cfg.busur).trim() : '';
+
+  const R = 95;
+  const setengah = (sudutGambar / 2) * Math.PI / 180;
+  const O = [0, 0];
+  const Pr = [R * Math.sin(setengah), R * Math.cos(setengah)];
+  const Pl = [-R * Math.sin(setengah), R * Math.cos(setengah)];
+  const large = sudutGambar > 180 ? 1 : 0;
+
+  const b = kotakBatas();
+  let isi = '';
+  isi += `<path d="M${O[0].toFixed(1)} ${O[1].toFixed(1)} L${Pr[0].toFixed(1)} ${Pr[1].toFixed(1)} A${R} ${R} 0 ${large} 1 ${Pl[0].toFixed(1)} ${Pl[1].toFixed(1)} Z" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+  b.titik(O[0], O[1]); b.titik(Pr[0], Pr[1]); b.titik(Pl[0], Pl[1]);
+  // Busur dipaskan batasnya lewat titik puncaknya juga (titik terjauh dari O
+  // ke arah bawah), supaya pemotongan kanvas tidak memotong busur yang
+  // menggembung melewati garis lurus Pl-Pr saat sudut > 180°.
+  b.titik(0, R);
+
+  // Tanda sudut: busur kecil dekat O + label di tengahnya.
+  const rTanda = 20;
+  const Ar = [rTanda * Math.sin(setengah), rTanda * Math.cos(setengah)];
+  const Al = [-rTanda * Math.sin(setengah), rTanda * Math.cos(setengah)];
+  isi += `<path d="M${Ar[0].toFixed(1)} ${Ar[1].toFixed(1)} A${rTanda} ${rTanda} 0 ${large} 1 ${Al[0].toFixed(1)} ${Al[1].toFixed(1)}" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garisBantu}"/>`;
+  const posSudut = { x: 0, y: rTanda * 0.8 + 11, anchor: 'middle' };
+  isi += teksGeoSVG(posSudut, labelSudut, GAYA.teks);
+  b.teks(posSudut.x, posSudut.y, labelSudut, GAYA.teks, 'middle');
+
+  // Titik pusat O berlabel.
+  isi += `<circle cx="0" cy="0" r="2.2" fill="${GAYA.hitam}"/>`;
+  const posO = letakTeksLuar(0, 0, -0.6, -0.9, 10);
+  isi += teksGeoSVG(posO, 'O', GAYA.teks, true);
+  b.teks(posO.x, posO.y, 'O', GAYA.teks, posO.anchor);
+
+  // Label jari-jari di sisi kanan (O ke Pr), tengah ruas, menjauhi juring.
+  const midR = [(O[0] + Pr[0]) / 2, (O[1] + Pr[1]) / 2];
+  const dNx = Pr[1] - O[1], dNy = O[0] - Pr[0], dNlen = Math.hypot(dNx, dNy) || 1;
+  const nxR = dNx / dNlen, nyR = dNy / dNlen;
+  const posJari = letakTeksLuar(midR[0], midR[1], nxR, nyR, 9);
+  isi += teksGeoSVG(posJari, labelJari, GAYA.teks);
+  b.teks(posJari.x, posJari.y, labelJari, GAYA.teks, posJari.anchor);
+
+  // Label panjang busur di tengah lengkungan luar (karena simetris, tengah
+  // busur selalu tepat lurus di bawah O), menjauhi O.
+  if (labelBusur) {
+    const posBusur = letakTeksLuar(0, R, 0, 1, 9);
+    isi += teksGeoSVG(posBusur, labelBusur, GAYA.teks);
+    b.teks(posBusur.x, posBusur.y, labelBusur, GAYA.teks, posBusur.anchor);
+  }
+
+  return bungkusGambarSVG(isi, b, true);
+}
+
+// Bangun datar (trapesium atau persegi panjang) dengan GIGITAN setengah
+// lingkaran di sisi atas atau bawah — soal "luas yang diarsir = luas bangun
+// - luas setengah lingkaran". Ditulis sebagai fungsi tersendiri (bukan lewat
+// GEOMETRY_PRESETS/renderGeometrySVG yang cuma tahu poligon lurus terpisah)
+// karena gigitannya harus jadi SATU garis tepi menyambung lewat busur asli
+// (SVG arc), bukan dua bentuk bertumpuk — dipakai lewat bentuk=potong-lingkaran
+// di tag [[bangun: ...]], bukan tag tersendiri, supaya AI tidak perlu belajar
+// jenis tag baru untuk ini.
+function renderCutoutSVG(cfg) {
+  const dasar = String(cfg.dasar || 'trapesium').toLowerCase();
+  const jariPotongV = numOrDefault(cfg.jariPotong, 3.5);
+  const sisiPotong = String(cfg.sisiPotong || 'atas').toLowerCase() === 'bawah' ? 'bawah' : 'atas';
+
+  let bawahV, atasV, tinggiV, persegiPanjang;
+  if (dasar === 'persegi-panjang') {
+    bawahV = numOrDefault(cfg.panjang, 10);
+    atasV = bawahV;
+    tinggiV = numOrDefault(cfg.lebar, 6);
+    persegiPanjang = true;
+  } else {
+    bawahV = numOrDefault(cfg.bawah, 18);
+    atasV = numOrDefault(cfg.atas, bawahV * 0.4);
+    tinggiV = numOrDefault(cfg.tinggi, 6);
+    persegiPanjang = false;
+  }
+
+  const scale = Math.min(220 / bawahV, 32);
+  const bawah = bawahV * scale, atas = atasV * scale, tinggi = tinggiV * scale;
+  // Diameter potongan tidak boleh melebihi sisi tempat ia dipotong, kalau
+  // tidak lengkungnya menembus ujung bangun dan menyilang sisi miringnya
+  // (angka yang diberikan AI/guru kadang tidak konsisten secara geometris,
+  // ini jaring pengaman visualnya).
+  const batasSisi = (sisiPotong === 'atas' ? atas : bawah) / 2 - 2;
+  // ...dan juga tidak boleh melebihi tinggi bangun, kalau tidak lengkungnya
+  // menembus keluar dari sisi SEBERANGNYA.
+  const batasTinggi = tinggi - 6;
+  const rPotong = Math.max(4, Math.min(jariPotongV * scale, batasSisi, batasTinggi));
+  const offset = (bawah - atas) / 2;
+
+  // Titik sudut (y ke bawah, sisi "atas" model = y=0, "bawah" = y=tinggi).
+  const A = [0, tinggi], B = [bawah, tinggi], C = [bawah - offset, 0], D = [offset, 0];
+
+  const b = kotakBatas();
+  let isi = '';
+  let pathD, rLabelPos, rLabelN;
+  if (sisiPotong === 'atas') {
+    const midX = (D[0] + C[0]) / 2;
+    const kanan = [midX + rPotong, 0], kiri = [midX - rPotong, 0];
+    // sweep=1 (searah jarum jam di koordinat y-ke-bawah): dari titik kanan
+    // lewat bawah (menggembung MASUK ke bangun) ke titik kiri.
+    pathD = `M${A[0].toFixed(1)} ${A[1].toFixed(1)} L${B[0].toFixed(1)} ${B[1].toFixed(1)} L${C[0].toFixed(1)} ${C[1].toFixed(1)}`
+      + ` L${kanan[0].toFixed(1)} ${kanan[1].toFixed(1)} A${rPotong.toFixed(1)} ${rPotong.toFixed(1)} 0 0 1 ${kiri[0].toFixed(1)} ${kiri[1].toFixed(1)}`
+      + ` L${D[0].toFixed(1)} ${D[1].toFixed(1)} Z`;
+    rLabelPos = [midX, rPotong]; rLabelN = [0, 1];
+  } else {
+    const midX = bawah / 2;
+    const kanan = [midX + rPotong, tinggi], kiri = [midX - rPotong, tinggi];
+    // sweep=0: dari titik kanan lewat atas (menggembung MASUK ke bangun) ke titik kiri.
+    pathD = `M${D[0].toFixed(1)} ${D[1].toFixed(1)} L${C[0].toFixed(1)} ${C[1].toFixed(1)} L${B[0].toFixed(1)} ${B[1].toFixed(1)}`
+      + ` L${kanan[0].toFixed(1)} ${kanan[1].toFixed(1)} A${rPotong.toFixed(1)} ${rPotong.toFixed(1)} 0 0 0 ${kiri[0].toFixed(1)} ${kiri[1].toFixed(1)}`
+      + ` L${A[0].toFixed(1)} ${A[1].toFixed(1)} Z`;
+    rLabelPos = [midX, tinggi - rPotong]; rLabelN = [0, -1];
+  }
+  isi += `<path d="${pathD}" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+  [A, B, C, D].forEach(([x, y]) => b.titik(x, y));
+  b.titik(rLabelPos[0], rLabelPos[1] + rLabelN[1] * 14);
+
+  // Label sisi yang TIDAK kena potongan (bawah kalau potongannya di atas,
+  // dan sebaliknya) — sisi yang kena potongan sengaja tidak dilabeli karena
+  // bentangnya sendiri terputus oleh busur, persis gaya naskah Cambridge.
+  const labelBawah = String(cfg.bawah ?? (persegiPanjang ? cfg.panjang : bawahV)).trim();
+  const labelAtas = String(cfg.atas ?? atasV).trim();
+  if (sisiPotong === 'bawah') {
+    const pos = letakTeksLuar((D[0] + C[0]) / 2, 0, 0, -1, 9);
+    isi += teksGeoSVG(pos, persegiPanjang ? labelBawah : labelAtas, GAYA.teks);
+    b.teks(pos.x, pos.y, persegiPanjang ? labelBawah : labelAtas, GAYA.teks, pos.anchor);
+  } else {
+    const pos = letakTeksLuar((A[0] + B[0]) / 2, tinggi, 0, 1, 9);
+    isi += teksGeoSVG(pos, labelBawah, GAYA.teks);
+    b.teks(pos.x, pos.y, labelBawah, GAYA.teks, pos.anchor);
+  }
+
+  // Tinggi: persegi panjang punya sisi tegak asli (A-D) jadi dilabeli
+  // langsung; trapesium sejati butuh garis bantu putus-putus karena sisi
+  // miringnya bukan tinggi sebenarnya.
+  if (persegiPanjang) {
+    const pos = letakTeksLuar(0, tinggi / 2, -1, 0, 9);
+    isi += teksGeoSVG(pos, `${tinggiV}`, GAYA.teks);
+    b.teks(pos.x, pos.y, `${tinggiV}`, GAYA.teks, pos.anchor);
+  } else {
+    const H = [offset, tinggi];
+    isi += `<line x1="${D[0].toFixed(1)}" y1="${D[1].toFixed(1)}" x2="${H[0].toFixed(1)}" y2="${H[1].toFixed(1)}" stroke="${GAYA.abu}" stroke-width="${GAYA.garisBantu}" stroke-dasharray="${GAYA.putus}"/>`;
+    isi += rightAngleSVG(H[0], H[1], D[0], D[1], A[0], A[1], 7);
+    const pos = letakTeksLuar((D[0] + H[0]) / 2, (D[1] + H[1]) / 2, -1, 0, 9);
+    isi += teksGeoSVG(pos, `${tinggiV}`, GAYA.teks);
+    b.teks(pos.x, pos.y, `${tinggiV}`, GAYA.teks, pos.anchor);
+  }
+
+  // Label jari-jari potongan, di titik terdalam busur, menjauhi bangun.
+  const posR = letakTeksLuar(rLabelPos[0], rLabelPos[1], rLabelN[0], rLabelN[1], 9);
+  isi += teksGeoSVG(posR, `${jariPotongV}`, GAYA.teks);
+  b.teks(posR.x, posR.y, `${jariPotongV}`, GAYA.teks, posR.anchor);
+
+  return bungkusGambarSVG(isi, b, true);
+}
+
 let pictogramClipCounter = 0;
 
 function renderPictogramSVG(cfg) {
@@ -1540,6 +1757,34 @@ const SOLID_PRESETS = {
         { pos: [r * 1.5, t], text: `r = ${r}`, n: [0, -1] },
       ],
       vertices: [{ pos: [r, t], name: 'O', n: [-0.7, -0.7] }],
+    };
+  },
+  // Pipa (tabung berlubang): sama seperti tabung, tapi tutup dekatnya (y=0)
+  // dapat elips KEDUA yang lebih kecil (jariDalam) digambar PENUH (bukan
+  // belah) — karena lubangnya memang kelihatan utuh dari luar, tidak
+  // tertutup apa pun, beda dari elips luar yang separuh belakangnya
+  // tersembunyi di balik badan pipa.
+  pipa: (p) => {
+    const rLuar = numOrDefault(p.jariLuar, 5), rDalam = numOrDefault(p.jariDalam, 3);
+    const tAsli = numOrDefault(p.tinggi, 12), ry = rLuar * 0.35, ryDalam = rDalam * 0.35;
+    const t = Math.min(tAsli, 2.6 * rLuar);
+    return {
+      ellipses: [
+        { cx: rLuar, cy: t, rx: rLuar, ry },
+        { cx: rLuar, cy: 0, rx: rLuar, ry, belah: true },
+        { cx: rLuar, cy: 0, rx: rDalam, ry: ryDalam },
+      ],
+      edges: [
+        { a: [0, 0], b: [0, t] }, { a: [2 * rLuar, 0], b: [2 * rLuar, t] },
+        { a: [rLuar - rDalam, 0], b: [rLuar - rDalam, t], tipis: true },
+      ],
+      dots: [[rLuar, t], [rLuar, 0]],
+      labels: [
+        { pos: [2 * rLuar, t / 2], text: `t = ${tAsli}`, n: [1, 0] },
+        { pos: [rLuar + rLuar * 0.5, t], text: `R = ${rLuar}`, n: [0, 1] },
+        { pos: [rLuar, -ry], text: `r = ${rDalam}`, n: [0, -1] },
+      ],
+      vertices: [{ pos: [rLuar, t], name: 'O', n: [-0.7, -0.7] }],
     };
   },
   kerucut: (p) => {
@@ -6332,6 +6577,7 @@ const DIAGRAM_TYPE_ALIASES = {
   grafik: 'grafik', fungsi: 'grafik',
   programlinear: 'programlinear', linearprogram: 'programlinear',
   bangun: 'bangun', geometri: 'bangun',
+  sektor: 'sektor', juring: 'sektor',
   garisbilangan: 'garisbilangan',
   venn: 'venn',
   statistik: 'statistik', stat: 'statistik',
@@ -6476,7 +6722,8 @@ function renderDiagramTag(rawTagContent, depth) {
   try {
     if (type === 'grafik') svg = renderFunctionGraphSVG(params);
     else if (type === 'programlinear') svg = renderLinearProgramSVG(params);
-    else if (type === 'bangun') svg = renderGeometrySVG(params);
+    else if (type === 'bangun') svg = (params.bentuk === 'potong-lingkaran') ? renderCutoutSVG(params) : renderGeometrySVG(params);
+    else if (type === 'sektor') svg = renderSectorSVG(params);
     else if (type === 'garisbilangan') { params.titik = parseTitikList(params.titik); svg = renderNumberLineSVG(params); }
     else if (type === 'venn') svg = renderVennSVG(params);
     else if (type === 'statistik') svg = renderStatSVG(params);
