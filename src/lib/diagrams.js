@@ -3287,7 +3287,104 @@ function resistorSVG(x1, y, x2, label) {
   return s;
 }
 
+// Sel (baterai) tegak lurus untuk cabang vertikal rangkaian multiloop: pelat
+// panjang+tipis (+) di atas, pelat pendek+tebal (-) di bawah — konvensi yang
+// sama dengan sel mendatar di renderCircuitSVG, cuma diputar 90°.
+function selVertikalSVG(cx, y1, y2, volt) {
+  const mid = (y1 + y2) / 2;
+  let s = `<line x1="${cx.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${cx.toFixed(1)}" y2="${(mid - 6).toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+  s += `<line x1="${(cx - 12).toFixed(1)}" y1="${(mid - 6).toFixed(1)}" x2="${(cx + 12).toFixed(1)}" y2="${(mid - 6).toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+  s += `<line x1="${(cx - 6).toFixed(1)}" y1="${(mid + 2).toFixed(1)}" x2="${(cx + 6).toFixed(1)}" y2="${(mid + 2).toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="4"/>`;
+  s += `<line x1="${cx.toFixed(1)}" y1="${(mid + 4).toFixed(1)}" x2="${cx.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+  if (volt != null && isFinite(volt)) {
+    s += `<text x="${(cx + 15).toFixed(1)}" y="${(mid + 4).toFixed(1)}" font-size="10.5" text-anchor="start" fill="${GAYA.hitam}">${volt} V</text>`;
+  }
+  return s;
+}
+
+// Resistor IEC tegak (sama seperti resistorSVG tapi arah vertikal), untuk
+// cabang rangkaian multiloop — label di sisi kanan.
+function resistorVertikalSVG(x, y1, y2, label) {
+  const w = 14, h = 34;
+  const by = (y1 + y2) / 2 - h / 2;
+  let s = `<line x1="${x.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x.toFixed(1)}" y2="${by.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+  s += `<rect x="${(x - w / 2).toFixed(1)}" y="${by.toFixed(1)}" width="${w}" height="${h}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.6"/>`;
+  s += `<line x1="${x.toFixed(1)}" y1="${(by + h).toFixed(1)}" x2="${x.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+  if (label) s += `<text x="${(x + 12).toFixed(1)}" y="${((y1 + y2) / 2 + 4).toFixed(1)}" font-size="10.5" text-anchor="start" fill="${GAYA.hitam}">${escText(label)}</text>`;
+  return s;
+}
+
+function parseCabangMultiloop(raw) {
+  return String(raw || '').split(',').map((s) => s.trim()).filter(Boolean).map((tok, i) => {
+    const bits = tok.split(':').map((s) => s.trim());
+    return { name: bits[0] || ('R' + (i + 1)), ohm: numOrDefault(bits[1], 10), volt: numOrDefault(bits[2], 0) };
+  });
+}
+
+// Rangkaian 1-loop/multiloop (Kirchhoff): N cabang VERTIKAL (resistor lalu
+// sel, masing-masing sel BEBAS bedanya tegangannya) berjajar antara rel atas
+// (simpul A) dan rel bawah (simpul B) — beda dari tipe seri/paralel/campuran
+// di bawah yang cuma punya SATU sel keseluruhan. Rel atas/bawah sendiri
+// boleh diselingi resistor di antara cabang-cabang (relAtas/relBawah),
+// persis pola naskah ujian 2-loop yang resistornya ada di kawat penghubung,
+// bukan cuma di cabang.
+function renderMultiloopSVG(cfg) {
+  const cabang = parseCabangMultiloop(cfg.cabang);
+  if (!cabang.length) cabang.push({ name: 'R1', ohm: 5, volt: 4 }, { name: 'R2', ohm: 2, volt: 3 });
+  const relBawah = String(cfg.relBawah || '').split(',').map((s) => s.trim());
+  const relAtas = String(cfg.relAtas || '').split(',').map((s) => s.trim());
+  const simpulAtas = String(cfg.simpulAtas || 'A').trim();
+  const simpulBawah = String(cfg.simpulBawah || 'B').trim();
+
+  const n = cabang.length;
+  const branchGap = 110, leftX = 60;
+  const topY = 42, resBottom = topY + 36, battTop = resBottom + 16, battBottom = battTop + 50, bottomY = battBottom + 16;
+  const xs = cabang.map((_, i) => leftX + i * branchGap);
+  const rightX = xs[n - 1];
+  const atasStartX = leftX - 28, bawahEndX = rightX + 28;
+  const width = bawahEndX + 36;
+  const height = bottomY + 24;
+
+  let svg = `<svg class="ws-diagram-svg" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">`;
+  svg += `<rect x="0.5" y="0.5" width="${width - 1}" height="${height - 1}" fill="#ffffff" stroke="#d8dce1"/>`;
+  const W = (x1, y1, x2, y2) => `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+
+  // Rel atas: simpul A -> cabang pertama -> ... -> cabang terakhir.
+  svg += W(atasStartX, topY, xs[0], topY);
+  for (let i = 0; i < n - 1; i++) {
+    const val = parseFloat(relAtas[i]);
+    svg += (relAtas[i] && isFinite(val) && val > 0)
+      ? resistorSVG(xs[i], topY, xs[i + 1], `${val} Ω`)
+      : W(xs[i], topY, xs[i + 1], topY);
+  }
+  svg += `<circle cx="${atasStartX.toFixed(1)}" cy="${topY.toFixed(1)}" r="2.6" fill="${GAYA.hitam}"/>`;
+  svg += `<text x="${atasStartX.toFixed(1)}" y="${(topY - 11).toFixed(1)}" font-size="12.5" font-weight="700" text-anchor="middle" fill="${GAYA.hitam}">${escText(simpulAtas)}</text>`;
+
+  // Tiap cabang: resistor di atas, sel di bawahnya.
+  cabang.forEach((c, i) => {
+    const x = xs[i];
+    svg += resistorVertikalSVG(x, topY, resBottom, `${c.ohm} Ω`);
+    svg += W(x, resBottom, x, battTop);
+    svg += selVertikalSVG(x, battTop, battBottom, c.volt);
+    svg += W(x, battBottom, x, bottomY);
+  });
+
+  // Rel bawah: cabang pertama -> ... -> cabang terakhir -> simpul B.
+  for (let i = 0; i < n - 1; i++) {
+    const val = parseFloat(relBawah[i]);
+    svg += (relBawah[i] && isFinite(val) && val > 0)
+      ? resistorSVG(xs[i], bottomY, xs[i + 1], `${val} Ω`)
+      : W(xs[i], bottomY, xs[i + 1], bottomY);
+  }
+  svg += W(rightX, bottomY, bawahEndX, bottomY);
+  svg += `<circle cx="${bawahEndX.toFixed(1)}" cy="${bottomY.toFixed(1)}" r="2.6" fill="${GAYA.hitam}"/>`;
+  svg += `<text x="${bawahEndX.toFixed(1)}" y="${(bottomY + 17).toFixed(1)}" font-size="12.5" font-weight="700" text-anchor="middle" fill="${GAYA.hitam}">${escText(simpulBawah)}</text>`;
+
+  return svg + '</svg>';
+}
+
 function renderCircuitSVG(cfg) {
+  if (String(cfg.tipe || '').toLowerCase() === 'multiloop') return renderMultiloopSVG(cfg);
   const tipe = cfg.tipe || 'seri';
   const comps = String(cfg.komponen || '').split(',').map((s) => s.trim()).filter(Boolean).map(parseCircuitComponent);
   let blocks;
