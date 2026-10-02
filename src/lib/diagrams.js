@@ -4497,6 +4497,410 @@ function renderDigestiveSVG(cfg) {
 }
 
 // ---------------------------------------------------------------------
+// 6d1. Bentuk Gigi (identifikasi jenis gigi)
+// ---------------------------------------------------------------------
+
+// Siluet gigi TANPA label teks — dipakai untuk soal "sebutkan nama gigi ini"
+// di mana nama jenisnya justru jawaban yang dicari (lihat DIAGRAM_DOCS:
+// jangan sampai gambar membocorkan jawaban). Garis putus-putus menandai
+// batas mahkota/akar (leher gigi), konvensi umum diagram gigi di buku teks.
+const GIGI_BENTUK = {
+  seri: {
+    d: 'M -18,12 Q -20,2 -10,-2 Q 0,-5 10,-2 Q 20,2 18,12 L 15,56 Q 15,62 12,67 L 7,118 Q 4,128 0,128 Q -4,128 -7,118 L -12,67 Q -15,62 -15,56 Z',
+    gumY: 60, gumHalfW: 14, extent: [-20, -5, 20, 128],
+  },
+  taring: {
+    d: 'M 0,-10 Q 14,-3 17,12 L 15,54 Q 15,60 12,65 L 8,108 Q 4,118 0,118 Q -4,118 -8,108 L -12,65 Q -15,60 -15,54 L -17,12 Q -14,-3 0,-10 Z',
+    gumY: 58, gumHalfW: 15, extent: [-18, -10, 18, 118],
+  },
+  'geraham-depan': {
+    d: 'M -20,10 Q -22,-1 -13,-5 Q -9,-8 -6,-3 Q -3,1 0,2 Q 3,1 6,-3 Q 9,-8 13,-5 Q 22,-1 20,10 L 16,56 Q 16,63 13,68 L 7,116 Q 4,125 0,125 Q -4,125 -7,116 L -13,68 Q -16,63 -16,56 Z',
+    gumY: 61, gumHalfW: 15, extent: [-22, -8, 22, 125],
+  },
+  geraham: {
+    d: 'M -26,14 Q -28,0 -19,-4 Q -15,-8 -11,-3 Q -8,1 -4,-1 Q -1,-3 0,-1 Q 1,-3 4,-1 Q 8,1 11,-3 Q 15,-8 19,-4 Q 28,0 26,14 L 23,58 L -23,58 Z'
+      + ' M -19,58 Q -24,90 -17,118 Q -14,127 -10,122 Q -14,92 -9,59 Z'
+      + ' M 19,58 Q 24,90 17,118 Q 14,127 10,122 Q 14,92 9,59 Z',
+    gumY: 58, gumHalfW: 24, extent: [-28, -8, 28, 127],
+  },
+};
+GIGI_BENTUK.molar = GIGI_BENTUK.geraham;
+GIGI_BENTUK.premolar = GIGI_BENTUK['geraham-depan'];
+GIGI_BENTUK.canine = GIGI_BENTUK.taring;
+GIGI_BENTUK.incisor = GIGI_BENTUK.seri;
+
+function renderGigiSVG(cfg) {
+  const tipe = String(cfg.tipe || 'seri').toLowerCase();
+  const bentuk = GIGI_BENTUK[tipe] || GIGI_BENTUK.seri;
+  const b = kotakBatas();
+  const [x0, y0, x1, y1] = bentuk.extent;
+  b.titik(x0, y0); b.titik(x1, y1);
+  let isi = `<path d="${bentuk.d}" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+  isi += `<path d="M ${-bentuk.gumHalfW},${bentuk.gumY} Q 0,${bentuk.gumY + 4} ${bentuk.gumHalfW},${bentuk.gumY}" `
+       + `fill="none" stroke="${GAYA.hitam}" stroke-width="0.8" stroke-dasharray="3,2.2"/>`;
+  // Label eksplisit (cfg.label) OPT-IN saja — dipakai kalau diagram ini bukan
+  // untuk soal "sebutkan nama gigi ini" (mis. soal lain yang kebetulan perlu
+  // gigi berlabel). Tanpa cfg.label (kasus biasa), tidak ada teks sama sekali.
+  if (cfg.label) {
+    const txt = String(cfg.label);
+    isi += `<text x="0" y="${y1 + 16}" text-anchor="middle" font-size="${GAYA.teks}" fill="${GAYA.hitam}">${escText(txt)}</text>`;
+    b.teks(0, y1 + 16, txt, GAYA.teks, 'middle');
+  }
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// ---------------------------------------------------------------------
+// 6d2. IPAS SD/SMP — wajah hewan, lengkung rahang, siklus air, wujud zat,
+// pesawat sederhana, tata surya, magnet
+// ---------------------------------------------------------------------
+
+// Wajah hewan sederhana (garis hitam-putih, bukan kartun berwarna — tetap
+// satu gaya dengan diagram lain) untuk soal "hewan ini makan apa?"
+// (herbivora/karnivora/omnivora). TANPA label nama hewan: itu jawabannya.
+function renderAnimalFaceSVG(cfg) {
+  const tipe = String(cfg.tipe || 'kucing').toLowerCase();
+  const b = kotakBatas();
+  const R = 50;
+  let isi = '';
+  const dot = (x, y, r) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${GAYA.hitam}"/>`;
+  const head = () => `<circle cx="0" cy="0" r="${R}" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+  const eyes = () => dot(-17, -8, 4) + dot(17, -8, 4);
+  const smile = () => `<path d="M -15,18 Q 0,28 15,18" fill="none" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+  b.titik(-R - 20, -R - 25); b.titik(R + 20, R + 10);
+
+  if (tipe === 'sapi' || tipe === 'cow') {
+    isi += `<path d="M -22,-44 Q -30,-60 -18,-62 Q -14,-50 -16,-40 Z" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    isi += `<path d="M 22,-44 Q 30,-60 18,-62 Q 14,-50 16,-40 Z" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    isi += `<ellipse cx="-50" cy="-6" rx="11" ry="15" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    isi += `<ellipse cx="50" cy="-6" rx="11" ry="15" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    isi += head() + eyes();
+    isi += `<path d="M -28,38 Q -22,24 0,22 Q 22,24 28,38 Q 22,50 0,50 Q -22,50 -28,38 Z" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    isi += dot(-9, 36, 2.2) + dot(9, 36, 2.2);
+    isi += `<path d="M -40,10 Q -44,16 -38,22 Z" fill="${GAYA.hitam}"/><path d="M 30,-30 Q 38,-28 34,-20 Z" fill="${GAYA.hitam}"/>`;
+  } else if (tipe === 'singa' || tipe === 'lion') {
+    const n = 14, mr = 66;
+    let mane = '';
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const mx = mr * 0.76 * Math.cos(a), my = mr * 0.76 * Math.sin(a);
+      const degA = (a * 180) / Math.PI;
+      mane += `<ellipse cx="${mx.toFixed(1)}" cy="${my.toFixed(1)}" rx="12" ry="20" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.1" transform="rotate(${degA.toFixed(1)} ${mx.toFixed(1)} ${my.toFixed(1)})"/>`;
+      b.titik(mx, my, 20);
+    }
+    isi += mane + head() + eyes() + smile();
+    isi += `<ellipse cx="0" cy="8" rx="13" ry="9" fill="none" stroke="${GAYA.hitam}" stroke-width="1.1"/>`;
+    isi += `<path d="M -4,3 L 0,9 L 4,3 Z" fill="${GAYA.hitam}"/>`;
+  } else if (tipe === 'beruang' || tipe === 'bear') {
+    isi += `<circle cx="-34" cy="-40" r="15" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    isi += `<circle cx="34" cy="-40" r="15" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    isi += head() + eyes();
+    isi += `<ellipse cx="0" cy="18" rx="20" ry="15" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+    isi += `<ellipse cx="0" cy="12" rx="6" ry="4.5" fill="${GAYA.hitam}"/>`;
+    isi += `<path d="M 0,16 L 0,24 M 0,24 Q -8,30 -14,26 M 0,24 Q 8,30 14,26" fill="none" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    b.titik(-49, -55); b.titik(49, -55);
+  } else if (tipe === 'kelinci' || tipe === 'rabbit') {
+    isi += `<path d="M -22,-45 Q -30,-95 -14,-96 Q -8,-50 -10,-40 Z" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    isi += `<path d="M 22,-45 Q 30,-95 14,-96 Q 8,-50 10,-40 Z" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    isi += head() + eyes();
+    isi += `<path d="M -3,16 L 3,16 L 0,22 Z" fill="${GAYA.hitam}"/>`;
+    isi += `<path d="M 0,22 L 0,28 M 0,28 L -16,22 M 0,28 L -16,32 M 0,28 L 16,22 M 0,28 L 16,32" fill="none" stroke="${GAYA.hitam}" stroke-width="0.9"/>`;
+    isi += `<path d="M -8,30 Q 0,38 8,30" fill="none" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    b.titik(-32, -98); b.titik(32, -98);
+  } else if (tipe === 'kucing' || tipe === 'cat') {
+    isi += `<path d="M -38,-38 L -22,-20 L -42,-14 Z" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    isi += `<path d="M 38,-38 L 22,-20 L 42,-14 Z" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    isi += head() + eyes();
+    isi += `<path d="M -3,14 L 3,14 L 0,19 Z" fill="${GAYA.hitam}"/>`;
+    isi += `<path d="M -36,10 L -8,8 M -36,18 L -8,14 M -36,26 L -8,20" stroke="${GAYA.hitam}" stroke-width="0.8"/>`;
+    isi += `<path d="M 36,10 L 8,8 M 36,18 L 8,14 M 36,26 L 8,20" stroke="${GAYA.hitam}" stroke-width="0.8"/>`;
+    isi += `<path d="M -6,20 Q 0,26 6,20" fill="none" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    b.titik(-42, -40); b.titik(42, -40);
+  } else { // manusia / child
+    isi += `<path d="M -51,-4 Q -56,-46 0,-52 Q 56,-46 51,-4 Q 46,-30 0,-32 Q -46,-30 -51,-4 Z" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    isi += head() + eyes() + smile();
+    isi += `<ellipse cx="-50" cy="2" rx="7" ry="10" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.1"/>`;
+    isi += `<ellipse cx="50" cy="2" rx="7" ry="10" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.1"/>`;
+    isi += `<path d="M 0,-2 L -2,8 L 2,8 Z" fill="none" stroke="${GAYA.hitam}" stroke-width="1"/>`;
+    b.titik(-57, -53); b.titik(57, -53);
+  }
+
+  if (cfg.label) {
+    const txt = String(cfg.label);
+    isi += `<text x="0" y="${R + 24}" text-anchor="middle" font-size="${GAYA.teks}" fill="${GAYA.hitam}">${escText(txt)}</text>`;
+    b.teks(0, R + 24, txt, GAYA.teks, 'middle');
+  }
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Lengkung rahang (denah dari atas) — dipakai utk soal "tunjukkan/sebutkan
+// nama gigi A/B/C pada gambar". Tiga zona gigi di tiap sisi: depan (seri,
+// bulatan kecil), taring-kiri/kanan (tanda "/"), geraham-kiri/kanan (tanda
+// "+", dua titik per sisi). tunjuk=Label:zona,... menaruh penunjuk
+// berlabel pada zona itu (zona: depan, taring-kiri, taring-kanan,
+// geraham-kiri, geraham-kanan).
+const GIGI_ZONA = {
+  depan: { x: 0, y: -6 },
+  'taring-kiri': { x: -56, y: 18 },
+  'taring-kanan': { x: 56, y: 18 },
+  'geraham-kiri': { x: -68, y: 65 },
+  'geraham-kanan': { x: 68, y: 65 },
+};
+function renderLengkungRahangSVG(cfg) {
+  const b = kotakBatas();
+  const archD = 'M -70,150 C -70,40 -40,-6 0,-6 C 40,-6 70,40 70,150';
+  let isi = `<path d="${archD}" fill="none" stroke="${GAYA.hitam}" stroke-width="40" stroke-linecap="round"/>`;
+  isi += `<path d="${archD}" fill="none" stroke="${GAYA.putih}" stroke-width="34" stroke-linecap="round"/>`;
+  b.titik(-92, -8); b.titik(92, 170);
+
+  // Zona depan: 4 bulatan kecil (gigi seri) di puncak lengkungan.
+  [-18, -6, 6, 18].forEach((dx) => { isi += `<circle cx="${dx}" cy="-6" r="4.5" fill="none" stroke="${GAYA.hitam}" stroke-width="1"/>`; });
+  // Taring: satu tanda miring tiap sisi.
+  ['taring-kiri', 'taring-kanan'].forEach((z) => {
+    const p = GIGI_ZONA[z], s = z.endsWith('kiri') ? -1 : 1;
+    isi += `<line x1="${p.x - 5 * s}" y1="${p.y - 6}" x2="${p.x + 5 * s}" y2="${p.y + 6}" stroke="${GAYA.hitam}" stroke-width="1.6"/>`;
+  });
+  // Geraham: dua tanda "+" tiap sisi, menyusur ke belakang.
+  ['geraham-kiri', 'geraham-kanan'].forEach((z) => {
+    const p = GIGI_ZONA[z];
+    [0, 32].forEach((dy) => {
+      const y = p.y + dy;
+      isi += `<line x1="${p.x - 5}" y1="${y}" x2="${p.x + 5}" y2="${y}" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+      isi += `<line x1="${p.x}" y1="${y - 5}" x2="${p.x}" y2="${y + 5}" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+    });
+  });
+
+  isi += `<text x="0" y="-26" text-anchor="middle" font-size="${GAYA.teksKecil}" fill="${GAYA.abu}" font-style="italic">depan mulut</text>`;
+  isi += `<text x="0" y="192" text-anchor="middle" font-size="${GAYA.teksKecil}" fill="${GAYA.abu}" font-style="italic">belakang mulut</text>`;
+  b.teks(0, -26, 'depan mulut', GAYA.teksKecil, 'middle');
+  b.teks(0, 192, 'belakang mulut', GAYA.teksKecil, 'middle');
+
+  const tunjuk = String(cfg.tunjuk || 'A:depan,B:taring-kanan,C:geraham-kanan')
+    .split(',').map((s) => s.trim()).filter(Boolean)
+    .map((tok) => { const [label, zona] = tok.split(':').map((s) => s.trim()); return { label, zona }; });
+  tunjuk.forEach(({ label, zona }) => {
+    const p = GIGI_ZONA[zona];
+    if (!p) return;
+    const side = p.x < -2 ? -1 : p.x > 2 ? 1 : 0;
+    const lx = p.x + side * 55 || 85, ly = p.y;
+    isi += cellLeader(p.x, p.y, lx, ly);
+    isi += `<circle cx="${lx}" cy="${ly}" r="11" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    isi += `<text x="${lx}" y="${ly + 4}" text-anchor="middle" font-size="11" font-weight="700" fill="${GAYA.hitam}">${escText(label)}</text>`;
+    b.titik(lx - 11, ly - 11); b.titik(lx + 11, ly + 11);
+  });
+
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Siklus air: matahari, awan, gunung, laut, dan tiga panah tahapan
+// (penguapan/presipitasi/aliran permukaan). Tidak ada parameter — urutannya
+// selalu sama, cuma labelnya yang dibaca ulang siswa.
+function renderWaterCycleSVG(cfg) {
+  const W = 420, H = 320;
+  let svg = `<svg class="ws-diagram-svg" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+  svg += `<rect x="0.5" y="0.5" width="${W - 1}" height="${H - 1}" fill="#ffffff" stroke="#d8dce1"/>`;
+  svg += `<text x="${W / 2}" y="20" text-anchor="middle" font-size="12" font-weight="700" fill="#000">Siklus Air</text>`;
+
+  const seaY = H - 46;
+  // Laut: garis gelombang berulang.
+  let wave = `M 20,${seaY}`;
+  for (let x = 20; x < W - 20; x += 20) wave += ` Q ${x + 10},${seaY - 7} ${x + 20},${seaY}`;
+  svg += `<path d="${wave}" fill="none" stroke="#000" stroke-width="1.4"/>`;
+  svg += `<line x1="18" y1="${seaY + 10}" x2="${W - 18}" y2="${seaY + 10}" stroke="#000" stroke-width="1.4"/>`;
+  svg += `<text x="60" y="${seaY + 28}" text-anchor="middle" font-size="10.5" fill="#000">Laut</text>`;
+
+  // Gunung: segitiga di sisi kanan, kaki menyentuh garis laut.
+  const gx = W - 110;
+  svg += `<path d="M ${gx - 55},${seaY} L ${gx},${seaY - 100} L ${gx + 55},${seaY} Z" fill="#fff" stroke="#000" stroke-width="1.4"/>`;
+  svg += `<path d="M ${gx - 14},${seaY - 76} L ${gx},${seaY - 100} L ${gx + 14},${seaY - 76} L ${gx + 6},${seaY - 80} L ${gx},${seaY - 90} L ${gx - 6},${seaY - 80} Z" fill="#fff" stroke="#000" stroke-width="1"/>`;
+  svg += `<text x="${gx}" y="${seaY + 16}" text-anchor="middle" font-size="10.5" fill="#000">Gunung</text>`;
+
+  // Matahari: pojok kiri atas.
+  const sx = 55, sy = 50;
+  svg += `<circle cx="${sx}" cy="${sy}" r="20" fill="#fff" stroke="#000" stroke-width="1.4"/>`;
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    svg += `<line x1="${(sx + 25 * Math.cos(a)).toFixed(1)}" y1="${(sy + 25 * Math.sin(a)).toFixed(1)}" x2="${(sx + 34 * Math.cos(a)).toFixed(1)}" y2="${(sy + 34 * Math.sin(a)).toFixed(1)}" stroke="#000" stroke-width="1.2"/>`;
+  }
+
+  // Awan: beberapa lingkaran bertumpuk, di atas gunung.
+  const cx2 = gx - 20, cy2 = 56;
+  svg += `<circle cx="${cx2 - 22}" cy="${cy2 + 6}" r="16" fill="#fff" stroke="#000" stroke-width="1.3"/>`;
+  svg += `<circle cx="${cx2}" cy="${cy2 - 6}" r="22" fill="#fff" stroke="#000" stroke-width="1.3"/>`;
+  svg += `<circle cx="${cx2 + 24}" cy="${cy2 + 6}" r="17" fill="#fff" stroke="#000" stroke-width="1.3"/>`;
+  svg += `<rect x="${cx2 - 40}" y="${cy2 + 6}" width="80" height="16" fill="#fff" stroke="none"/>`;
+  svg += `<line x1="${cx2 - 40}" y1="${cy2 + 20}" x2="${cx2 + 40}" y2="${cy2 + 20}" stroke="#fff" stroke-width="0"/>`;
+  svg += `<text x="${cx2}" y="${cy2 - 32}" text-anchor="middle" font-size="10.5" fill="#000">Awan (Kondensasi)</text>`;
+
+  // Panah 1: Penguapan (laut -> awan).
+  svg += arrowSVG(sx + 60, seaY - 30, cx2 - 50, cy2 + 40, { strokeWidth: 1.6, dash: '4 3' });
+  svg += `<text x="${(sx + cx2) / 2 - 20}" y="${seaY - 60}" text-anchor="middle" font-size="10" fill="#000">Penguapan</text>`;
+
+  // Panah 2: Presipitasi (awan -> gunung), beberapa garis hujan pendek.
+  for (let i = -1; i <= 1; i++) {
+    svg += arrowSVG(cx2 + i * 14, cy2 + 30, gx + i * 10, seaY - 90, { strokeWidth: 1.3, headLen: 6 });
+  }
+  svg += `<text x="${cx2 + 50}" y="${(cy2 + seaY - 90) / 2 - 10}" text-anchor="middle" font-size="10" fill="#000">Presipitasi</text>`;
+
+  // Panah 3: Aliran permukaan (gunung -> laut).
+  svg += arrowSVG(gx + 40, seaY - 20, gx + 90, seaY - 2, { strokeWidth: 1.6 });
+  svg += `<text x="${gx + 70}" y="${seaY - 28}" text-anchor="middle" font-size="9.5" fill="#000">Aliran${' '}permukaan</text>`;
+
+  svg += '</svg>';
+  return svg;
+}
+
+// Tiga wujud zat (padat/cair/gas) sebagai kotak partikel + panah perubahan
+// wujud berlabel di antaranya. Tidak ada parameter.
+function renderStatesOfMatterSVG(cfg) {
+  const W = 460, H = 230;
+  let svg = `<svg class="ws-diagram-svg" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+  svg += `<rect x="0.5" y="0.5" width="${W - 1}" height="${H - 1}" fill="#ffffff" stroke="#d8dce1"/>`;
+
+  const boxW = 100, boxH = 100, boxY = 50;
+  const boxX = [20, 180, 340];
+  const titles = ['Padat', 'Cair', 'Gas'];
+  boxX.forEach((x, i) => {
+    svg += `<rect x="${x}" y="${boxY}" width="${boxW}" height="${boxH}" fill="#fff" stroke="#000" stroke-width="1.4"/>`;
+    svg += `<text x="${x + boxW / 2}" y="${boxY + boxH + 20}" text-anchor="middle" font-size="12" font-weight="700" fill="#000">${titles[i]}</text>`;
+    if (i === 0) { // padat: grid rapat
+      for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
+        svg += `<circle cx="${x + 14 + c * 24}" cy="${boxY + 14 + r * 24}" r="6" fill="#000"/>`;
+      }
+    } else if (i === 1) { // cair: gerombol longgar di bawah
+      const pts = [[14, 70], [34, 82], [54, 68], [74, 84], [20, 92], [86, 70], [50, 50], [70, 56], [30, 56]];
+      pts.forEach(([dx, dy]) => { svg += `<circle cx="${x + dx}" cy="${boxY + dy}" r="6" fill="#000"/>`; });
+    } else { // gas: tersebar jarang
+      const pts = [[12, 14], [60, 24], [85, 60], [30, 50], [70, 85], [15, 80], [50, 65], [90, 15]];
+      pts.forEach(([dx, dy]) => { svg += `<circle cx="${x + dx}" cy="${boxY + dy}" r="5" fill="#000"/>`; });
+    }
+  });
+
+  // Panah dua arah antara tiap pasangan kotak, dua label (naik & turun).
+  const pair = (x1, x2, atas, bawah) => {
+    const y = boxY + boxH / 2;
+    let s = arrowSVG(x1, y - 12, x2, y - 12, { strokeWidth: 1.4, headLen: 7 });
+    s += arrowSVG(x2, y + 12, x1, y + 12, { strokeWidth: 1.4, headLen: 7 });
+    s += `<text x="${(x1 + x2) / 2}" y="${y - 18}" text-anchor="middle" font-size="9.5" fill="#000">${atas}</text>`;
+    s += `<text x="${(x1 + x2) / 2}" y="${y + 28}" text-anchor="middle" font-size="9.5" fill="#000">${bawah}</text>`;
+    return s;
+  };
+  svg += pair(boxX[0] + boxW + 4, boxX[1] - 4, 'Mencair', 'Membeku');
+  svg += pair(boxX[1] + boxW + 4, boxX[2] - 4, 'Menguap', 'Mengembun');
+
+  svg += '</svg>';
+  return svg;
+}
+
+// Pesawat sederhana: tuas/katrol/bidang miring/roda berporos.
+function renderSimpleMachineSVG(cfg) {
+  const tipe = String(cfg.tipe || 'tuas').toLowerCase();
+  const b = kotakBatas();
+  let isi = '';
+  const label = (x, y, t, anchor) => { isi += `<text x="${x}" y="${y}" text-anchor="${anchor || 'middle'}" font-size="${GAYA.teksKecil}" fill="${GAYA.hitam}">${escText(t)}</text>`; b.teks(x, y, t, GAYA.teksKecil, anchor || 'middle'); };
+
+  if (tipe === 'katrol' || tipe === 'pulley') {
+    isi += `<line x1="-40" y1="0" x2="40" y2="0" stroke="${GAYA.hitam}" stroke-width="3"/>`;
+    isi += arsirTumpuanSVG(-40, 0, 40, 0, 0, -1);
+    isi += `<line x1="0" y1="0" x2="0" y2="30" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+    isi += `<circle cx="0" cy="48" r="18" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/><circle cx="0" cy="48" r="2" fill="${GAYA.hitam}"/>`;
+    isi += `<path d="M -18,48 A18,18 0 0 1 18,48" fill="none" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    isi += `<line x1="-18" y1="48" x2="-18" y2="130" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    isi += `<line x1="18" y1="48" x2="18" y2="110" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    isi += `<rect x="-34" y="130" width="32" height="26" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    isi += arrowSVG(18, 110, 18, 72, { strokeWidth: 1.6 });
+    label(-18, 170, 'Beban'); label(18, 58, 'Kuasa', 'start');
+    b.titik(-40, -4); b.titik(40, 170);
+  } else if (tipe === 'bidang-miring' || tipe === 'incline') {
+    isi += `<path d="M -70,70 L 70,70 L 70,-50 Z" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    isi += arsirTumpuanSVG(-70, 70, 70, 70, 0, 1);
+    isi += kotakBendaSVG(28, 35, 26, 20, 'B', -33.7);
+    isi += arrowSVG(-5, 28, -45, 50, { strokeWidth: 1.6 });
+    label(-30, 66, 'Kuasa');
+    label(-78, 10, 'tinggi', 'end');
+    isi += `<line x1="-70" y1="70" x2="-70" y2="-50" stroke="${GAYA.hitam}" stroke-width="${GAYA.garisBantu}" stroke-dasharray="${GAYA.putusHalus}"/>`;
+    b.titik(-85, -55); b.titik(70, 85);
+  } else if (tipe === 'roda' || tipe === 'wheel') {
+    isi += `<circle cx="0" cy="0" r="46" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    isi += `<circle cx="0" cy="0" r="10" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    for (let i = 0; i < 4; i++) { const a = (i / 4) * Math.PI * 2; isi += `<line x1="${(10 * Math.cos(a)).toFixed(1)}" y1="${(10 * Math.sin(a)).toFixed(1)}" x2="${(46 * Math.cos(a)).toFixed(1)}" y2="${(46 * Math.sin(a)).toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1"/>`; }
+    isi += `<line x1="10" y1="0" x2="34" y2="0" stroke="${GAYA.hitam}" stroke-width="2.4"/><line x1="34" y1="-10" x2="34" y2="10" stroke="${GAYA.hitam}" stroke-width="2.4"/>`;
+    label(0, 70, 'Roda'); label(0, -58, 'Poros (As)');
+    b.titik(-46, -62); b.titik(46, 74);
+  } else { // tuas
+    const kelas = String(cfg.kelas || '1');
+    const fx = kelas === '2' ? -60 : kelas === '3' ? 60 : 0;
+    isi += `<line x1="-90" y1="0" x2="90" y2="0" stroke="${GAYA.hitam}" stroke-width="4"/>`;
+    isi += `<path d="M ${fx - 14},26 L ${fx},0 L ${fx + 14},26 Z" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    const bx = kelas === '2' ? -20 : -90, kx = kelas === '3' ? 20 : 90;
+    isi += arrowSVG(bx, -4, bx, -34, { strokeWidth: 1.6 });
+    isi += arrowSVG(kx, -4, kx, -34, { strokeWidth: 1.6 });
+    label(bx, -40, 'Beban'); label(kx, -40, 'Kuasa');
+    label(fx, 42, 'Titik Tumpu');
+    b.titik(-90, -40); b.titik(90, 42);
+  }
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Tata surya: matahari + 8 planet berurut, TANPA nama (soal "urutkan
+// planet") kecuali label=ya. Ukuran relatif disederhanakan, bukan skala asli.
+const PLANET_URUT = ['Merkurius', 'Venus', 'Bumi', 'Mars', 'Jupiter', 'Saturnus', 'Uranus', 'Neptunus'];
+const PLANET_R = [5, 7, 7.5, 6, 16, 14, 10, 9.5];
+function renderSolarSystemSVG(cfg) {
+  const showLabel = String(cfg.label || 'tidak').toLowerCase() === 'ya';
+  const b = kotakBatas();
+  let isi = '';
+  let x = -170;
+  isi += `<circle cx="${x}" cy="0" r="26" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+  for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; isi += `<line x1="${(x + 29 * Math.cos(a)).toFixed(1)}" y1="${(29 * Math.sin(a)).toFixed(1)}" x2="${(x + 35 * Math.cos(a)).toFixed(1)}" y2="${(35 * Math.sin(a)).toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1"/>`; }
+  isi += `<text x="${x}" y="46" text-anchor="middle" font-size="${GAYA.teksKecil}" fill="${GAYA.hitam}">Matahari</text>`;
+  b.titik(x - 36, -36); b.titik(x, 56);
+  x += 48;
+  PLANET_R.forEach((r, i) => {
+    isi += `<circle cx="${x}" cy="0" r="${r}" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    if (i === 5) isi += `<ellipse cx="${x}" cy="0" rx="${r + 10}" ry="${r * 0.35}" fill="none" stroke="${GAYA.hitam}" stroke-width="1"/>`;
+    const ty = r + (i === 5 ? 14 : 4) + 16;
+    isi += `<text x="${x}" y="${ty}" text-anchor="middle" font-size="${GAYA.teksKecil}" fill="${GAYA.hitam}">${showLabel ? escText(PLANET_URUT[i]) : (i + 1)}</text>`;
+    b.titik(x - r - 12, -r - 4); b.titik(x + r + 12, ty + 4);
+    x += r + 32;
+  });
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Magnet batang: satu magnet (kutub U/S) atau dua magnet berdekatan
+// (konfigurasi=tarik-menarik / tolak-menolak).
+function renderMagnetSVG(cfg) {
+  const konfig = String(cfg.konfigurasi || '').toLowerCase();
+  const b = kotakBatas();
+  let isi = '';
+  const bar = (cx, flip) => {
+    const kiri = flip ? 'S' : 'U', kanan = flip ? 'U' : 'S';
+    let s = `<rect x="${cx - 50}" y="-20" width="50" height="40" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    s += `<rect x="${cx}" y="-20" width="50" height="40" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    s += `<text x="${cx - 25}" y="6" text-anchor="middle" font-size="15" font-weight="700" fill="${GAYA.hitam}">${kiri}</text>`;
+    s += `<text x="${cx + 25}" y="6" text-anchor="middle" font-size="15" font-weight="700" fill="${GAYA.hitam}">${kanan}</text>`;
+    b.titik(cx - 50, -20); b.titik(cx + 50, 20);
+    return s;
+  };
+  if (konfig === 'tarik' || konfig === 'tarik-menarik' || konfig === 'tolak' || konfig === 'tolak-menolak') {
+    const tarik = konfig.startsWith('tarik');
+    isi += bar(-70, false);
+    isi += bar(70, !tarik); // tarik: kutub berhadapan beda (S ketemu U); tolak: sama (S ketemu S)
+    if (tarik) {
+      isi += arrowSVG(-8, -34, -28, -34, { strokeWidth: 1.4, headLen: 6 });
+      isi += arrowSVG(8, -34, 28, -34, { strokeWidth: 1.4, headLen: 6 });
+    } else {
+      isi += arrowSVG(-28, -34, -8, -34, { strokeWidth: 1.4, headLen: 6 });
+      isi += arrowSVG(28, -34, 8, -34, { strokeWidth: 1.4, headLen: 6 });
+    }
+    isi += `<text x="0" y="40" text-anchor="middle" font-size="${GAYA.teksKecil}" fill="${GAYA.hitam}">${tarik ? 'tarik-menarik' : 'tolak-menolak'}</text>`;
+    b.titik(0, 46);
+  } else {
+    isi += bar(0, false);
+  }
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// ---------------------------------------------------------------------
 // 9. Transformasi Geometri (translasi/refleksi/rotasi/dilatasi)
 // ---------------------------------------------------------------------
 
@@ -7096,6 +7500,14 @@ const DIAGRAM_TYPE_ALIASES = {
   daurhidup: 'daurhidup', metamorfosis: 'daurhidup',
   peredarandarah: 'peredarandarah', sirkulasidarah: 'peredarandarah',
   pencernaan: 'pencernaan', sistempencernaan: 'pencernaan',
+  gigi: 'gigi', tooth: 'gigi',
+  hewan: 'hewan', animal: 'hewan',
+  lengkungrahang: 'lengkungrahang', rahang: 'lengkungrahang',
+  siklusair: 'siklusair', watercycle: 'siklusair',
+  wujudzat: 'wujudzat', statesofmatter: 'wujudzat',
+  pesawatsederhana: 'pesawatsederhana', simplemachine: 'pesawatsederhana',
+  tatasurya: 'tatasurya', solarsystem: 'tatasurya',
+  magnet: 'magnet',
   transformasi: 'transformasi', transformation: 'transformasi',
   pohonpeluang: 'pohonpeluang', treediagram: 'pohonpeluang', peluang: 'pohonpeluang',
   vektor: 'vektor', vector: 'vektor',
@@ -7246,6 +7658,14 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'daurhidup') svg = renderLifeCycleSVG(params);
     else if (type === 'peredarandarah') svg = renderCirculationSVG(params);
     else if (type === 'pencernaan') svg = renderDigestiveSVG(params);
+    else if (type === 'gigi') svg = renderGigiSVG(params);
+    else if (type === 'hewan') svg = renderAnimalFaceSVG(params);
+    else if (type === 'lengkungrahang') svg = renderLengkungRahangSVG(params);
+    else if (type === 'siklusair') svg = renderWaterCycleSVG(params);
+    else if (type === 'wujudzat') svg = renderStatesOfMatterSVG(params);
+    else if (type === 'pesawatsederhana') svg = renderSimpleMachineSVG(params);
+    else if (type === 'tatasurya') svg = renderSolarSystemSVG(params);
+    else if (type === 'magnet') svg = renderMagnetSVG(params);
     else if (type === 'transformasi') svg = renderTransformSVG(params);
     else if (type === 'pohonpeluang') svg = renderProbTreeSVG(params);
     else if (type === 'vektor') svg = renderVectorSVG(params);
