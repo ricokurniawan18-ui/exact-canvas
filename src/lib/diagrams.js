@@ -3360,6 +3360,42 @@ function katrolSVG(cx, cy, r) {
     + `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="1.6" fill="${GAYA.hitam}"/>`;
 }
 
+// "1" -> "m1": nama benda yang cuma angka dibaca sebagai nomor massa, sehingga
+// keterangannya "m1 = 4 kg", bukan "1 = 4 kg".
+function namaBenda(l) {
+  const t = String(l == null ? '' : l).trim();
+  return /^\d+$/.test(t) ? 'm' + t : t;
+}
+
+// "F = 12 N:210" -> { label:'F = 12 N', sudut:210 }. Sudut = arah gaya terhadap
+// layar: 0 = ke kanan, 90 = ke atas, 180 = ke kiri, 270 (atau -90) = ke bawah.
+function parseGayaLuar(raw) {
+  const t = String(raw == null ? '' : raw).trim();
+  if (!t) return null;
+  const i = t.lastIndexOf(':');
+  if (i < 0) return { label: t, sudut: 0 };
+  const a = parseFloat(t.slice(i + 1).replace(',', '.'));
+  return { label: t.slice(0, i).trim(), sudut: isFinite(a) ? a : 0 };
+}
+
+// Gaya luar yang ditarikkan pada kotak berpusat (cx,cy): panah keluar dari tepi
+// kotak ke arah gaya, labelnya di ujung panah.
+function gayaLuarSVG(raw, cx, cy, setengah, b, panjang) {
+  const g = parseGayaLuar(raw);
+  if (!g) return '';
+  const rad = (g.sudut * Math.PI) / 180, dx = Math.cos(rad), dy = -Math.sin(rad);
+  const k = setengah / Math.max(Math.abs(dx), Math.abs(dy), 1e-6);
+  const x1 = cx + dx * k, y1 = cy + dy * k, L = panjang || 42, x2 = x1 + dx * L, y2 = y1 + dy * L;
+  let s = arrowSVG(x1, y1, x2, y2, { strokeWidth: 1.6, headLen: 8 });
+  b.titik(x1, y1); b.titik(x2, y2);
+  if (g.label) {
+    const pos = letakTeksLuar(x2, y2, dx, dy, 6, GAYA.teks);
+    s += teksGeoSVG(pos, g.label, GAYA.teks, false, true);
+    b.teks(pos.x, pos.y, g.label, GAYA.teks, pos.anchor);
+  }
+  return s;
+}
+
 // Katrol di meja/bidang miring (sudut=0 -> meja datar) + beban tergantung.
 // Benda A di atas permukaan (meja/bidang miring), tali lewat katrol di ujung
 // atas permukaan itu, lalu tegak lurus turun ke benda B yang menggantung.
@@ -3370,8 +3406,8 @@ function katrolSVG(cx, cy, r) {
 function renderInclinePulleySVG(cfg) {
   const sudutDerajat = numOrDefault(cfg.sudut, 30);
   const rad = (sudutDerajat * Math.PI) / 180;
-  const labelAtas = String(cfg.labelAtas || 'A').trim();
-  const labelBawah = String(cfg.labelBawah || 'B').trim();
+  const labelAtas = namaBenda(cfg.labelAtas || 'A');
+  const labelBawah = namaBenda(cfg.labelBawah || 'B');
   const massaAtas = cfg.massaAtas != null ? String(cfg.massaAtas).trim() : '';
   const massaBawah = cfg.massaBawah != null ? String(cfg.massaBawah).trim() : '';
   const licin = String(cfg.licin || 'ya').toLowerCase() !== 'tidak';
@@ -3412,8 +3448,10 @@ function renderInclinePulleySVG(cfg) {
   isi += kotakBendaSVG(pusatA[0], pusatA[1], boxA, boxA, labelAtas, -sudutDerajat);
   b.titik(pusatA[0] + normalA[0] * boxA, pusatA[1] + normalA[1] * boxA);
   b.titik(pusatA[0] - normalA[0] * boxA * 0.3, pusatA[1] - normalA[1] * boxA * 0.3);
+  isi += gayaLuarSVG(cfg.gayaluar, pusatA[0], pusatA[1], boxA / 2, b);
   if (massaAtas) {
-    const posM = letakTeksLuar(pusatA[0], pusatA[1], -normalA[1], normalA[0], boxA / 2 + 10);
+    // di sisi menjauhi permukaan (normal), bukan ke arah katrol: di sana ada tali
+    const posM = letakTeksLuar(pusatA[0], pusatA[1], normalA[0], normalA[1], boxA / 2 + 6);
     isi += teksGeoSVG(posM, `${labelAtas} = ${massaAtas} kg`, GAYA.teks);
     b.teks(posM.x, posM.y, `${labelAtas} = ${massaAtas} kg`, GAYA.teks, posM.anchor);
   }
@@ -3433,6 +3471,19 @@ function renderInclinePulleySVG(cfg) {
     b.teks(posM.x, posM.y, `${labelBawah} = ${massaBawah} kg`, GAYA.teks, posM.anchor);
   }
 
+  // tinggi=10 m: jarak beban yang menggantung ke lantai (meja datar saja).
+  if (cfg.tinggi && sudutDerajat === 0) {
+    const bawahB = pusatB[1] + boxB / 2, lantai = bawahB + 46, xd = pusatB[0] - boxB / 2 - 14;
+    isi += `<line x1="${(pusatB[0] - 70).toFixed(1)}" y1="${lantai.toFixed(1)}" x2="${(pusatB[0] + 70).toFixed(1)}" y2="${lantai.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    isi += arsirTumpuanSVG(pusatB[0] - 70, lantai, pusatB[0] + 70, lantai, 0, 1);
+    const tengah = (bawahB + lantai) / 2;
+    isi += arrowSVG(xd, tengah, xd, lantai, { headLen: 6, strokeWidth: 1.2 }) + arrowSVG(xd, tengah, xd, bawahB, { headLen: 6, strokeWidth: 1.2 });
+    const posH = { x: xd - 6, y: tengah + 4, anchor: 'end' };
+    isi += teksGeoSVG(posH, String(cfg.tinggi), GAYA.teks, false, true);
+    b.teks(posH.x, posH.y, String(cfg.tinggi), GAYA.teks, 'end');
+    b.titik(pusatB[0] - 70, lantai + 10); b.titik(pusatB[0] + 70, lantai + 10);
+  }
+
   if (licin) {
     // Ditaruh di seperempat pertama lereng (dekat dasar), menjauhi benda A
     // yang duduk di tengah lereng supaya labelnya tidak bertumpuk.
@@ -3450,8 +3501,8 @@ function renderInclinePulleySVG(cfg) {
 // diabaikan), dua beban P/Q tergantung simetris di kedua ujung talinya —
 // beda dari katrol+bidang miring di atas yang salah satu sisinya mendatar.
 function renderAtwoodSVG(cfg) {
-  const labelKiri = String(cfg.labelKiri || 'P').trim();
-  const labelKanan = String(cfg.labelKanan || 'Q').trim();
+  const labelKiri = namaBenda(cfg.labelKiri || 'P');
+  const labelKanan = namaBenda(cfg.labelKanan || 'Q');
   const massaKiri = cfg.massaKiri != null ? String(cfg.massaKiri).trim() : '';
   const massaKanan = cfg.massaKanan != null ? String(cfg.massaKanan).trim() : '';
   const taliKiri = String(cfg.labelTaliKiri || 'T1').trim();
@@ -3489,6 +3540,11 @@ function renderAtwoodSVG(cfg) {
   isi += kotakBendaSVG(xKanan, yBeban + boxSisi / 2, boxSisi, boxSisi, labelKanan, 0);
   b.titik(xKiri - boxSisi / 2 - 50, yBeban + boxSisi);
   b.titik(xKanan + boxSisi / 2 + 50, yBeban + boxSisi);
+  // gayaluar=label:sudut — gaya luar pada beban kanan (gayapada=kiri untuk beban kiri).
+  if (cfg.gayaluar) {
+    const kiri = String(cfg.gayapada || 'kanan').toLowerCase() === 'kiri';
+    isi += gayaLuarSVG(cfg.gayaluar, kiri ? xKiri : xKanan, yBeban + boxSisi / 2, boxSisi / 2, b);
+  }
   if (massaKiri) {
     const pos = letakTeksLuar(xKiri, yBeban + boxSisi / 2, -1, 0, boxSisi / 2 + 8);
     isi += teksGeoSVG(pos, `${labelKiri} = ${massaKiri} kg`, GAYA.teks);
@@ -3509,8 +3565,8 @@ function renderAtwoodSVG(cfg) {
 // noninersial. Lift digambar sebagai bingkai sederhana, panah percepatan di
 // luar bingkai supaya tidak tertukar dengan tali di dalamnya.
 function renderLiftSVG(cfg) {
-  const labelAtas = String(cfg.labelAtas || 'A').trim();
-  const labelBawah = String(cfg.labelBawah || 'B').trim();
+  const labelAtas = namaBenda(cfg.labelAtas || 'A');
+  const labelBawah = namaBenda(cfg.labelBawah || 'B');
   const massaAtas = cfg.massaAtas != null ? String(cfg.massaAtas).trim() : '';
   const massaBawah = cfg.massaBawah != null ? String(cfg.massaBawah).trim() : '';
   const arah = String(cfg.arah || 'atas').toLowerCase() === 'bawah' ? 'bawah' : 'atas';
@@ -3560,30 +3616,39 @@ function renderLiftSVG(cfg) {
 // (T1, T2, ...) berurutan, ditarik satu gaya F di ujung paling kanan — pola
 // khas soal "tiga balok dihubungkan tali, hitung percepatan & tegangan".
 function renderBeratBerurutanSVG(cfg) {
-  const massa = String(cfg.massa || 'm1:2,m2:3,m3:5').split(',').map((s) => s.trim()).filter(Boolean)
+  const daftar = String(cfg.massa || 'm1:2,m2:3,m3:5').split(',').map((s) => s.trim()).filter(Boolean)
     .map((tok) => { const bits = tok.split(':').map((s) => s.trim()); return { label: bits[0], nilai: bits[1] }; });
   const labelGaya = String(cfg.gaya || 'F').trim();
   const licin = String(cfg.licin || 'ya').toLowerCase() !== 'tidak';
+  // sisi=kanan (default): balok PERTAMA di daftar dikenai gaya tarik dan duduk
+  // paling dekat F di kanan; sisi=kiri: gaya mendorong dari kiri. sudut = arah
+  // gaya (0 mendatar, 37 ke atas-kanan, -37 ke bawah-kanan). kontak=ya: balok
+  // berimpitan tanpa tali.
+  const dariKiri = String(cfg.sisi || 'kanan').toLowerCase() === 'kiri';
+  const kontak = /^(ya|true|1)$/i.test(String(cfg.kontak || ''));
+  const sudutF = numOrDefault(cfg.sudut, 0);
+  const massa = dariKiri ? daftar : daftar.slice().reverse();
 
-  const groundY = 90, boxSisi = 40, gap = 70, mulaiX = 50;
+  const groundY = 110, boxSisi = 40, gap = kontak ? boxSisi : 70, mulaiX = dariKiri ? 120 : 50;
+  const panjangF = 56;
   const b = kotakBatas();
   let isi = '';
 
   const xs = massa.map((_, i) => mulaiX + i * gap);
-  const akhirX = xs[xs.length - 1] + boxSisi / 2 + 60;
-  isi += `<line x1="${(mulaiX - 30).toFixed(1)}" y1="${groundY.toFixed(1)}" x2="${akhirX.toFixed(1)}" y2="${groundY.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
-  isi += arsirTumpuanSVG(mulaiX - 30, groundY, akhirX, groundY, 0, 1);
-  b.titik(mulaiX - 30, groundY + 10); b.titik(akhirX, groundY + 10);
+  const kiriX = xs[0] - boxSisi / 2 - (dariKiri ? 78 : 30), kananX = xs[xs.length - 1] + boxSisi / 2 + (dariKiri ? 30 : 78);
+  isi += `<line x1="${kiriX.toFixed(1)}" y1="${groundY.toFixed(1)}" x2="${kananX.toFixed(1)}" y2="${groundY.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+  isi += arsirTumpuanSVG(kiriX, groundY, kananX, groundY, 0, 1);
+  b.titik(kiriX, groundY + 10); b.titik(kananX, groundY + 10);
 
   const cy = groundY - boxSisi / 2;
   massa.forEach((m, i) => {
-    isi += kotakBendaSVG(xs[i], cy, boxSisi, boxSisi, m.label, 0);
+    isi += kotakBendaSVG(xs[i], cy, boxSisi, boxSisi, namaBenda(m.label), 0);
     if (m.nilai) {
       const pos = letakTeksLuar(xs[i], cy, 0, -1, boxSisi / 2 + 8);
       isi += teksGeoSVG(pos, `${m.nilai} kg`, GAYA.teksKecil);
       b.teks(pos.x, pos.y, `${m.nilai} kg`, GAYA.teksKecil, pos.anchor);
     }
-    if (i < massa.length - 1) {
+    if (i < massa.length - 1 && !kontak) {
       const x1 = xs[i] + boxSisi / 2, x2 = xs[i + 1] - boxSisi / 2;
       isi += `<line x1="${x1.toFixed(1)}" y1="${cy.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${cy.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
       const pos = letakTeksLuar((x1 + x2) / 2, cy, 0, -1, 7);
@@ -3592,14 +3657,22 @@ function renderBeratBerurutanSVG(cfg) {
     }
   });
 
-  const xUjung = xs[xs.length - 1] + boxSisi / 2;
-  isi += arrowSVG(xUjung, cy, akhirX - 10, cy, { headLen: 9, strokeWidth: 1.8 });
-  const posF = letakTeksLuar((xUjung + akhirX - 10) / 2, cy, 0, -1, 9);
-  isi += teksGeoSVG(posF, labelGaya, GAYA.teks, true);
+  const rad = (sudutF * Math.PI) / 180, dx = Math.cos(rad), dy = -Math.sin(rad);
+  let x1, y1, x2, y2;
+  if (dariKiri) {                      // dorong: ujung panah menyentuh sisi kiri balok pertama
+    x2 = xs[0] - boxSisi / 2; y2 = cy; x1 = x2 - dx * panjangF; y1 = y2 - dy * panjangF;
+  } else {                             // tarik: pangkal panah di sisi kanan balok pertama
+    x1 = xs[xs.length - 1] + boxSisi / 2; y1 = cy; x2 = x1 + dx * panjangF; y2 = y1 + dy * panjangF;
+  }
+  isi += arrowSVG(x1, y1, x2, y2, { headLen: 9, strokeWidth: 1.8 });
+  b.titik(x1, y1); b.titik(x2, y2);
+  const ujung = dariKiri ? [x1, y1, -dx, -dy] : [x2, y2, dx, dy];
+  const posF = letakTeksLuar(ujung[0], ujung[1], ujung[2], ujung[3], 8, GAYA.teks);
+  isi += teksGeoSVG(posF, labelGaya, GAYA.teks, true, true);
   b.teks(posF.x, posF.y, labelGaya, GAYA.teks, posF.anchor);
 
   if (licin) {
-    const pos = letakTeksLuar(mulaiX - 15, groundY, 0, 1, 14);
+    const pos = letakTeksLuar(kiriX + 15, groundY, 0, 1, 14);
     isi += teksGeoSVG(pos, 'licin', GAYA.teksKecil, true);
     b.teks(pos.x, pos.y, 'licin', GAYA.teksKecil, pos.anchor);
   }
