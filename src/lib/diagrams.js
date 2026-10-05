@@ -2139,7 +2139,7 @@ function susunMolekul(huruf, r) {
 // Model partikel dalam kotak: gas/cairan (molekul tersebar), padatan (kisi rapat
 // di dasar kotak), atau kotak kosong untuk digambar murid. bentuk=huruf menggambar
 // molekul sebagai rumus garis (C—O, O—C—O) dengan unsur=a:C,b:O.
-function renderPartikelSVG(cfg) {
+function kotakPartikel(cfg) {
   const ukuran = String(cfg.kotak || '150x120').split(/[x×]/).map((v) => parseFloat(v));
   const W = ukuran[0] > 30 ? ukuran[0] : 150, H = ukuran[1] > 30 ? ukuran[1] : 120;
   const isi = parseIsiPartikel(cfg.isi);
@@ -2196,16 +2196,53 @@ function renderPartikelSVG(cfg) {
     });
   }
 
-  // legenda=ya: contoh tiap jenis atom di atas kotak ("lingkaran ini mewakili atom berbeda")
-  if (/^(ya|true|1)$/i.test(String(cfg.legenda || '')) && !hurufMode) {
-    const jenis = Object.keys(pakai).sort();
-    const x0 = W / 2 - ((jenis.length - 1) * 26) / 2;
-    jenis.forEach((j, i) => { badan += atomBulatSVG(x0 + i * 26, -14, 8, j); });
-    b.titik(0, -24);
-  }
   if (cfg.label) {
     badan += `<text x="${W / 2}" y="${H + 17}" text-anchor="middle" font-size="${GAYA.teks}" font-weight="700" fill="${GAYA.hitam}">${escText(cfg.label)}</text>`;
     b.titik(W / 2, H + 22);
+  }
+  return { badan, W, H, pakai, b, hurufMode };
+}
+
+// Satu atau banyak kotak. panel=isi=bb:4 // padat=cb:5 // (kosong) menggambar
+// kotak berkisi (kolom=3), otomatis berlabel A, B, C...; legenda=ya menampilkan
+// contoh tiap jenis atom di atasnya.
+function renderPartikelSVG(cfg) {
+  const panelRaw = cfg.panel != null ? String(cfg.panel).split('//').map((x) => x.trim()) : null;
+  const b = kotakBatas();
+  let badan = '';
+  const pakaiSemua = {};
+  let hurufMode = false;
+  if (!panelRaw) {
+    const k = kotakPartikel(cfg);
+    badan += k.badan; Object.assign(pakaiSemua, k.pakai); hurufMode = k.hurufMode;
+    b.titik(k.b.x0, k.b.y0); b.titik(k.b.x1, k.b.y1);
+    var lebarTotal = k.W;
+  } else {
+    const kol = Math.max(1, Math.min(6, parseInt(cfg.kolom, 10) || 3)), gap = 16;
+    const dasar = Object.assign({}, cfg); delete dasar.panel; delete dasar.isi; delete dasar.padat; delete dasar.label; delete dasar.legenda;
+    const huruf = String(cfg.huruf || 'ya').toLowerCase() !== 'tidak';
+    let W0 = 0, H0 = 0;
+    const panels = panelRaw.map((spec, idx) => {
+      const eq = spec.indexOf('=');
+      const sub = Object.assign({}, dasar);
+      if (eq > 0) sub[spec.slice(0, eq).trim()] = spec.slice(eq + 1).trim();
+      if (huruf) sub.label = String.fromCharCode(65 + idx);
+      return kotakPartikel(sub);
+    });
+    panels.forEach((k) => { W0 = Math.max(W0, k.W); H0 = Math.max(H0, k.H); });
+    panels.forEach((k, idx) => {
+      const ox = (idx % kol) * (W0 + gap), oy = Math.floor(idx / kol) * (H0 + 30 + gap);
+      badan += `<g transform="translate(${ox},${oy})">${k.badan}</g>`;
+      b.titik(ox + k.b.x0, oy + k.b.y0); b.titik(ox + k.b.x1, oy + k.b.y1);
+      Object.assign(pakaiSemua, k.pakai); hurufMode = hurufMode || k.hurufMode;
+    });
+    var lebarTotal = Math.min(kol, panels.length) * W0 + (Math.min(kol, panels.length) - 1) * gap;
+  }
+  if (/^(ya|true|1)$/i.test(String(cfg.legenda || '')) && !hurufMode) {
+    const jenis = Object.keys(pakaiSemua).sort();
+    const x0 = lebarTotal / 2 - ((jenis.length - 1) * 26) / 2;
+    jenis.forEach((j, i) => { badan += atomBulatSVG(x0 + i * 26, -14, 8, j); });
+    b.titik(0, -24);
   }
   return bungkusGambarSVG(defsAtom(badan) + badan, b, false);
 }
@@ -8403,6 +8440,9 @@ function renderDiagramTag(rawTagContent, depth) {
     || (LEBAR_ADALAH_UKURAN[type] ? null : params.lebar);
   const widthPt = lebarTampilan ? numOrDefault(lebarTampilan, 260) : null;
   const widthStyle = widthPt ? ` style="max-width:${widthPt}pt"` : '';
+  // penuh=ya (tabel periodik selalu): pada lembar dua kolom, item ini dipasang
+  // selebar halaman, bukan terjepit di satu kolom.
+  const penuh = type === 'tabelperiodik' || /^(ya|true|1)$/i.test(String(params.penuh || ''));
 
   // HTML-rendered types (tables, imported pictures, ruled answer space) —
   // everything below this block builds an <svg> instead.
@@ -8413,7 +8453,7 @@ function renderDiagramTag(rawTagContent, depth) {
   };
   if (HTML_RENDERERS[type]) {
     try {
-      return `<div class="ws-table-wrap"${widthStyle}>${HTML_RENDERERS[type](params)}</div>`;
+      return `<div class="ws-table-wrap${penuh ? ' ws-penuh' : ''}"${widthStyle}>${HTML_RENDERERS[type](params)}</div>`;
     } catch (err) {
       return `<span style="color:#b91c1c;font-size:11px;">[diagram error: ${escText(err.message)}]</span>`;
     }
@@ -8518,7 +8558,7 @@ function renderDiagramTag(rawTagContent, depth) {
     const vb = akar && akar[1].indexOf('style=') < 0 && akar[1].match(/viewBox="0 0 ([\d.]+) [\d.]+"/);
     if (vb) svg = svg.replace('class="ws-diagram-svg"', `class="ws-diagram-svg" style="max-width:min(var(--ws-diagram-width, 260pt), ${Math.round(parseFloat(vb[1]) * 0.9)}pt)"`);
   }
-  return `<div class="ws-diagram">${svg}</div>`;
+  return `<div class="ws-diagram${penuh ? ' ws-penuh' : ''}">${svg}</div>`;
 }
 
 const DIAGRAM_TOKEN_OPEN = 'DG';
