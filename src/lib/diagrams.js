@@ -881,7 +881,7 @@ const GEOMETRY_PRESETS = {
         ],
         polygons: [['A', 'B', 'C', 'D']],
         segments: [
-          { from: 'A', to: 'B', label: `${bawah}` }, { from: 'B', to: 'C', label: '' },
+          { from: 'A', to: 'B', label: `${bawah}` }, { from: 'B', to: 'C', label: p.miring != null ? String(p.miring).trim() : '' },
           { from: 'C', to: 'D', label: `${atas}` }, { from: 'D', to: 'A', label: `${tinggi}` },
         ],
       };
@@ -7703,7 +7703,15 @@ function annotText(x, y, text, anchor) {
     + ` text-anchor="${anchor || 'middle'}">${escText(text)}</text>`;
 }
 
-function applyAnnotations(svg, params) {
+// Angka pertama dari teks anotasi yang cuma berupa besaran ("26 cm", "9", "7,5 m"),
+// atau null untuk teks lain ("sisi miring", "x = ?").
+function kunciBesaran(t) {
+  const x = String(t == null ? '' : t).trim();
+  if (!/^-?\d+(?:[.,]\d+)?\s*[A-Za-zµ²³°%\/]*$/.test(x)) return null;
+  return x.match(/-?\d+(?:[.,]\d+)?/)[0].replace(',', '.');
+}
+
+function applyAnnotations(svg, params, buangGanda) {
   const vb = svg.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/);
   if (!vb) return svg;
   const W = parseFloat(vb[1]), H = parseFloat(vb[2]);
@@ -7711,8 +7719,21 @@ function applyAnnotations(svg, params) {
   const toY = (pct) => (pct / 100) * H;
   let extra = '';
 
+  // Preset bangun sudah mencetak semua sisi yang diberi angka. Anotasi bebas
+  // yang hanya mengulang angka itu (penulis soal lupa) cuma jadi angka nyasar
+  // di tempat tebakan, jadi dibuang.
+  const sudahAda = new Set();
+  if (buangGanda) {
+    (svg.match(/<text[^>]*>[^<]*<\/text>/g) || []).forEach((t) => {
+      const k = kunciBesaran(t.replace(/<[^>]*>/g, ''));
+      if (k !== null) sudahAda.add(k);
+    });
+  }
   parseAnnotPoints(params.teks).forEach((a) => {
-    if (a.text) extra += annotText(toX(a.x), toY(a.y), a.text);
+    if (!a.text) return;
+    const k = kunciBesaran(a.text);
+    if (k !== null && sudahAda.has(k)) return;
+    extra += annotText(toX(a.x), toY(a.y), a.text);
   });
 
   parseAnnotSegments(params.panah).forEach((a) => {
@@ -8135,7 +8156,7 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'batangdaun') svg = renderStemLeafSVG(params);
     // Labels, arrows and dimension lines the author placed by hand, drawn
     // over whichever diagram was just built (see applyAnnotations).
-    if (svg && hasAnnotations(params)) svg = applyAnnotations(svg, params);
+    if (svg && hasAnnotations(params)) svg = applyAnnotations(svg, params, type === 'bangun');
     svg = rapikanSVG(svg);
   } catch (err) {
     return `<span style="color:#b91c1c;font-size:11px;">[diagram error: ${escText(err.message)}]</span>`;
