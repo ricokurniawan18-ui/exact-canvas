@@ -2077,6 +2077,167 @@ function renderParallelLinesSVG(cfg) {
   return bungkusGambarSVG(isi, b, adaLabel);
 }
 
+// ---------------------------------------------------------------------
+// 2e. Sketsa geometri bebas (segitiga + garis sejajar, sudut pada garis
+// lurus, garis sejajar + transversal, ... — bentuk apa pun dari koordinat)
+// ---------------------------------------------------------------------
+
+// "A-B-C-A, D-E" -> [['A','B'],['B','C'],['C','A'],['D','E']] (rangkaian dipecah jadi sisi).
+function parseSisiSketsa(raw) {
+  const out = [];
+  String(raw || '').split(/[,|]/).forEach((chunk) => {
+    const n = chunk.split('-').map((s) => s.trim()).filter(Boolean);
+    for (let i = 0; i + 1 < n.length; i++) out.push([n[i], n[i + 1]]);
+  });
+  return out;
+}
+
+// "D-E,A-B|P-Q" -> [[['D','E'],['A','B']], [['P','Q']]] (kelompok dipisah "|").
+function parseKelompokSisi(raw) {
+  return String(raw || '').split('|').map((g) => parseSisiSketsa(g)).filter((g) => g.length);
+}
+
+// "B-A-C:63, D-E:15 cm" -> [{ kunci:['B','A','C'], teks:'63' }, ...]. Pemisah "|"
+// kalau ada (supaya koma desimal aman), kalau tidak koma.
+function parseEntriSketsa(raw) {
+  const s = String(raw || '');
+  return s.split(s.indexOf('|') > -1 ? '|' : ',').map((e) => e.trim()).filter(Boolean).map((e) => {
+    const i = e.indexOf(':');
+    const kunci = (i < 0 ? e : e.slice(0, i)).split('-').map((x) => x.trim());
+    return { kunci, teks: i < 0 ? '' : e.slice(i + 1).trim() };
+  });
+}
+
+// Nilai sudut: angka atau angka+huruf ("63", "14x", "x") otomatis diberi °;
+// "?" dan ungkapan yang sudah memuat ° atau operator ditulis apa adanya.
+function teksSudutSketsa(t) {
+  return /^-?[\d.,]*[a-zA-Z]?$/.test(t) && t !== '' ? t + '°' : t;
+}
+
+function renderSketsaSVG(cfg) {
+  const semua = parseVertexList(cfg.titik);
+  const pts = semua.length ? semua : [{ name: 'A', x: 0, y: 0 }, { name: 'B', x: 10, y: 0 }, { name: 'C', x: 5, y: 8 }];
+  const areaW = 260, areaH = 200;
+  const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  const skala = Math.min(areaW / Math.max(maxX - minX, 1e-6), areaH / Math.max(maxY - minY, 1e-6));
+  const px = {};
+  pts.forEach((p) => { px[p.name] = [(p.x - minX) * skala, (maxY - p.y) * skala]; });
+  const ada = (n) => px[n] !== undefined;
+
+  const garis = parseSisiSketsa(cfg.garis).filter((s) => ada(s[0]) && ada(s[1]));
+  const putus = parseSisiSketsa(cfg.putus).filter((s) => ada(s[0]) && ada(s[1]));
+  const sinar = parseSisiSketsa(cfg.sinar).filter((s) => ada(s[0]) && ada(s[1]));
+  const b = kotakBatas();
+  let isi = '';
+  const garisSVG = (p, q, dash) => `<line x1="${p[0].toFixed(1)}" y1="${p[1].toFixed(1)}" x2="${q[0].toFixed(1)}" y2="${q[1].toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}" stroke-linecap="round"${dash ? ` stroke-dasharray="${GAYA.putus}"` : ''}/>`;
+  garis.forEach((s) => { isi += garisSVG(px[s[0]], px[s[1]], false); });
+  putus.forEach((s) => { isi += garisSVG(px[s[0]], px[s[1]], true); });
+  sinar.forEach((s) => { isi += arrowSVG(px[s[0]][0], px[s[0]][1], px[s[1]][0], px[s[1]][1], { headLen: 8, strokeWidth: GAYA.garis }); });
+  pts.forEach((p) => b.titik(px[p.name][0], px[p.name][1]));
+  const sisiSemua = garis.concat(putus, sinar);
+
+  // Tanda sejajar (> berulang per kelompok) dan sama panjang (garis kecil).
+  // Sisi satu kelompok diarahkan sama (ke kanan, atau ke atas bila tegak)
+  // supaya mata panahnya searah.
+  parseKelompokSisi(cfg.sejajar).forEach((kel, gi) => {
+    kel.forEach((s) => {
+      if (!ada(s[0]) || !ada(s[1])) return;
+      let p = px[s[0]], q = px[s[1]];
+      if (q[0] < p[0] - 1e-6 || (Math.abs(q[0] - p[0]) < 1e-6 && q[1] > p[1])) { const t = p; p = q; q = t; }
+      isi += panahSejajarSVG(p[0], p[1], q[0], q[1], gi + 1);
+    });
+  });
+  parseKelompokSisi(cfg.sama).forEach((kel, gi) => {
+    kel.forEach((s) => { if (ada(s[0]) && ada(s[1])) isi += tickSisiSVG(px[s[0]][0], px[s[0]][1], px[s[1]][0], px[s[1]][1], gi + 1); });
+  });
+  parseEntriSketsa(cfg.siku).forEach((e) => {
+    const [a, v, c] = e.kunci;
+    if (ada(a) && ada(v) && ada(c)) isi += rightAngleSVG(px[v][0], px[v][1], px[a][0], px[a][1], px[c][0], px[c][1], 9);
+  });
+
+  // Kotak teks yang sudah terpakai: huruf berikutnya menghindarinya.
+  const terpakai = [];
+  const kotak = (x, y, t, size, anchor) => {
+    const w = lebarTeksKira(t, size), x1 = anchor === 'end' ? x - w : anchor === 'start' ? x : x - w / 2;
+    return { x1: x1 - 1.5, x2: x1 + w + 1.5, y1: y - size * 0.85, y2: y + size * 0.3 };
+  };
+  const bentrok = (k) => terpakai.some((o) => k.x1 < o.x2 && k.x2 > o.x1 && k.y1 < o.y2 && k.y2 > o.y1);
+  const pusat = pts.reduce((s, p) => [s[0] + px[p.name][0] / pts.length, s[1] + px[p.name][1] / pts.length], [0, 0]);
+  const taruh = (cands, t, size, italic) => {
+    let pilih = null;
+    for (const c of cands) {
+      const k = kotak(c.x, c.y, t, size, c.anchor);
+      if (!pilih) pilih = { c, k };
+      if (!bentrok(k)) { pilih = { c, k }; break; }
+    }
+    terpakai.push(pilih.k);
+    isi += teksGeoSVG(pilih.c, t, size, italic, true);
+    b.teks(pilih.c.x, pilih.c.y, t, size, pilih.c.anchor);
+  };
+
+  // Busur sudut: label di garis bagi, di luar busur; sudut sempit memakai busur lebih besar.
+  parseEntriSketsa(cfg.sudut).forEach((e) => {
+    const [a, v, c] = e.kunci;
+    if (!ada(a) || !ada(v) || !ada(c)) return;
+    const [vx, vy] = px[v], [ax, ay] = px[a], [cx, cy] = px[c];
+    const a1 = Math.atan2(ay - vy, ax - vx);
+    let d = Math.atan2(cy - vy, cx - vx) - a1;
+    while (d <= -Math.PI) d += 2 * Math.PI;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    const r = Math.abs(d) < 0.8 ? 24 : 17;
+    isi += angleArcSVG(vx, vy, vx + Math.cos(a1) * 40, vy + Math.sin(a1) * 40, vx + Math.cos(a1 + d) * 40, vy + Math.sin(a1 + d) * 40, r, '');
+    if (e.teks) {
+      const t = teksSudutSketsa(e.teks), w = lebarTeksKira(t, 11);
+      const mid = a1 + d / 2;
+      const cands = [0, 8, 16].map((extra) => {
+        const jarak = r + 5 + extra + w * 0.5 * Math.abs(Math.cos(mid)) + 5 * Math.abs(Math.sin(mid));
+        return { x: vx + jarak * Math.cos(mid), y: vy + jarak * Math.sin(mid) + 3.8, anchor: 'middle' };
+      });
+      taruh(cands, t, 11, false);
+    }
+  });
+
+  // Panjang sisi: di sisi luar (menjauhi pusat gambar); awalan "~" membalik sisinya.
+  parseEntriSketsa(cfg.label).forEach((e) => {
+    const [a, c] = e.kunci;
+    if (!ada(a) || !ada(c) || !e.teks) return;
+    const flip = e.teks[0] === '~';
+    const t = flip ? e.teks.slice(1).trim() : e.teks;
+    const [x1, y1] = px[a], [x2, y2] = px[c];
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2, len = Math.hypot(x2 - x1, y2 - y1) || 1;
+    let nx = -(y2 - y1) / len, ny = (x2 - x1) / len;
+    const arah = nx * (mx - pusat[0]) + ny * (my - pusat[1]);
+    if (arah < 0 || (Math.abs(arah) < 1 && ny > 0)) { nx = -nx; ny = -ny; }
+    if (flip) { nx = -nx; ny = -ny; }
+    const cands = [1, -1].map((sg) => letakTeksLuar(mx, my, nx * sg, ny * sg, 7, 11.5));
+    taruh(cands, t, 11.5, false);
+  });
+
+  // Huruf titik: menjauhi sisi-sisi yang bertemu di titik itu; bentrok -> diputar.
+  pts.forEach((p) => {
+    if (/^[._]/.test(p.name)) return;
+    const [x, y] = px[p.name];
+    let sx = 0, sy = 0;
+    sisiSemua.forEach((s) => {
+      const lain = s[0] === p.name ? s[1] : s[1] === p.name ? s[0] : null;
+      if (lain === null) return;
+      const d = Math.hypot(px[lain][0] - x, px[lain][1] - y) || 1;
+      sx += (px[lain][0] - x) / d; sy += (px[lain][1] - y) / d;
+    });
+    let ux = -sx, uy = -sy, m = Math.hypot(ux, uy);
+    if (m < 0.35) { ux = x - pusat[0]; uy = y - pusat[1]; m = Math.hypot(ux, uy); if (m < 1e-6) { ux = 0; uy = -1; m = 1; } }
+    ux /= m; uy /= m;
+    const cands = [0, 45, -45, 90, -90, 135, -135, 180].map((deg) => {
+      const r = (deg * Math.PI) / 180;
+      return letakTeksLuar(x, y, ux * Math.cos(r) - uy * Math.sin(r), ux * Math.sin(r) + uy * Math.cos(r), 7, 12.5);
+    });
+    taruh(cands, p.name, 12.5, true);
+  });
+
+  return bungkusGambarSVG(isi, b, false);
+}
+
 function renderAngleSVG(cfg) {
   return cfg.mode === 'sejajar' ? renderParallelLinesSVG(cfg) : renderPolygonAngleSVG(cfg);
 }
@@ -7530,6 +7691,7 @@ const DIAGRAM_TYPE_ALIASES = {
   pesawatsederhana: 'pesawatsederhana', simplemachine: 'pesawatsederhana',
   tatasurya: 'tatasurya', solarsystem: 'tatasurya',
   magnet: 'magnet',
+  sketsa: 'sketsa', sketsabebas: 'sketsa', geometribebas: 'sketsa',
   transformasi: 'transformasi', transformation: 'transformasi',
   pohonpeluang: 'pohonpeluang', treediagram: 'pohonpeluang', peluang: 'pohonpeluang',
   vektor: 'vektor', vector: 'vektor',
@@ -7663,6 +7825,7 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'piktogram') svg = renderPictogramSVG(params);
     else if (type === 'bangunruang') svg = renderSolidSVG(params);
     else if (type === 'sudut') svg = renderAngleSVG(params);
+    else if (type === 'sketsa') svg = renderSketsaSVG(params);
     else if (type === 'lewis') svg = renderLewisSVG(params);
     else if (type === 'hidrokarbon') svg = renderHydrocarbonSVG(params);
     else if (type === 'gaya') svg = renderForceDiagramSVG(params);
