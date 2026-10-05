@@ -2078,6 +2078,270 @@ function renderParallelLinesSVG(cfg) {
 }
 
 // ---------------------------------------------------------------------
+// Kimia partikel: model partikel dalam kotak, diagram molekul berarsir,
+// tabel periodik (gaya naskah Cambridge/IGCSE)
+// ---------------------------------------------------------------------
+
+// Jenis atom a-e dibedakan lewat ISIAN, bukan warna (tetap terbaca saat
+// difotokopi hitam-putih): a putih, b abu-abu, c hitam, d garis tegak, e titik.
+// Pola isian dimuat hanya bila dipakai atom di gambar itu.
+function defsAtom(badan) {
+  const g = badan.indexOf('wsAtomGaris') > -1, t = badan.indexOf('wsAtomTitik') > -1;
+  if (!g && !t) return '';
+  return '<defs>'
+    + (g ? `<pattern id="wsAtomGaris" width="3.2" height="3.2" patternUnits="userSpaceOnUse"><rect width="3.2" height="3.2" fill="#ffffff"/><line x1="1.6" y1="0" x2="1.6" y2="3.2" stroke="#000000" stroke-width="1.4"/></pattern>` : '')
+    + (t ? `<pattern id="wsAtomTitik" width="5" height="5" patternUnits="userSpaceOnUse"><rect width="5" height="5" fill="#ffffff"/><circle cx="2.5" cy="2.5" r="1.1" fill="#000000"/></pattern>` : '')
+    + '</defs>';
+}
+const ISIAN_ATOM = { a: '#ffffff', b: '#c4c4c4', c: '#111111', d: 'url(#wsAtomGaris)', e: 'url(#wsAtomTitik)' };
+
+function atomBulatSVG(x, y, r, jenis) {
+  const isi = ISIAN_ATOM[jenis] || ISIAN_ATOM.a;
+  return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" fill="${isi}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+}
+
+// Pengacak deterministik: gambar yang sama untuk teks yang sama, di layar maupun cetak.
+function acakTetap(seed) {
+  let h = 2166136261;
+  String(seed).split('').forEach((c) => { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); });
+  return function () {
+    h += 0x6D2B79F5; let t = h;
+    t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// "aa:3,ab:2,a:4" -> [{ huruf:'aa', n:3 }, ...]
+function parseIsiPartikel(raw) {
+  return String(raw || '').split(',').map((s) => s.trim()).filter(Boolean).map((tok) => {
+    const bits = tok.split(':');
+    return { huruf: (bits[0] || '').toLowerCase().replace(/[^a-e]/g, ''), n: Math.max(1, Math.min(40, parseInt(bits[1], 10) || 1)) };
+  }).filter((m) => m.huruf);
+}
+
+// Posisi atom satu molekul (pusat di 0,0), jarak antar atom d = 2r (bersentuhan).
+// Tiga huruf: kalau huruf pertama = ketiga, linear dengan huruf tengah di pusat
+// (bab = CO2); selain itu huruf pertama di pusat dan dua lainnya menekuk (abb = air).
+function susunMolekul(huruf, r) {
+  const d = 2 * r, n = huruf.length;
+  if (n === 1) return [{ j: huruf[0], x: 0, y: 0 }];
+  if (n === 2) return [{ j: huruf[0], x: -r, y: 0 }, { j: huruf[1], x: r, y: 0 }];
+  if (n === 3 && huruf[0] === huruf[2]) return [{ j: huruf[0], x: -d, y: 0 }, { j: huruf[1], x: 0, y: 0 }, { j: huruf[2], x: d, y: 0 }];
+  if (n === 3) {
+    const a = (52 * Math.PI) / 180;
+    return [{ j: huruf[0], x: -d * 0.35, y: 0 }, { j: huruf[1], x: d * Math.cos(a) - d * 0.35, y: -d * Math.sin(a) }, { j: huruf[2], x: d * Math.cos(a) - d * 0.35, y: d * Math.sin(a) }];
+  }
+  const out = [{ j: huruf[0], x: 0, y: 0 }];
+  for (let i = 1; i < n; i++) { const a = (2 * Math.PI * (i - 1)) / (n - 1); out.push({ j: huruf[i], x: d * Math.cos(a), y: d * Math.sin(a) }); }
+  return out;
+}
+
+// Model partikel dalam kotak: gas/cairan (molekul tersebar), padatan (kisi rapat
+// di dasar kotak), atau kotak kosong untuk digambar murid. bentuk=huruf menggambar
+// molekul sebagai rumus garis (C—O, O—C—O) dengan unsur=a:C,b:O.
+function renderPartikelSVG(cfg) {
+  const ukuran = String(cfg.kotak || '150x120').split(/[x×]/).map((v) => parseFloat(v));
+  const W = ukuran[0] > 30 ? ukuran[0] : 150, H = ukuran[1] > 30 ? ukuran[1] : 120;
+  const isi = parseIsiPartikel(cfg.isi);
+  const padat = String(cfg.padat || '').split(':');
+  const polaPadat = (padat[0] || '').toLowerCase().replace(/[^a-e]/g, '');
+  const hurufMode = /^huruf|stick|rumus/i.test(String(cfg.bentuk || ''));
+  const unsur = parseLabelMap(cfg.unsur);
+  const pakai = {};
+  const b = kotakBatas();
+  let badan = '';
+
+  badan += `<rect x="0" y="0" width="${W}" height="${H}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+  b.titik(0, 0); b.titik(W, H);
+
+  if (polaPadat) {
+    const baris = Math.max(1, Math.min(12, parseInt(padat[1], 10) || 4)), r = 9.5;
+    const kolom = Math.floor((W - 6) / (2 * r));
+    const x0 = (W - kolom * 2 * r) / 2 + r;
+    for (let br = 0; br < baris; br++) {
+      const y = H - 4 - r - br * r * Math.sqrt(3);
+      const geser = br % 2 ? r : 0;
+      for (let k = 0; k < kolom; k++) {
+        const x = x0 + k * 2 * r + geser;
+        if (x + r > W - 2) continue;
+        const j = polaPadat[(k + br) % polaPadat.length];
+        pakai[j] = true;
+        badan += atomBulatSVG(x, y, r, j);
+      }
+    }
+  } else if (isi.length) {
+    const daftar = [];
+    isi.forEach((m) => { for (let i = 0; i < m.n; i++) daftar.push(m.huruf); });
+    const acak = acakTetap(String(cfg.isi));
+    // urutan sel diacak supaya jenis berbeda bercampur, bukan berkelompok
+    const n = daftar.length, kolom = Math.max(1, Math.ceil(Math.sqrt((n * W) / H))), baris = Math.ceil(n / kolom);
+    const cw = W / kolom, ch = H / baris;
+    const sel = []; for (let i = 0; i < kolom * baris; i++) sel.push(i);
+    for (let i = sel.length - 1; i > 0; i--) { const j = Math.floor(acak() * (i + 1)); const t = sel[i]; sel[i] = sel[j]; sel[j] = t; }
+    const r = Math.max(5, Math.min(9.5, 0.27 * Math.min(cw, ch)));
+    daftar.forEach((huruf, i) => {
+      const s = sel[i], cx = (s % kolom + 0.5) * cw + (acak() - 0.5) * cw * 0.22, cy = (Math.floor(s / kolom) + 0.5) * ch + (acak() - 0.5) * ch * 0.22;
+      const sudut = acak() * Math.PI * 2, c = Math.cos(sudut), sn = Math.sin(sudut);
+      const atom = susunMolekul(huruf, hurufMode ? 8.5 : r).map((a) => ({ j: a.j, x: cx + a.x * c - a.y * sn, y: cy + a.x * sn + a.y * c }));
+      if (hurufMode) {
+        for (let u = 1; u < atom.length; u++) {
+          const p = hurufMode && atom.length === 3 && huruf[0] !== huruf[2] ? atom[0] : atom[u - 1], q = atom[u];
+          const dx = q.x - p.x, dy = q.y - p.y, L = Math.hypot(dx, dy) || 1, g = 6.5;
+          badan += `<line x1="${(p.x + dx / L * g).toFixed(1)}" y1="${(p.y + dy / L * g).toFixed(1)}" x2="${(q.x - dx / L * g).toFixed(1)}" y2="${(q.y - dy / L * g).toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.1"/>`;
+        }
+        atom.forEach((a) => { pakai[a.j] = true; badan += `<text x="${a.x.toFixed(1)}" y="${(a.y + 4).toFixed(1)}" text-anchor="middle" font-size="12" fill="${GAYA.hitam}">${escText(unsur[a.j] || a.j.toUpperCase())}</text>`; });
+      } else {
+        atom.forEach((a) => { pakai[a.j] = true; badan += atomBulatSVG(a.x, a.y, r, a.j); });
+      }
+    });
+  }
+
+  // legenda=ya: contoh tiap jenis atom di atas kotak ("lingkaran ini mewakili atom berbeda")
+  if (/^(ya|true|1)$/i.test(String(cfg.legenda || '')) && !hurufMode) {
+    const jenis = Object.keys(pakai).sort();
+    const x0 = W / 2 - ((jenis.length - 1) * 26) / 2;
+    jenis.forEach((j, i) => { badan += atomBulatSVG(x0 + i * 26, -14, 8, j); });
+    b.titik(0, -24);
+  }
+  if (cfg.label) {
+    badan += `<text x="${W / 2}" y="${H + 17}" text-anchor="middle" font-size="${GAYA.teks}" font-weight="700" fill="${GAYA.hitam}">${escText(cfg.label)}</text>`;
+    b.titik(W / 2, H + 22);
+  }
+  return bungkusGambarSVG(defsAtom(badan) + badan, b, false);
+}
+
+// Diagram molekul gaya buku (lingkaran saling tumpang tindih, tiap unsur berarsir
+// beda, huruf unsur di luar atom, nama di bawah): rumus=H2O atau NH3,NO.
+const MOLEKUL_PRESET = {
+  NO: [['N', -18, 0], ['O', 18, 0]],
+  H2O: [['H', -27, 0], ['O', 0, 0], ['H', 27, 0]],
+  NH3: [['N', 0, 0], ['H', -27, 6], ['H', 27, 6], ['H', 0, 28]],
+  N2H4: [['N', -17, 0], ['N', 17, 0], ['H', -32, -22], ['H', -32, 22], ['H', 32, -22], ['H', 32, 22]],
+  NO2: [['N', 16, 0], ['O', -6, -25], ['O', -6, 25]],
+  CO2: [['O', -36, 0], ['C', 0, 0], ['O', 36, 0]],
+  CO: [['C', -18, 0], ['O', 18, 0]],
+  CH4: [['C', 0, 0], ['H', -27, 0], ['H', 27, 0], ['H', 0, -27], ['H', 0, 27]],
+  CCl4: [['C', 0, 0], ['Cl', -34, 0], ['Cl', 34, 0], ['Cl', 0, -34], ['Cl', 0, 34]],
+  HCl: [['Cl', -14, 0], ['H', 20, 0]],
+  H2: [['H', -11, 0], ['H', 11, 0]],
+  O2: [['O', -18, 0], ['O', 18, 0]],
+  N2: [['N', -18, 0], ['N', 18, 0]],
+  SO2: [['O', -25, -22], ['S', 0, 0], ['O', 25, -22]],
+  H2S: [['H', -27, 0], ['S', 0, 0], ['H', 27, 0]],
+};
+const JARI_UNSUR = { H: 11, Cl: 20 };
+const ARSIR_UNSUR = { H: 'd', N: 'e', O: 'a', C: 'c', Cl: 'b', S: 'b' };
+
+function renderDiagramMolekulSVG(cfg) {
+  const rumus = String(cfg.rumus || 'H2O').split(',').map((s) => s.trim().replace(/[₀-₉]/g, (c) => String(c.charCodeAt(0) - 8320))).filter(Boolean);
+  const arsir = Object.assign({}, ARSIR_UNSUR, parseLabelMap(cfg.arsir));
+  const tampilHuruf = String(cfg.label || 'ya').toLowerCase() !== 'tidak';
+  const b = kotakBatas();
+  let badan = '', xKiri = 0;
+  const sub = (f) => f.replace(/(\d+)/g, (d) => d.split('').map((c) => SUBSKRIP[c]).join(''));
+  const judul = cfg.judul != null ? String(cfg.judul).split(',').map((s) => s.trim()) : null;
+
+  rumus.forEach((f, idx) => {
+    const atom = MOLEKUL_PRESET[f.toUpperCase()] || MOLEKUL_PRESET[f];
+    if (!atom) return;
+    const pusat = atom.reduce((s, a) => [s[0] + a[1] / atom.length, s[1] + a[2] / atom.length], [0, 0]);
+    const minX = Math.min(...atom.map((a) => a[1] - (JARI_UNSUR[a[0]] || 18))), maxX = Math.max(...atom.map((a) => a[1] + (JARI_UNSUR[a[0]] || 18)));
+    const lebar = maxX - minX + 56, ox = xKiri + 28 - minX, oy = 44;
+    // atom besar dulu, atom kecil (H) di atasnya
+    atom.slice().sort((p, q) => (JARI_UNSUR[q[0]] || 18) - (JARI_UNSUR[p[0]] || 18)).forEach((a) => {
+      const r = JARI_UNSUR[a[0]] || 18;
+      badan += atomBulatSVG(ox + a[1], oy + a[2], r, arsir[a[0]] || 'b');
+      b.titik(ox + a[1] - r, oy + a[2] - r); b.titik(ox + a[1] + r, oy + a[2] + r);
+    });
+    if (tampilHuruf) atom.forEach((a) => {
+      const r = JARI_UNSUR[a[0]] || 18;
+      let dx = a[1] - pusat[0], dy = a[2] - pusat[1], L = Math.hypot(dx, dy);
+      if (L < 4) { dx = 0; dy = 1; L = 1; }
+      const pos = letakTeksLuar(ox + a[1], oy + a[2], dx / L, dy / L, r + 8, 11);
+      badan += teksGeoSVG(pos, a[0], 11, true, true);
+      b.teks(pos.x, pos.y, a[0], 11, pos.anchor);
+    });
+    const nama = judul ? judul[idx] : null;
+    if (nama) {
+      badan += `<text x="${(xKiri + lebar / 2).toFixed(1)}" y="${(oy + 52).toFixed(1)}" text-anchor="middle" font-size="${GAYA.teks}" font-weight="700" fill="${GAYA.hitam}">${escText(sub(nama))}</text>`;
+      b.teks(xKiri + lebar / 2, oy + 52, sub(nama), GAYA.teks, 'middle');
+    }
+    xKiri += lebar;
+  });
+  if (/^(ya|true|1)$/i.test(String(cfg.kotak || ''))) {
+    const w = Math.max(xKiri + 10, 120), h = 110;
+    badan = `<rect x="0" y="0" width="${w}" height="${h}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.4"/>` + `<g transform="translate(${((w - xKiri) / 2).toFixed(1)},${(h / 2 - 44).toFixed(1)})">${badan}</g>`;
+    b.titik(0, 0); b.titik(w, h);
+  }
+  return bungkusGambarSVG(defsAtom(badan) + badan, b, false);
+}
+
+const DATA_UNSUR = 'H hydrogen 1;He helium 4;Li lithium 7;Be beryllium 9;B boron 11;C carbon 12;N nitrogen 14;O oxygen 16;F fluorine 19;Ne neon 20;'
+  + 'Na sodium 23;Mg magnesium 24;Al aluminium 27;Si silicon 28;P phosphorus 31;S sulfur 32;Cl chlorine 35.5;Ar argon 40;K potassium 39;Ca calcium 40;'
+  + 'Sc scandium 45;Ti titanium 48;V vanadium 51;Cr chromium 52;Mn manganese 55;Fe iron 56;Co cobalt 59;Ni nickel 59;Cu copper 64;Zn zinc 65;'
+  + 'Ga gallium 70;Ge germanium 73;As arsenic 75;Se selenium 79;Br bromine 80;Kr krypton 84;Rb rubidium 85;Sr strontium 88;Y yttrium 89;Zr zirconium 91;'
+  + 'Nb niobium 93;Mo molybdenum 96;Tc technetium -;Ru ruthenium 101;Rh rhodium 103;Pd palladium 106;Ag silver 108;Cd cadmium 112;In indium 115;Sn tin 119;'
+  + 'Sb antimony 122;Te tellurium 128;I iodine 127;Xe xenon 131;Cs caesium 133;Ba barium 137;La lanthanum 139;Ce cerium 140;Pr praseodymium 141;Nd neodymium 144;'
+  + 'Pm promethium -;Sm samarium 150;Eu europium 152;Gd gadolinium 157;Tb terbium 159;Dy dysprosium 163;Ho holmium 165;Er erbium 167;Tm thulium 169;Yb ytterbium 173;'
+  + 'Lu lutetium 175;Hf hafnium 178;Ta tantalum 181;W tungsten 184;Re rhenium 186;Os osmium 190;Ir iridium 192;Pt platinum 195;Au gold 197;Hg mercury 201;'
+  + 'Tl thallium 204;Pb lead 207;Bi bismuth 209;Po polonium -;At astatine -;Rn radon -;Fr francium -;Ra radium -;Ac actinium -;Th thorium 232;'
+  + 'Pa protactinium 231;U uranium 238;Np neptunium -;Pu plutonium -;Am americium -;Cm curium -;Bk berkelium -;Cf californium -;Es einsteinium -;Fm fermium -;'
+  + 'Md mendelevium -;No nobelium -;Lr lawrencium -;Rf rutherfordium -;Db dubnium -;Sg seaborgium -;Bh bohrium -;Hs hassium -;Mt meitnerium -;Ds darmstadtium -;'
+  + 'Rg roentgenium -;Cn copernicium -;Nh nihonium -;Fl flerovium -;Mc moscovium -;Lv livermorium -;Ts tennessine -;Og oganesson -';
+
+// Tabel periodik 18 kolom: golongan I-VIII di atas, lantanoid/aktinoid terpisah di
+// bawah. sorot=Na,Cl menggelapkan kotak unsur tertentu; nama=tidak / massa=tidak
+// menyembunyikan teks kecilnya.
+function renderPeriodicTableSVG(cfg) {
+  const unsur = DATA_UNSUR.split(';').map((s, i) => { const [sim, nama, massa] = s.split(' '); return { z: i + 1, sim, nama, massa }; });
+  const per = {}; unsur.forEach((u) => { per[u.sim] = u; });
+  const sorot = String(cfg.sorot || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const tampilNama = String(cfg.nama || 'ya').toLowerCase() !== 'tidak', tampilMassa = String(cfg.massa || 'ya').toLowerCase() !== 'tidak';
+  const baris = [
+    ['H', null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, 'He'],
+    ['Li', 'Be', null, null, null, null, null, null, null, null, null, null, 'B', 'C', 'N', 'O', 'F', 'Ne'],
+    ['Na', 'Mg', null, null, null, null, null, null, null, null, null, null, 'Al', 'Si', 'P', 'S', 'Cl', 'Ar'],
+    'K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr'.split(' '),
+    'Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe'.split(' '),
+    ['Cs', 'Ba', '57–71'].concat('Hf Ta W Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn'.split(' ')),
+    ['Fr', 'Ra', '89–103'].concat('Rf Db Sg Bh Hs Mt Ds Rg Cn Nh Fl Mc Lv Ts Og'.split(' ')),
+  ];
+  const lantanoid = 'La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu'.split(' '), aktinoid = 'Ac Th Pa U Np Pu Am Cm Bk Cf Es Fm Md No Lr'.split(' ');
+  const cw = 31, ch = 38, x0 = 6, yGol = 14, y0 = 24, ykelompok = y0 + 7 * ch + 14;
+  let badan = '';
+  const sel = (x, y, u) => {
+    let s = `<rect x="${x}" y="${y}" width="${cw}" height="${ch}" fill="${sorot.indexOf(u.sim) > -1 ? '#d4d4d4' : '#ffffff'}" stroke="${GAYA.hitam}" stroke-width="0.7"/>`;
+    s += `<text x="${x + 2}" y="${y + 7.5}" font-size="5.6" fill="${GAYA.hitam}">${u.z}</text>`;
+    s += `<text x="${x + cw / 2}" y="${y + 19}" text-anchor="middle" font-size="12.5" fill="${GAYA.hitam}">${escText(u.sim)}</text>`;
+    if (tampilNama) s += `<text x="${x + cw / 2}" y="${y + 27}" text-anchor="middle" font-size="${u.nama.length > 9 ? 4.3 : 5}" fill="${GAYA.hitam}">${escText(u.nama)}</text>`;
+    if (tampilMassa) s += `<text x="${x + cw / 2}" y="${y + 34}" text-anchor="middle" font-size="5.8" fill="${GAYA.hitam}">${escText(u.massa)}</text>`;
+    return s;
+  };
+  ['I', 'II', '', '', '', '', '', '', '', '', '', '', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'].forEach((g, i) => {
+    if (g) badan += `<text x="${x0 + i * cw + cw / 2}" y="${yGol}" text-anchor="middle" font-size="9" font-weight="700" fill="${GAYA.hitam}">${g}</text>`;
+  });
+  baris.forEach((r, ri) => r.forEach((s, ci) => {
+    if (!s) return;
+    const x = x0 + ci * cw, y = y0 + ri * ch;
+    if (per[s]) badan += sel(x, y, per[s]);
+    else badan += `<rect x="${x}" y="${y}" width="${cw}" height="${ch}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="0.7"/><text x="${x + cw / 2}" y="${y + 17}" text-anchor="middle" font-size="6.2" fill="${GAYA.hitam}">${s}</text><text x="${x + cw / 2}" y="${y + 27}" text-anchor="middle" font-size="5" fill="${GAYA.hitam}">${s[0] === '5' ? 'lanthanoids' : 'actinoids'}</text>`;
+  }));
+  [lantanoid, aktinoid].forEach((r, ri) => r.forEach((s, ci) => { badan += sel(x0 + (ci + 3) * cw, ykelompok + ri * ch, per[s]); }));
+  badan += `<text x="${x0 + 2 * cw}" y="${ykelompok + ch / 2 + 4}" text-anchor="end" font-size="8.5" font-weight="700" fill="${GAYA.hitam}">lanthanoids</text>`;
+  badan += `<text x="${x0 + 2 * cw}" y="${ykelompok + ch * 1.5 + 4}" text-anchor="end" font-size="8.5" font-weight="700" fill="${GAYA.hitam}">actinoids</text>`;
+  if (String(cfg.kunci || 'ya').toLowerCase() !== 'tidak') {
+    badan += `<rect x="${x0 + 3 * cw}" y="${y0 + 2}" width="${4.2 * cw}" height="${2.1 * ch}" fill="none" stroke="${GAYA.hitam}" stroke-width="0.8"/>`
+      + `<text x="${x0 + 3 * cw + 6}" y="${y0 + 12}" font-size="8" font-weight="700" fill="${GAYA.hitam}">Key</text>`
+      + `<text x="${x0 + 5.1 * cw}" y="${y0 + 26}" text-anchor="middle" font-size="5.4" fill="${GAYA.hitam}">atomic number</text>`
+      + `<text x="${x0 + 5.1 * cw}" y="${y0 + 42}" text-anchor="middle" font-size="14" font-weight="700" fill="${GAYA.hitam}">atomic symbol</text>`
+      + `<text x="${x0 + 5.1 * cw}" y="${y0 + 52}" text-anchor="middle" font-size="5.4" fill="${GAYA.hitam}">name</text>`
+      + `<text x="${x0 + 5.1 * cw}" y="${y0 + 60}" text-anchor="middle" font-size="5.4" fill="${GAYA.hitam}">relative atomic mass</text>`;
+  }
+  const W = x0 * 2 + 18 * cw, H = ykelompok + 2 * ch + 8;
+  return `<svg class="ws-diagram-svg" style="max-width:100%" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${badan}</svg>`;
+}
+
+// ---------------------------------------------------------------------
 // 2e. Sketsa geometri bebas (segitiga + garis sejajar, sudut pada garis
 // lurus, garis sejajar + transversal, ... — bentuk apa pun dari koordinat)
 // ---------------------------------------------------------------------
@@ -6720,7 +6984,8 @@ function renderTableHTML(cfg) {
   if (cfg.judul) html += `<div class="ws-table-title">${escText(cfg.judul)}</div>`;
   html += '<table class="ws-table">';
   if (headers.length) {
-    html += '<thead><tr>' + headers.map((h) => `<th>${escText(h)}</th>`).join('') + '</tr></thead>';
+    // "element*2" = judul kolom yang membentang dua kolom
+    html += '<thead><tr>' + headers.map((h) => { const m = h.match(/^(.*)\*(\d+)$/); return m ? `<th colspan="${m[2]}">${escText(m[1].trim())}</th>` : `<th>${escText(h)}</th>`; }).join('') + '</tr></thead>';
   }
   html += '<tbody>';
   rows.forEach((r) => {
@@ -8041,6 +8306,8 @@ const DIAGRAM_TYPE_ALIASES = {
   tatasurya: 'tatasurya', solarsystem: 'tatasurya',
   magnet: 'magnet',
   sketsa: 'sketsa', sketsabebas: 'sketsa', geometribebas: 'sketsa',
+  partikel: 'partikel', modelpartikel: 'partikel', diagrammolekul: 'diagrammolekul', molekulpartikel: 'diagrammolekul',
+  tabelperiodik: 'tabelperiodik', sistemperiodik: 'tabelperiodik', periodictable: 'tabelperiodik',
   transformasi: 'transformasi', transformation: 'transformasi',
   pohonpeluang: 'pohonpeluang', treediagram: 'pohonpeluang', peluang: 'pohonpeluang',
   vektor: 'vektor', vector: 'vektor',
@@ -8175,6 +8442,9 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'bangunruang') svg = renderSolidSVG(params);
     else if (type === 'sudut') svg = renderAngleSVG(params);
     else if (type === 'sketsa') svg = renderSketsaSVG(params);
+    else if (type === 'partikel') svg = renderPartikelSVG(params);
+    else if (type === 'diagrammolekul') svg = renderDiagramMolekulSVG(params);
+    else if (type === 'tabelperiodik') svg = renderPeriodicTableSVG(params);
     else if (type === 'lewis') svg = renderLewisSVG(params);
     else if (type === 'hidrokarbon') svg = renderHydrocarbonSVG(params);
     else if (type === 'gaya') svg = renderForceDiagramSVG(params);
