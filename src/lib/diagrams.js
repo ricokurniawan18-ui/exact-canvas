@@ -2379,6 +2379,102 @@ function renderPeriodicTableSVG(cfg) {
 }
 
 // ---------------------------------------------------------------------
+// Alat ukur: jangka sorong (nonius) dan mikrometer sekrup
+// ---------------------------------------------------------------------
+
+// Angka dari teks bersatuan: "24,35 mm" -> 24.35; "2,435 cm" -> 24.35 (mm).
+function angkaMm(t, def) {
+  const x = String(t == null ? '' : t).trim();
+  const v = parseFloat(x.replace(',', '.'));
+  if (!isFinite(v)) return def;
+  return /cm/i.test(x) ? v * 10 : v;
+}
+
+// Pembagian bacaan jangka sorong R (mm) dengan ketelitian ket (mm): skala utama
+// M (mm penuh), N pembagian nonius, dan garis nonius ke-n yang berimpit.
+function bacaanJangka(R, ket) {
+  const N = Math.max(2, Math.round(1 / ket));
+  const bulat = Math.round(R / ket) * ket;
+  const utama = Math.floor(bulat + 1e-9);
+  const n = Math.round((bulat - utama) / ket);
+  return { utama, N, n, nilai: utama + n * ket };
+}
+
+// Bacaan mikrometer sekrup R (mm), ketelitian 0,01 mm: skala utama S (kelipatan
+// 0,5 mm) dan garis selubung T (0-49) yang sejajar garis acuan.
+function bacaanMikrometer(R) {
+  const bulat = Math.round(R * 100) / 100;
+  const S = Math.floor(bulat * 2 + 1e-9) / 2;
+  const T = Math.round((bulat - S) * 100);
+  return T >= 50 ? { S: S + 0.5, T: T - 50, nilai: bulat } : { S, T, nilai: bulat };
+}
+
+function renderAlatUkurSVG(cfg) {
+  const alat = String(cfg.alat || 'jangka').toLowerCase();
+  const mikro = /mikro|screw|sekrup/.test(alat);
+  const b = kotakBatas();
+  let isi = '';
+  const garis = (x1, y1, x2, y2, t) => `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="${t || 0.9}"/>`;
+  const teks = (x, y, t, size, anchor) => { isi += `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anchor || 'middle'}" font-size="${size || 10}" fill="${GAYA.hitam}">${escText(t)}</text>`; b.teks(x, y, String(t), size || 10, anchor || 'middle'); };
+
+  if (!mikro) {
+    const ket = Math.min(0.5, Math.max(0.01, angkaMm(cfg.ketelitian, 0.1)));
+    const R = Math.max(0, angkaMm(cfg.nilai, 24.3));
+    const { utama: M, N, n } = bacaanJangka(R, ket);
+    const Rv = M + n * ket;
+    // jendela skala utama: mulai di kelipatan 5 mm sebelum bacaan, cukup lebar untuk seluruh nonius
+    const ms = Math.max(0, Math.floor((M - 4) / 5) * 5), akhir = Math.max(M + N + 3, ms + 22);
+    const s = Math.min(10, 400 / (akhir - ms)), X0 = 14, Yc = 54;
+    const X = (mm) => X0 + (mm - ms) * s;
+    // batang skala utama (di atas garis) dan badan nonius (di bawah)
+    isi += `<rect x="${X(ms) - 8}" y="${Yc - 40}" width="${(akhir - ms) * s + 16}" height="40" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    b.titik(X(ms) - 8, Yc - 46); b.titik(X(akhir) + 8, Yc + 46);
+    for (let mm = ms; mm <= akhir; mm++) {
+      const p = mm % 10 === 0 ? 14 : mm % 5 === 0 ? 10 : 6;
+      isi += garis(X(mm), Yc, X(mm), Yc - p, mm % 10 === 0 ? 1.1 : 0.8);
+      if (mm % 10 === 0) teks(X(mm), Yc - 19, mm / 10, 10);
+    }
+    const xv0 = X(Rv), panjangV = (N - 1) * s;
+    isi += `<rect x="${(xv0 - 8).toFixed(1)}" y="${Yc}" width="${(panjangV + 16).toFixed(1)}" height="40" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    const labelTiap = N <= 10 ? 1 : N <= 20 ? 2 : 5;      // nomor 0..10 tiap sepersepuluh mm
+    for (let k = 0; k <= N; k++) {
+      const x = xv0 + k * (N - 1) / N * s;
+      const p = k % labelTiap === 0 ? 11 : 7;
+      isi += garis(x, Yc, x, Yc + p, k % labelTiap === 0 ? 1.1 : 0.8);
+      if (k % labelTiap === 0) teks(x, Yc + 23, (k / labelTiap) * (labelTiap === 1 ? 1 : 1), 9);
+    }
+    // ujung kanan: nonius dengan N pembagian memakai N+1 garis; label terakhir = 10
+    return bungkusGambarSVG(isi, b, false);
+  }
+
+  // Mikrometer sekrup
+  const R = Math.max(0, Math.min(25, angkaMm(cfg.nilai, 5.38)));
+  const { S, T } = bacaanMikrometer(R);
+  const s = 15, Yc = 56, ms = Math.max(0, Math.floor(S) - 12), X0 = 10;
+  const X = (mm) => X0 + (mm - ms) * s;
+  const xTepi = X(S);
+  isi += `<rect x="${X0 - 4}" y="${Yc - 32}" width="${(xTepi - X0 + 4).toFixed(1)}" height="56" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+  isi += garis(X0 - 4, Yc, xTepi, Yc, 1.2);
+  b.titik(X0 - 4, Yc - 40); b.titik(xTepi + 112, Yc + 56);
+  for (let h = ms * 2; h <= S * 2; h++) {                  // h = jumlah setengah mm
+    const mm = h / 2, x = X(mm);
+    if (h % 2 === 0) { isi += garis(x, Yc, x, Yc - (mm % 5 === 0 ? 17 : 11), 0.9); if (mm % 5 === 0) teks(x, Yc - 21, mm, 9.5); }
+    else isi += garis(x, Yc, x, Yc + 11, 0.9);
+  }
+  // selubung (thimble): garis acuan sejajar garis skala ke-T; 50 garis, 4,6 px per garis
+  const d = 4.6;
+  isi += `<path d="M${xTepi.toFixed(1)} ${Yc - 46} L${(xTepi + 112).toFixed(1)} ${Yc - 46} L${(xTepi + 112).toFixed(1)} ${Yc + 46} L${xTepi.toFixed(1)} ${Yc + 46} L${(xTepi - 4).toFixed(1)} ${Yc + 38} L${(xTepi - 4).toFixed(1)} ${Yc - 38} Z" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.3" stroke-linejoin="round"/>`;
+  for (let i = T - 9; i <= T + 9; i++) {
+    const y = Yc + (i - T) * d;
+    if (y < Yc - 42 || y > Yc + 42) continue;
+    const idx = ((i % 50) + 50) % 50, besar = idx % 5 === 0;
+    isi += garis(xTepi, y, xTepi + (besar ? 14 : 8), y, besar ? 1.1 : 0.8);
+    if (besar) teks(xTepi + 24, y + 3.5, idx, 9, 'start');
+  }
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// ---------------------------------------------------------------------
 // 2e. Sketsa geometri bebas (segitiga + garis sejajar, sudut pada garis
 // lurus, garis sejajar + transversal, ... — bentuk apa pun dari koordinat)
 // ---------------------------------------------------------------------
@@ -8343,6 +8439,7 @@ const DIAGRAM_TYPE_ALIASES = {
   tatasurya: 'tatasurya', solarsystem: 'tatasurya',
   magnet: 'magnet',
   sketsa: 'sketsa', sketsabebas: 'sketsa', geometribebas: 'sketsa',
+  alatukur: 'alatukur', jangkasorong: 'alatukur', mikrometer: 'alatukur', micrometer: 'alatukur', vernier: 'alatukur',
   partikel: 'partikel', modelpartikel: 'partikel', diagrammolekul: 'diagrammolekul', molekulpartikel: 'diagrammolekul',
   tabelperiodik: 'tabelperiodik', sistemperiodik: 'tabelperiodik', periodictable: 'tabelperiodik',
   transformasi: 'transformasi', transformation: 'transformasi',
@@ -8482,6 +8579,7 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'bangunruang') svg = renderSolidSVG(params);
     else if (type === 'sudut') svg = renderAngleSVG(params);
     else if (type === 'sketsa') svg = renderSketsaSVG(params);
+    else if (type === 'alatukur') svg = renderAlatUkurSVG(params);
     else if (type === 'partikel') svg = renderPartikelSVG(params);
     else if (type === 'diagrammolekul') svg = renderDiagramMolekulSVG(params);
     else if (type === 'tabelperiodik') svg = renderPeriodicTableSVG(params);
@@ -8585,7 +8683,7 @@ if (typeof module !== 'undefined') {
     GAYA, rapikanSVG, satuanALevel, labelSatuan, labelSumbuALevel, sumbuSVG, tidakBerskalaSVG, polaSeri,
     compileExpr, renderFunctionGraphSVG, renderGeometrySVG, renderNumberLineSVG,
     renderVennSVG, renderStatSVG, renderFactorTreeSVG, renderTableHTML,
-    renderPictogramSVG, renderSolidSVG, renderAngleSVG, renderLewisSVG,
+    renderPictogramSVG, renderSolidSVG, renderAngleSVG, renderLewisSVG, renderAlatUkurSVG, bacaanJangka, bacaanMikrometer,
     renderHydrocarbonSVG, renderForceDiagramSVG, renderFoodChainSVG, renderDiagramTag,
     renderMoleculeShapeSVG, renderCellSVG,
     renderGraphPaperSVG, renderBlankTableHTML, renderAnswerLinesHTML,
