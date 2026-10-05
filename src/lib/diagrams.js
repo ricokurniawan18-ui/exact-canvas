@@ -2758,9 +2758,9 @@ const LEWIS_PRESETS = {
   nh3: {
     atoms: [
       { id: 'N', symbol: 'N', x: 0, y: 0, lone: 1 },
-      { id: 'H1', symbol: 'H', x: -1, y: -0.6, lone: 0 },
+      { id: 'H1', symbol: 'H', x: -1, y: 0, lone: 0 },
       { id: 'H2', symbol: 'H', x: 0, y: -1, lone: 0 },
-      { id: 'H3', symbol: 'H', x: 1, y: -0.6, lone: 0 },
+      { id: 'H3', symbol: 'H', x: 1, y: 0, lone: 0 },
     ],
     bonds: [{ a: 'N', b: 'H1', order: 1 }, { a: 'N', b: 'H2', order: 1 }, { a: 'N', b: 'H3', order: 1 }],
   },
@@ -2950,6 +2950,12 @@ function renderLewisSVG(cfg) {
     tanda[a.id] = 1;
   });
 
+  // kosong=ya: hanya kulit dan simbol (murid melengkapi elektronnya).
+  // bebas=tidak: tanpa pasangan bebas. ekstra=ya: satu elektron berlebih di sisi
+  // luar atom tepi. Dua yang terakhir untuk pilihan jawaban pengecoh.
+  const kosong = /^(ya|true|1)$/i.test(String(cfg.kosong || ''));
+  const tanpaBebas = /^(tidak|false|0)$/i.test(String(cfg.bebas || ''));
+  const ekstra = /^(ya|true|1)$/i.test(String(cfg.ekstra || ''));
   let body = '';
   // Kulit terluar dulu supaya elektron tercetak di atas garis lingkaran.
   preset.atoms.forEach((a) => {
@@ -2959,7 +2965,7 @@ function renderLewisSVG(cfg) {
 
   // Pasangan ikatan di daerah tumpang tindih: titik milik atom a, silang
   // milik atom b (atau sebaliknya, mengikuti pewarnaan dua-warna).
-  (preset.bonds || []).forEach((bd) => {
+  (kosong ? [] : preset.bonds || []).forEach((bd) => {
     const a = atomMap[bd.a], b = atomMap[bd.b];
     const [ax, ay] = pos[a.id], [bx, by] = pos[b.id];
     const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
@@ -3005,7 +3011,11 @@ function renderLewisSVG(cfg) {
     // lain sebesar mungkin, lalu yang simetris terhadap arah ikatan (CO2:
     // atas-bawah, H2O: keduanya di seberang H) — seperti gambar buku.
     const terpakai = sudutIkatan(a);
-    const arahLone = pilihArahPasanganBebas(terpakai, a.lone || 0, KANDIDAT, jarakSudut);
+    const arahLone = kosong || tanpaBebas ? [] : pilihArahPasanganBebas(terpakai, a.lone || 0, KANDIDAT, jarakSudut);
+    if (ekstra && !kosong && terpakai.length === 1) {
+      const tepi = terpakai[0] + Math.PI;                    // sisi yang membelakangi atom pusat
+      body += elektronSVG(px + Math.cos(tepi) * r, py + Math.sin(tepi) * r, false);
+    }
     let sisaTitik = a.pindah || 0; // elektron pindahan (ionik) digambar titik
     arahLone.forEach((ang) => {
       const lx = px + Math.cos(ang) * r, ly = py + Math.sin(ang) * r;
@@ -6309,8 +6319,71 @@ function computeShellFilling(z) {
   return shells;
 }
 
+// Muatan ion dari teks: "+", "2+", "-", "2-", "3+" -> bilangan bertanda (+1, +2, -1, -2, +3).
+function parseMuatanIon(t) {
+  const x = String(t == null ? '' : t).trim().replace(/[−–]/g, '-');
+  let m = x.match(/^(\d*)\s*([+-])$/);
+  if (m) return (m[2] === '-' ? -1 : 1) * (m[1] ? parseInt(m[1], 10) : 1);
+  m = x.match(/^([+-])\s*(\d*)$/);
+  if (m) return (m[1] === '-' ? -1 : 1) * (m[2] ? parseInt(m[2], 10) : 1);
+  return 0;
+}
+
+// Model atom/ion gaya dot-and-cross (Cambridge): kulit konsentris, elektron
+// berpasangan, atom asal bertanda `tanda` (titik/silang) dan elektron yang
+// DITERIMA ion negatif bertanda sebaliknya; ion dikurung [ ] bermuatan.
+// kosong=ya menggambar kulitnya saja (murid melengkapi elektron dan muatan).
+function renderAtomIonSVG(cfg) {
+  const z = Math.max(1, Math.round(numOrDefault(cfg.nomor, 11)));
+  const muatan = parseMuatanIon(cfg.ion);
+  const kosong = /^(ya|true|1)$/i.test(String(cfg.kosong || ''));
+  const silangAsal = /^silang|cross|x$/i.test(String(cfg.tanda || ''));
+  const e = Math.max(0, z - muatan);
+  const kulitIon = cfg.kulit ? String(cfg.kulit).split(',').map(Number) : computeShellFilling(e);
+  const kulitAtom = computeShellFilling(z);
+  const r0 = 14, step = 21;
+  const R = r0 + kulitIon.length * step;
+  const cx = 0, cy = 0;
+  let body = '';
+  body += `<circle cx="0" cy="0" r="9.5" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+  body += `<text x="0" y="3.6" text-anchor="middle" font-size="10" font-weight="700" fill="${GAYA.hitam}">${escText(cfg.unsur || '+' + z)}</text>`;
+  kulitIon.forEach((jumlah, i) => {
+    const r = r0 + (i + 1) * step;
+    body += `<circle cx="0" cy="0" r="${r}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.1"/>`;
+    if (kosong) return;
+    const asal = Math.min(jumlah, kulitAtom[i] || 0);      // elektron milik atom asal di kulit ini
+    const pasang = Math.ceil(jumlah / 2);
+    let k = 0;
+    for (let q = 0; q < pasang; q++) {
+      const ang = -Math.PI / 2 + (2 * Math.PI * q) / pasang;
+      const dalam = Math.min(2, jumlah - q * 2);
+      for (let t = 0; t < dalam; t++, k++) {
+        const geser = dalam === 2 ? (t === 0 ? -4.6 : 4.6) : 0;
+        const ex = r * Math.cos(ang) - Math.sin(ang) * geser, ey = r * Math.sin(ang) + Math.cos(ang) * geser;
+        const silang = k < asal ? silangAsal : !silangAsal;   // asal: tanda pilihan; diterima: kebalikan
+        body += elektronSVG(ex, ey, silang);
+      }
+    }
+  });
+  let minX = -R - 4, maxX = R + 4, minY = -R - 4, maxY = R + 4;
+  if (muatan !== 0 || cfg.ion) {
+    body += kurungIonSVG(cx, cy, R);
+    const t = R + 7;
+    const tulis = kosong ? '.....' : (Math.abs(muatan) > 1 ? String(Math.abs(muatan)) : '') + (muatan < 0 ? '−' : '+');
+    body += `<text x="${(t + 4).toFixed(1)}" y="${(-t + 8).toFixed(1)}" font-size="${GAYA.teks}" fill="${GAYA.hitam}">${escText(tulis)}</text>`;
+    minX = -t - 3; maxX = t + 12 + tulis.length * 6; minY = -t - 3; maxY = t + 3;
+  }
+  if (cfg.judul) {
+    body += `<text x="0" y="${(minY - 6).toFixed(1)}" text-anchor="middle" font-size="${GAYA.teks}" fill="${GAYA.hitam}">${escText(cfg.judul)}</text>`;
+    minY -= 18;
+  }
+  const pad = 6, width = maxX - minX + 2 * pad, height = maxY - minY + 2 * pad;
+  return svgPas(width, height, `<g transform="translate(${(pad - minX).toFixed(1)},${(pad - minY).toFixed(1)})">${body}</g>`, cfg);
+}
+
 function renderElectronShellSVG(cfg) {
   const z = Math.max(1, Math.round(numOrDefault(cfg.nomor, 11)));
+  if (cfg.ion || cfg.kosong || cfg.tanda || cfg.judul) return renderAtomIonSVG(cfg);
   const unsur = cfg.unsur || '';
   const shells = cfg.kulit ? String(cfg.kulit).split(',').map(Number) : computeShellFilling(z);
 
@@ -6431,13 +6504,31 @@ function renderLatticeSVG(cfg) {
   let svg = `<svg class="ws-diagram-svg" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">`;
   svg += `<rect x="0.5" y="0.5" width="${width - 1}" height="${height - 1}" fill="#ffffff" stroke="#d8dce1"/>`;
 
-  if (jenis === 'ionik') {
-    const n = 4, cell = 48, x0 = 60, y0 = 50;
+  if (jenis === 'logam' || jenis === 'metalik' || jenis === 'metal') {
+    // Ikatan logam: kation tersusun rapi di "lautan" elektron terdelokalisasi.
+    const q = String(cfg.muatan || '+'), baris = 3, kolom = 5, cell = 44, x0 = 54, y0 = 56;
+    for (let row = 0; row < baris; row++) {
+      for (let col = 0; col < kolom; col++) {
+        const x = x0 + col * cell, y = y0 + row * cell;
+        svg += `<circle cx="${x}" cy="${y}" r="13" fill="#ffffff" stroke="#000000" stroke-width="1.2"/>`;
+        svg += `<text x="${x}" y="${y + 3.8}" text-anchor="middle" font-size="10.5" fill="#000000">${escText(q)}</text>`;
+        // elektron di sela kation: di tengah antar-kolom dan antar-baris
+        if (col < kolom - 1) svg += `<circle cx="${x + cell / 2}" cy="${y + (row % 2 ? 6 : -6)}" r="2" fill="#000000"/>`;
+        if (row < baris - 1) svg += `<circle cx="${x + (col % 2 ? 6 : -6)}" cy="${y + cell / 2}" r="2" fill="#000000"/>`;
+      }
+    }
+    svg += `<circle cx="22" cy="${height - 42}" r="6" fill="#ffffff" stroke="#000000" stroke-width="1"/><text x="34" y="${height - 38}" font-size="10" fill="#000000">= ion positif</text>`;
+    svg += `<circle cx="22" cy="${height - 24}" r="2" fill="#000000"/><text x="34" y="${height - 20}" font-size="10" fill="#000000">= elektron terdelokalisasi</text>`;
+  } else if (jenis === 'ionik') {
+    // Kisi ionik gaya buku: ion negatif besar (putih) saling berdekatan, ion positif kecil (hitam) di sela-selanya.
+    const n = 4, cell = 30, x0 = 90, y0 = 52;
     for (let row = 0; row < n; row++) {
       for (let col = 0; col < n; col++) {
         const x = x0 + col * cell, y = y0 + row * cell;
         const isPos = (row + col) % 2 === 0;
-        svg += `<circle cx="${x}" cy="${y}" r="${isPos ? 9 : 13}" fill="${isPos ? '#dbeafe' : '#fee2e2'}" stroke="#000000" stroke-width="1.2"/>`;
+        svg += isPos
+          ? `<circle cx="${x}" cy="${y}" r="7" fill="#000000" stroke="#000000" stroke-width="1"/>`
+          : `<circle cx="${x}" cy="${y}" r="14.5" fill="#ffffff" stroke="#000000" stroke-width="1.2"/>`;
       }
     }
     svg += `<text x="20" y="${height - 40}" font-size="10" fill="#000000">● ion positif</text>`;
