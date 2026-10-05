@@ -2114,7 +2114,41 @@ function teksSudutSketsa(t) {
   return /^-?[\d.,]*[a-zA-Z]?$/.test(t) && t !== '' ? t + '°' : t;
 }
 
+// Segitiga siku-siku di B dengan garis tinggi BD ke hipotenusa AC (soal
+// kesebangunan klasik). Koordinat dihitung di sini, bukan oleh penulis soal:
+// BD butuh akar (BD² = AD·DC) dan salah letak sudut siku sudah pernah terjadi.
+// Diketahui cukup dua dari ad, dc, bd, ab, bc, ac; sisanya dicari dari
+// hubungan AC = AD+DC, BD² = AD·DC, AB² = AD·AC, BC² = DC·AC, AB·BC = BD·AC.
+function sketsaSikuTinggi(cfg) {
+  const kunci = ['ad', 'dc', 'bd', 'ab', 'bc', 'ac'];
+  const label = {}, v = {};
+  kunci.forEach((k) => {
+    const t = cfg[k]; if (t == null || t === '') return;
+    label[k] = String(t);
+    const n = parseFloat(String(t).replace(',', '.'));
+    if (isFinite(n) && n > 0) v[k] = n;
+  });
+  const rel = [
+    (g) => (g.ac == null && g.ad != null && g.dc != null ? ['ac', g.ad + g.dc] : g.ad == null && g.ac != null && g.dc != null ? ['ad', g.ac - g.dc] : g.dc == null && g.ac != null && g.ad != null ? ['dc', g.ac - g.ad] : null),
+    (g) => (g.bd == null && g.ad != null && g.dc != null ? ['bd', Math.sqrt(g.ad * g.dc)] : g.ad == null && g.bd != null && g.dc != null ? ['ad', g.bd * g.bd / g.dc] : g.dc == null && g.bd != null && g.ad != null ? ['dc', g.bd * g.bd / g.ad] : null),
+    (g) => (g.ab == null && g.ad != null && g.ac != null ? ['ab', Math.sqrt(g.ad * g.ac)] : g.ad == null && g.ab != null && g.ac != null ? ['ad', g.ab * g.ab / g.ac] : g.ac == null && g.ab != null && g.ad != null ? ['ac', g.ab * g.ab / g.ad] : null),
+    (g) => (g.bc == null && g.dc != null && g.ac != null ? ['bc', Math.sqrt(g.dc * g.ac)] : g.dc == null && g.bc != null && g.ac != null ? ['dc', g.bc * g.bc / g.ac] : g.ac == null && g.bc != null && g.dc != null ? ['ac', g.bc * g.bc / g.dc] : null),
+    (g) => (g.ac == null && g.ab != null && g.bc != null ? ['ac', Math.hypot(g.ab, g.bc)] : g.bc == null && g.ab != null && g.ac != null && g.ac > g.ab ? ['bc', Math.sqrt(g.ac * g.ac - g.ab * g.ab)] : g.ab == null && g.bc != null && g.ac != null && g.ac > g.bc ? ['ab', Math.sqrt(g.ac * g.ac - g.bc * g.bc)] : null),
+    (g) => (g.bd == null && g.ab != null && g.bc != null && g.ac != null ? ['bd', g.ab * g.bc / g.ac] : null),
+  ];
+  for (let i = 0; i < 12; i++) rel.forEach((r) => { const x = r(v); if (x && isFinite(x[1]) && x[1] > 0 && v[x[0]] == null) v[x[0]] = x[1]; });
+  if (v.ad == null || v.dc == null || v.bd == null) { v.ad = 4; v.dc = 9; v.bd = 6; v.ac = 13; }
+  const sisi = { ad: 'A-D', dc: 'D-C', bd: 'B-D', ab: 'A-B', bc: 'B-C', ac: 'A-C' };
+  return {
+    titik: `A:0:0,C:${v.ad + v.dc}:0,B:${v.ad}:${v.bd},D:${v.ad}:0`,
+    garis: 'A-B-C-A,B-D',
+    siku: 'A-B-C,B-D-A',
+    label: Object.keys(label).filter((k) => sisi[k]).map((k) => `${sisi[k]}:${label[k]}`).join('|'),
+  };
+}
+
 function renderSketsaSVG(cfg) {
+  if (/siku-?tinggi/i.test(String(cfg.bentuk || ''))) cfg = Object.assign({}, cfg, sketsaSikuTinggi(cfg));
   const semua = parseVertexList(cfg.titik);
   const pts = semua.length ? semua : [{ name: 'A', x: 0, y: 0 }, { name: 'B', x: 10, y: 0 }, { name: 'C', x: 5, y: 8 }];
   const areaW = 260, areaH = 200;
