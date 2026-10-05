@@ -25,7 +25,9 @@
       #pesan small { display: block; font-size: 15px; color: var(--ink-soft); margin-top: 8px; }
 
       /* ── Murid (HP) ─────────────────────────────────────────────── */
-      .hp { cursor: auto; }
+      /* body punya cursor: none sendiri (aturan layar TV di atas), jadi pembatalnya
+         harus kena body juga — kalau tidak, murid di laptop/PC tak melihat kursor. */
+      .hp, .hp body { cursor: auto; }
       #masuk, #akun, #setuju { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; padding: 24px; background: var(--bg); overflow: hidden; }
       #masuk.tampil, #akun.tampil, #setuju.tampil { display: flex; }
       #masuk form, #akun form, #setuju form { width: 100%; max-width: 360px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
@@ -120,6 +122,7 @@
       #alat-coret .warna[data-warna="accent-2"] { background: var(--accent-2); }
       #alat-coret .sekat { width: 1px; height: 24px; background: var(--line-strong); flex: 0 0 auto; }
       #alat-coret #coret-hapus.aktif { background: var(--ink); color: var(--bg); border-color: var(--ink); outline: 0; }
+      .hp.mencoret #aktif { cursor: crosshair; }
       .hp.mencoret.menghapus #aktif { cursor: cell; }
       .hp.mencoret #ikuti { display: none; }
       #pilih { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; padding: 24px; background: var(--bg); cursor: auto; }
