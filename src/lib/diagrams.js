@@ -4956,8 +4956,138 @@ function renderStatesOfMatterSVG(cfg) {
 }
 
 // Pesawat sederhana: tuas/katrol/bidang miring/roda berporos.
+// Pesawat sederhana BERNILAI (soal keuntungan mekanis): tuas dengan batu dan
+// panjang lengan, bidang miring dengan panjang/tinggi, sistem katrol dengan
+// n tali penopang. Dipakai renderSimpleMachineSVG bila tag memuat parameter
+// angkanya; tanpa parameter, gambar skema umum yang lama tetap dipakai.
+function angkaLabel(t, def) {
+  const v = parseFloat(String(t == null ? '' : t).replace(',', '.'));
+  return isFinite(v) && v > 0 ? v : def;
+}
+
+function renderPesawatBernilaiSVG(cfg, tipe) {
+  const b = kotakBatas();
+  let isi = '';
+  const teks = (x, y, t, anchor, italic) => {
+    isi += `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anchor || 'middle'}" font-size="11.5"${italic ? ' font-style="italic"' : ''} fill="${GAYA.hitam}" stroke="${GAYA.putih}" stroke-width="3" paint-order="stroke">${escText(t)}</text>`;
+    b.teks(x, y, t, 11.5, anchor || 'middle');
+  };
+  // "w = 300 N" tetap miring pada "w"; selain itu teks biasa.
+  const labelGaya = (x, y, t, anchor) => teks(x, y, t, anchor, /^[wWF]\b/.test(t) || t.length === 1);
+  const wLabel = cfg.w != null && cfg.w !== '' ? (/[=]|^[A-Za-z]$/.test(cfg.w) ? cfg.w : `w = ${cfg.w}`) : 'w';
+  const fLabel = cfg.f != null && cfg.f !== '' ? cfg.f : 'F';
+  const garis = (x1, y1, x2, y2, tebal, dash) => `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="${tebal || GAYA.garis}"${dash ? ` stroke-dasharray="${dash}"` : ''}/>`;
+
+  if (tipe === 'tuas') {
+    // Tuas miring: ujung beban rendah (batu), ujung kuasa tinggi; titik tumpu
+    // di antaranya. Panjang lengan digambar sebanding dengan angka lb dan lk.
+    const lbLabel = cfg.lb || cfg.lenganbeban || '', lkLabel = cfg.lk || cfg.lengankuasa || '';
+    const lb = angkaLabel(lbLabel, 1), lk = angkaLabel(lkLabel, 3);
+    const total = 250, lbPx = Math.max(45, Math.min(total - 45, (total * lb) / (lb + lk))), lkPx = total - lbPx;
+    const th = (13 * Math.PI) / 180, c = Math.cos(th), s = Math.sin(th);
+    const B = [-lbPx * c, lbPx * s], K = [lkPx * c, -lkPx * s];
+    const tanah = 26;
+    const gKiri = B[0] - 55, gKanan = K[0] + 30;
+    isi += garis(gKiri, tanah, gKanan, tanah, 2.2);
+    b.titik(gKiri, tanah); b.titik(gKanan, tanah);
+    isi += `<path d="M -15,${tanah} L 0,0 L 15,${tanah} Z" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    isi += garis(B[0], B[1], K[0], K[1], 4.5);
+    // batu di ujung beban
+    isi += `<path d="M ${(B[0] - 38).toFixed(1)},${(B[1] + 2).toFixed(1)} C ${(B[0] - 42).toFixed(1)},${(B[1] - 22).toFixed(1)} ${(B[0] - 10).toFixed(1)},${(B[1] - 34).toFixed(1)} ${(B[0] + 6).toFixed(1)},${(B[1] - 10).toFixed(1)} L ${(B[0] + 6).toFixed(1)},${(B[1] + 1).toFixed(1)} Z" fill="${GAYA.arsir}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    b.titik(B[0] - 42, B[1] - 34);
+    labelGaya(B[0] - 20, B[1] - 46, wLabel, 'middle');
+    isi += arrowSVG(K[0], K[1] - 40, K[0], K[1] - 4, { strokeWidth: 1.6, headLen: 7 });
+    b.titik(K[0], K[1] - 40);
+    labelGaya(K[0] + 8, K[1] - 36, fLabel, 'start');
+    if (lbLabel) teks(B[0] * 0.55 - 4, B[1] * 0.55 - 12, lbLabel, 'middle');
+    if (lkLabel) teks(K[0] * 0.55 + 4, K[1] * 0.55 - 12, lkLabel, 'middle');
+  } else if (tipe === 'bidang-miring') {
+    const L = angkaLabel(cfg.panjang, 5), H = angkaLabel(cfg.tinggi, 2.5);
+    const ratio = Math.min(0.92, H / L);
+    const maks = 230, alasPx = maks * Math.sqrt(1 - ratio * ratio), tinggiPx = maks * ratio;
+    const A = [0, tinggiPx], Bp = [alasPx, tinggiPx], C = [alasPx, 0];       // kiri-bawah, kanan-bawah, puncak
+    isi += `<path d="M ${A[0]},${A[1]} L ${Bp[0].toFixed(1)},${Bp[1]} L ${C[0].toFixed(1)},${C[1]} Z" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}" stroke-linejoin="round"/>`;
+    b.titik(0, 0); b.titik(alasPx, tinggiPx);
+    isi += rightAngleSVG(Bp[0], Bp[1], A[0], A[1], C[0], C[1], 9);
+    const ang = Math.atan2(-(C[1] - A[1]), C[0] - A[0]);                       // arah lereng (y layar ke bawah)
+    const deg = (-ang * 180) / Math.PI;                                         // derajat putar layar (negatif = naik ke kanan)
+    const ux = Math.cos(ang), uy = -Math.sin(ang);                              // arah sepanjang lereng, ke atas-kanan di layar
+    const nx = -uy, ny = ux;                                                    // normal ke atas-kiri
+    const tNorm = (nx < 0 || ny < 0) ? [nx, ny] : [-nx, -ny];
+    // balok di atas lereng, 30% dari ujung bawah
+    const pos = 0.2 * maks, bw = 30, bh = 20;
+    const cx = A[0] + ux * pos + tNorm[0] * (bh / 2), cy = A[1] + uy * pos + tNorm[1] * (bh / 2);
+    isi += `<g transform="rotate(${(Math.atan2(uy, ux) * 180 / Math.PI).toFixed(1)} ${cx.toFixed(1)} ${cy.toFixed(1)})"><rect x="${(cx - bw / 2).toFixed(1)}" y="${(cy - bh / 2).toFixed(1)}" width="${bw}" height="${bh}" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/></g>`;
+    b.titik(cx - 24, cy - 24); b.titik(cx + 24, cy + 24);
+    // gaya berat: tegak ke bawah dari pusat balok; gaya tarik F: sepanjang lereng ke atas
+    isi += arrowSVG(cx, cy + bh / 2, cx, cy + bh / 2 + 34, { strokeWidth: 1.6, headLen: 7 });
+    labelGaya(cx + 6, cy + bh / 2 + 42, wLabel, 'start');
+    const fx = cx + ux * 22 + tNorm[0] * 12, fy = cy + uy * 22 + tNorm[1] * 12;
+    isi += arrowSVG(fx, fy, fx + ux * 30, fy + uy * 30, { strokeWidth: 1.6, headLen: 7 });
+    labelGaya(fx - 2, fy - 4, fLabel, 'end');
+    // panjang lereng (di atas sisi miring) dan tinggi (di kanan sisi tegak)
+    const mx = A[0] + (C[0] - A[0]) * 0.66 + tNorm[0] * 13, my = A[1] + (C[1] - A[1]) * 0.66 + tNorm[1] * 13;
+    if (cfg.panjang) teks(mx, my, cfg.panjang, 'middle');
+    if (cfg.tinggi) teks(alasPx + 8, (C[1] + Bp[1]) / 2 + 4, cfg.tinggi, 'start');
+    if (cfg.alas) teks(alasPx / 2, tinggiPx + 15, cfg.alas, 'middle');
+    if (/^(ya|true|1)$/i.test(String(cfg.titik || ''))) {
+      teks(A[0] - 6, A[1] + 16, 'X', 'end', true);
+      teks(C[0], C[1] - 8, 'Y', 'middle', true);
+    }
+  } else { // katrol: n tali penopang
+    const n = Math.max(1, Math.min(8, Math.round(angkaLabel(cfg.jumlah || cfg.n, 3))));
+    const d = 22, r = 10, yTop = 34, yBot = 34 + 70;
+    const xs = (i) => i * d;
+    const awalBawah = n % 2 === 0;                    // genap: ujung tali di balok atas
+    const busurAtas = (i) => (awalBawah ? i % 2 === 1 : i % 2 === 0);
+    // langit-langit
+    const lebar = (n + 1) * d;
+    isi += garis(-24, 0, lebar + 24, 0, 2.2);
+    isi += `<g>${arsirTumpuanSVG(-24, 0, lebar + 24, 0, 0, -1)}</g>`;
+    b.titik(-24, -10); b.titik(lebar + 24, 0);
+    // tali: kolom vertikal + busur di sekeliling katrol
+    const pusat = (i) => (xs(i) + xs(i + 1)) / 2;
+    for (let i = 0; i <= n; i++) {
+      let y1 = yTop, y2 = yBot;
+      if (i === 0 && awalBawah) y1 = 0;        // ujung tali terikat di balok atas (langit-langit)
+      if (i === n) { y1 = yTop; y2 = yBot + 52; }
+      isi += garis(xs(i), y1, xs(i), y2, 1.4);
+    }
+    for (let i = 0; i < n; i++) {
+      const atas = busurAtas(i), cy = atas ? yTop : yBot, sweepUp = atas;
+      isi += `<path d="M ${xs(i)},${cy} A ${r},${r} 0 0 ${sweepUp ? 1 : 0} ${xs(i + 1)},${cy}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+      isi += katrolSVG(pusat(i), cy, r);
+    }
+    // balok atas menggantung dari langit-langit
+    const katAtas = []; for (let i = 0; i < n; i++) if (busurAtas(i)) katAtas.push(pusat(i));
+    katAtas.forEach((x) => { isi += garis(x, 0, x, yTop, 1.2); });
+    // balok bawah: batang melintang di bawah katrol bawah + gantungan + beban
+    const katBawah = []; for (let i = 0; i < n; i++) if (!busurAtas(i)) katBawah.push(pusat(i));
+    const bx1 = Math.min(xs(0), katBawah[0] - r) - 2, bx2 = Math.max(xs(n - 1), katBawah[katBawah.length - 1] + r) + 2;
+    isi += garis(bx1, yBot + 16, bx2, yBot + 16, 2.4);
+    katBawah.forEach((x) => { isi += garis(x, yBot, x, yBot + 16, 1.2); });
+    if (!awalBawah) isi += garis(xs(0), yBot, xs(0), yBot + 16, 1.2);
+    const hx = (bx1 + bx2) / 2;
+    isi += garis(hx, yBot + 16, hx, yBot + 38, 1.4);
+    isi += `<rect x="${(hx - 17).toFixed(1)}" y="${yBot + 38}" width="34" height="26" fill="${GAYA.arsir}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    b.titik(hx - 17, yBot + 64);
+    labelGaya(hx, yBot + 80, wLabel, 'middle');
+    b.titik(hx, yBot + 84);
+    // gaya tarik F di ujung bebas
+    const fy1 = yBot + 52;
+    isi += arrowSVG(xs(n), fy1 - 18, xs(n), fy1 + 8, { strokeWidth: 1.6, headLen: 7 });
+    b.titik(xs(n), fy1 + 8);
+    labelGaya(xs(n) + 8, fy1 + 4, fLabel, 'start');
+  }
+  return bungkusGambarSVG(isi, b, false);
+}
+
 function renderSimpleMachineSVG(cfg) {
   const tipe = String(cfg.tipe || 'tuas').toLowerCase();
+  // Tag yang membawa angka (soal keuntungan mekanis) memakai gambar bernilai.
+  if ((tipe === 'tuas' || tipe === 'lever') && (cfg.lb || cfg.lk || cfg.w)) return renderPesawatBernilaiSVG(cfg, 'tuas');
+  if ((tipe === 'bidang-miring' || tipe === 'incline') && (cfg.panjang || cfg.tinggi)) return renderPesawatBernilaiSVG(cfg, 'bidang-miring');
+  if ((tipe === 'katrol' || tipe === 'pulley') && (cfg.jumlah || cfg.n)) return renderPesawatBernilaiSVG(cfg, 'katrol');
   const b = kotakBatas();
   let isi = '';
   const label = (x, y, t, anchor) => { isi += `<text x="${x}" y="${y}" text-anchor="${anchor || 'middle'}" font-size="${GAYA.teksKecil}" fill="${GAYA.hitam}">${escText(t)}</text>`; b.teks(x, y, t, GAYA.teksKecil, anchor || 'middle'); };
