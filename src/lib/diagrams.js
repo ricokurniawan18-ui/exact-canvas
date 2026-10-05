@@ -5102,7 +5102,7 @@ function renderSimpleMachineSVG(cfg) {
     isi += `<line x1="18" y1="48" x2="18" y2="110" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
     isi += `<rect x="-34" y="130" width="32" height="26" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
     isi += arrowSVG(18, 110, 18, 72, { strokeWidth: 1.6 });
-    label(-18, 170, 'Beban'); label(18, 58, 'Kuasa', 'start');
+    label(-18, 170, 'Beban'); label(26, 94, 'Kuasa', 'start');
     b.titik(-40, -4); b.titik(40, 170);
   } else if (tipe === 'bidang-miring' || tipe === 'incline') {
     isi += `<path d="M -70,70 L 70,70 L 70,-50 Z" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
@@ -8019,6 +8019,15 @@ function renderDiagramTag(rawTagContent, depth) {
   // specificity, so this is the one place that needs to touch the <svg> tag.
   if (widthPt) {
     svg = svg.replace('class="ws-diagram-svg"', `class="ws-diagram-svg" style="max-width:${widthPt}pt"`);
+  } else {
+    // Gambar yang belum punya batas sendiri (lewat svgPas) dibatasi sebesar
+    // ukuran aslinya, 1 satuan viewBox = 0,9 pt, dan tetap tunduk pada slider
+    // "ukuran diagram". Tanpa ini, gambar kecil dan sempit (katrol, tuas)
+    // dibesarkan CSS (width:100%) sampai selebar slider: hurufnya raksasa dan
+    // tingginya memakan separuh halaman, walau slider sudah di ukuran terkecil.
+    const akar = svg.match(/<svg class="ws-diagram-svg"([^>]*)>/);
+    const vb = akar && akar[1].indexOf('style=') < 0 && akar[1].match(/viewBox="0 0 ([\d.]+) [\d.]+"/);
+    if (vb) svg = svg.replace('class="ws-diagram-svg"', `class="ws-diagram-svg" style="max-width:min(var(--ws-diagram-width, 260pt), ${Math.round(parseFloat(vb[1]) * 0.9)}pt)"`);
   }
   return `<div class="ws-diagram">${svg}</div>`;
 }
