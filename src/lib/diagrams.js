@@ -197,6 +197,9 @@ function labelSumbuALevel(teks) {
 function sumbuSVG(o) {
   let s = '';
   const w = o.strokeWidth || 1.2;
+  // xMulai/yMulai (opsional): sumbu menerus ke sisi negatif sampai tepi grid.
+  if (o.xMulai != null && o.xMulai < o.x0) s += `<line x1="${o.xMulai.toFixed(1)}" y1="${o.y0.toFixed(1)}" x2="${o.x0.toFixed(1)}" y2="${o.y0.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="${w}"/>`;
+  if (o.yMulai != null && o.yMulai > o.y0) s += `<line x1="${o.x0.toFixed(1)}" y1="${o.yMulai.toFixed(1)}" x2="${o.x0.toFixed(1)}" y2="${o.y0.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="${w}"/>`;
   if (o.xEnd != null) s += arrowSVG(o.x0, o.y0, o.xEnd, o.y0, { headLen: 7, strokeWidth: w });
   if (o.yEnd != null) s += arrowSVG(o.x0, o.y0, o.x0, o.yEnd, { headLen: 7, strokeWidth: w });
   if (o.labelX) s += `<text x="${(o.xEnd).toFixed(1)}" y="${(o.y0 + 15).toFixed(1)}" text-anchor="end" font-size="${GAYA.teks}" fill="${GAYA.hitam}">${escText(o.labelX)}</text>`;
@@ -4987,21 +4990,30 @@ function renderTransformSVG(cfg) {
   // angka di tiap kotak (tiap 2 kotak bila grid lebar), O di titik asal.
   const ox = Math.min(Math.max(0, xmin), xmax), oy = Math.min(Math.max(0, ymin), ymax);
   const [axX, axY] = toPx(ox, oy);
-  isi += sumbuSVG({ x0: axX, y0: axY, xEnd: X1 + 14, yEnd: Y0 - 14, labelX: 'x', labelY: 'y', strokeWidth: 1.2 });
+  isi += sumbuSVG({ x0: axX, y0: axY, xEnd: X1 + 14, yEnd: Y0 - 14, labelX: 'x', labelY: 'y', strokeWidth: 1.2, xMulai: X0, yMulai: Y1 });
   b.titik(X1 + 16, axY + 16); b.titik(axX - 4, Y0 - 24);
+  // Kotak angka sumbu: huruf titik yang menimpanya dipindah (lihat gambarPoligon).
+  const kotakTeks = (x, y, t, size, anchor) => {
+    const w = lebarTeksKira(t, size), x1 = anchor === 'end' ? x - w : anchor === 'start' ? x : x - w / 2;
+    return { x1: x1 - 1, x2: x1 + w + 1, y1: y - size * 0.85, y2: y + size * 0.3 };
+  };
+  const terpakai = [];
   for (let gx = Math.ceil(xmin / step) * step; gx <= xmax; gx += step) {
     if (gx === ox) continue;
     const [px] = toPx(gx, 0);
     isi += `<text x="${px.toFixed(1)}" y="${(axY + 12).toFixed(1)}" font-size="${GAYA.teksKecil}" text-anchor="middle" fill="${GAYA.hitam}">${gx}</text>`;
     b.teks(px, axY + 12, String(gx), GAYA.teksKecil, 'middle');
+    terpakai.push(kotakTeks(px, axY + 12, String(gx), GAYA.teksKecil, 'middle'));
   }
   for (let gy = Math.ceil(ymin / step) * step; gy <= ymax; gy += step) {
     if (gy === oy) continue;
     const [, py] = toPx(0, gy);
     isi += `<text x="${(axX - 5).toFixed(1)}" y="${(py + 3.5).toFixed(1)}" font-size="${GAYA.teksKecil}" text-anchor="end" fill="${GAYA.hitam}">${gy}</text>`;
     b.teks(axX - 5, py + 3.5, String(gy), GAYA.teksKecil, 'end');
+    terpakai.push(kotakTeks(axX - 5, py + 3.5, String(gy), GAYA.teksKecil, 'end'));
   }
   isi += `<text x="${(axX - 5).toFixed(1)}" y="${(axY + 12).toFixed(1)}" font-size="${GAYA.teksKecil}" font-style="italic" text-anchor="end" fill="${GAYA.hitam}">O</text>`;
+  terpakai.push(kotakTeks(axX - 5, axY + 12, 'O', GAYA.teksKecil, 'end'));
 
   if (jenis === 'refleksi') {
     // Cermin: garis putus-putus berlabel persamaannya. Cermin berupa sumbu
@@ -5047,7 +5059,17 @@ function renderTransformSVG(cfg) {
     pts.forEach((p) => {
       const [px, py] = toPx(p.x, p.y);
       const dx = p.x - c[0], dy = -(p.y - c[1]), len = Math.hypot(dx, dy) || 1;
-      const pos = letakTeksLuar(px, py, dx / len, dy / len, 6, 11.5);
+      // Arah keluar bangun dulu; kalau hurufnya menimpa angka sumbu atau huruf
+      // titik lain, putar arahnya (±45°, ±90°, ...) sampai ada tempat kosong.
+      let pos = null, kotak = null;
+      for (const putar of [0, 45, -45, 90, -90, 135, -135, 180]) {
+        const r = (putar * Math.PI) / 180, ux = dx / len, uy = dy / len;
+        const cand = letakTeksLuar(px, py, ux * Math.cos(r) - uy * Math.sin(r), ux * Math.sin(r) + uy * Math.cos(r), 6, 11.5);
+        const kt = kotakTeks(cand.x, cand.y, p.name, 11.5, cand.anchor);
+        if (!pos) { pos = cand; kotak = kt; }
+        if (!terpakai.some((o) => kt.x1 < o.x2 && kt.x2 > o.x1 && kt.y1 < o.y2 && kt.y2 > o.y1)) { pos = cand; kotak = kt; break; }
+      }
+      terpakai.push(kotak);
       isi += teksGeoSVG(pos, p.name, 11.5, true, true);
       b.teks(pos.x, pos.y, p.name, 11.5, pos.anchor);
     });
