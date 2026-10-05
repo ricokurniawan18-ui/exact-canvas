@@ -3576,8 +3576,21 @@ function parseForceList(raw) {
   if (!raw) return [];
   return String(raw).split('|').map((s) => s.trim()).filter(Boolean).map((part) => {
     const bits = part.split(':').map((s) => s.trim());
-    return { label: bits[0] || '', magnitude: parseFloat(bits[1]), angle: parseFloat(bits[2]) || 0 };
+    const m = besarGaya(bits[1]);
+    return { label: bits[0] || '', magnitude: m.nilai, teks: m.teks, angle: parseFloat(bits[2]) || 0 };
   });
+}
+
+// Besar gaya: angka biasa atau bentuk akar ("10\\sqrt{3}", "30√3", "20 sqrt(2)"). Teksnya
+// ditulis apa adanya dengan √ (jangan dibuang akarnya: gambar harus sama dengan soal),
+// nilai numeriknya dipakai hanya untuk panjang panah relatif.
+function besarGaya(raw) {
+  const t = String(raw == null ? '' : raw).trim();
+  const norm = t.replace(/\\sqrt\s*\{\s*([\d.]+)\s*\}/g, '√$1').replace(/\\?sqrt\s*\(\s*([\d.]+)\s*\)/g, '√$1').replace(/\\sqrt\s*([\d.]+)/g, '√$1').replace(/\s*\\?cdot\s*|\s*\*\s*/g, '');
+  const m = norm.match(/^(\d+(?:[.,]\d+)?)?\s*√\s*(\d+(?:\.\d+)?)$/);
+  if (m) return { nilai: (m[1] ? parseFloat(m[1].replace(',', '.')) : 1) * Math.sqrt(parseFloat(m[2])), teks: (m[1] || '') + '√' + m[2] };
+  const v = parseFloat(norm.replace(',', '.'));
+  return { nilai: v, teks: isFinite(v) ? String(norm) : '' };
 }
 
 // Arsiran tumpuan: garis-garis pendek miring di sisi bawah garis permukaan
@@ -3681,6 +3694,7 @@ function renderForceDiagramSVG(cfg) {
   // Label yang sudah dipasang, untuk menggeser label berikutnya yang
   // menabraknya (mis. gaya 90° dan 60° yang labelnya bertemu di atas kotak).
   const labelBoxes = [];
+  let nSudut = 0;                       // pengurut jari-jari busur sudut (mode titik)
   const tabrak = (b) => labelBoxes.some((o) => b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1]);
 
   groups.forEach((g) => {
@@ -3697,7 +3711,34 @@ function renderForceDiagramSVG(cfg) {
       parts.push(arrowSVG(x1, y1, x2, y2, { strokeWidth: GAYA.garis }));
       cover(x1, y1, x2, y2);
 
-      const magTxt = isFinite(f.magnitude) ? ` = ${f.magnitude} N` : '';
+      // Sudut gaya digambar sebagai busur + nilainya (kecuali gaya yang searah
+      // sumbu, atau sudut=tidak): soal vektor tanpa sudut tidak bisa dikerjakan.
+      // Mode titik: dari sumbu X positif (ke atas = berlawanan jarum jam, ke bawah
+      // = searah jarum jam, nilai sudut lancipnya); benda berkotak: dari garis
+      // mendatar di pangkal panah.
+      const aMut = norm(f.angle);
+      const sejajarSumbu = Math.abs(((aMut % 90) + 90) % 90) < 1e-6;
+      if (String(cfg.sudut || '').toLowerCase() !== 'tidak' && !sejajarSumbu) {
+        const ref = titik ? 0 : (dirx >= 0 ? 0 : 180);
+        let d = aMut - ref; d = ((d + 540) % 360) - 180;                     // selisih bertanda (-180,180]
+        if (titik && aMut > 180) d = aMut - 360;                              // titik: ke bawah = searah jarum jam dari +X
+        else if (titik) d = aMut;
+        const px = titik ? 0 : x1, py = titik ? 0 : y1;
+        const r = (titik ? 24 : 20) + (titik ? 9 : 0) * nSudut++;
+        const t0 = (ref * Math.PI) / 180, t1 = ((ref + d) * Math.PI) / 180, tm = ((ref + d / 2) * Math.PI) / 180;
+        if (!titik) parts.push(`<line x1="${px.toFixed(1)}" y1="${py.toFixed(1)}" x2="${(px + Math.cos(t0) * (r + 12)).toFixed(1)}" y2="${(py - Math.sin(t0) * (r + 12)).toFixed(1)}" stroke="${GAYA.abu}" stroke-width="${GAYA.garisBantu}" stroke-dasharray="${GAYA.putusHalus}"/>`);
+        parts.push(`<path d="M${(px + r * Math.cos(t0)).toFixed(1)} ${(py - r * Math.sin(t0)).toFixed(1)} A${r} ${r} 0 0 ${d > 0 ? 0 : 1} ${(px + r * Math.cos(t1)).toFixed(1)} ${(py - r * Math.sin(t1)).toFixed(1)}" fill="none" stroke="${GAYA.hitam}" stroke-width="1"/>`);
+        const nilai = String(Math.round(Math.abs(d) * 100) / 100).replace('.', ',') + '°';
+        let rl = r + 10 + nilai.length * 1.5;
+        let lxA = px + rl * Math.cos(tm), lyA = py - rl * Math.sin(tm) + 3.5;
+        const kotakA = () => { const w = textW(nilai); return [lxA - w / 2, lyA - 10, lxA + w / 2, lyA + 3]; };
+        for (let k = 0; k < 4 && tabrak(kotakA()); k++) { rl += 9; lxA = px + rl * Math.cos(tm); lyA = py - rl * Math.sin(tm) + 3.5; }
+        parts.push(`<text x="${lxA.toFixed(1)}" y="${lyA.toFixed(1)}" text-anchor="middle" font-size="${GAYA.teksKecil}" fill="${GAYA.hitam}" stroke="${GAYA.putih}" stroke-width="2.4" paint-order="stroke">${escText(nilai)}</text>`);
+        const bA = kotakA(); labelBoxes.push(bA); cover(bA[0], bA[1], bA[2], bA[3]);
+        cover(px - r, py - r, px + r, py + r);
+      }
+
+      const magTxt = f.teks ? ` = ${f.teks} N` : '';
       const label = `${f.label}${magTxt}`;
       const vertical = Math.abs(dirx) < 0.3;
       let lx, ly, anchor;
@@ -8664,7 +8705,9 @@ const DIAGRAM_TOKEN_CLOSE = '';
 
 function extractDiagramTags(text) {
   const tags = [];
-  const replaced = String(text || '').replace(/\[\[([\s\S]*?)\]\]/g, (match, inner) => {
+  // Titik yang menempel di belakang tag ("[[gaya: ...]]. Berapakah ...") dibuang: tanpa
+  // itu ia tercetak sebagai ". Berapakah" yatim di awal baris sesudah diagram.
+  const replaced = String(text || '').replace(/\[\[([\s\S]*?)\]\](?:[ \t]*\.(?=[ \t]|\r?\n|$))?/g, (match, inner) => {
     const idx = tags.length;
     tags.push(inner.trim());
     return DIAGRAM_TOKEN_OPEN + idx + DIAGRAM_TOKEN_CLOSE;
