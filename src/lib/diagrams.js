@@ -1762,11 +1762,10 @@ const SOLID_PRESETS = {
       vertices: [{ pos: [r, t], name: 'O', n: [-0.7, -0.7] }],
     };
   },
-  // Pipa (tabung berlubang): sama seperti tabung, tapi tutup dekatnya (y=0)
-  // dapat elips KEDUA yang lebih kecil (jariDalam) digambar PENUH (bukan
-  // belah) — karena lubangnya memang kelihatan utuh dari luar, tidak
-  // tertutup apa pun, beda dari elips luar yang separuh belakangnya
-  // tersembunyi di balik badan pipa.
+  // Pipa (tabung berlubang) dilihat dari atas-depan: ujung terbuka di ATAS
+  // berupa cincin (elips luar penuh + elips dalam penuh = lubangnya), badan
+  // dengan dua rusuk tegak, dan alas bawah hanya setengah depan (setengah
+  // belakangnya tersembunyi). R dan r ditarik pada jari-jari di muka cincin.
   pipa: (p) => {
     const rLuar = numOrDefault(p.jariLuar, 5), rDalam = numOrDefault(p.jariDalam, 3);
     const tAsli = numOrDefault(p.tinggi, 12), ry = rLuar * 0.35, ryDalam = rDalam * 0.35;
@@ -1774,20 +1773,21 @@ const SOLID_PRESETS = {
     return {
       ellipses: [
         { cx: rLuar, cy: t, rx: rLuar, ry },
+        { cx: rLuar, cy: t, rx: rDalam, ry: ryDalam },
         { cx: rLuar, cy: 0, rx: rLuar, ry, belah: true },
-        { cx: rLuar, cy: 0, rx: rDalam, ry: ryDalam },
       ],
       edges: [
         { a: [0, 0], b: [0, t] }, { a: [2 * rLuar, 0], b: [2 * rLuar, t] },
-        { a: [rLuar - rDalam, 0], b: [rLuar - rDalam, t], tipis: true },
+        { a: [rLuar, t], b: [2 * rLuar, t], tipis: true },                 // jari-jari luar R (ke kanan)
+        { a: [rLuar, t], b: [rLuar - rDalam, t], tipis: true },            // jari-jari lubang r (ke kiri)
+        { a: [rLuar - rDalam, t], b: [-rLuar * 0.12, t + rLuar * 0.62], tipis: true }, // penghubung miring ke label r di luar badan
       ],
-      dots: [[rLuar, t], [rLuar, 0]],
+      dots: [[rLuar, t]],
       labels: [
         { pos: [2 * rLuar, t / 2], text: `t = ${tAsli}`, n: [1, 0] },
-        { pos: [rLuar + rLuar * 0.5, t], text: `R = ${rLuar}`, n: [0, 1] },
-        { pos: [rLuar, -ry], text: `r = ${rDalam}`, n: [0, -1] },
+        { pos: [2 * rLuar, t], text: `R = ${rLuar}`, n: [1, 0] },
+        { pos: [-rLuar * 0.12, t + rLuar * 0.62], text: `r = ${rDalam}`, n: [-1, 0.2] },
       ],
-      vertices: [{ pos: [rLuar, t], name: 'O', n: [-0.7, -0.7] }],
     };
   },
   kerucut: (p) => {
@@ -1923,7 +1923,9 @@ function renderSolidSVG(cfg) {
   ellipses.forEach((el) => {
     const [cx, cy] = toPx(el.cx, el.cy);
     const rx = el.rx * scale, ry = el.ry * scale;
-    b.titik(cx, cy, Math.max(rx, ry) + 1);
+    // Kotak batas elips yang sebenarnya; lingkaran berjari-jari max(rx,ry) membuat
+    // elips pipih (alas tabung) memberi ruang kosong besar di atas dan bawah gambar.
+    b.titik(cx - rx - 1, cy - ry - 1); b.titik(cx + rx + 1, cy + ry + 1);
     if (!el.belah) {
       isi += `<ellipse cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" rx="${rx.toFixed(1)}" ry="${ry.toFixed(1)}" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
       return;
