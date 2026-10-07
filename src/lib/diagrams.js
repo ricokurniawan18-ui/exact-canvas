@@ -4617,36 +4617,45 @@ function renderDoubleInclineSVG(cfg) {
     b.teks(pos.x, pos.y, `${derajat}°`, GAYA.teks, 'middle');
   });
 
-  const boxSisi = 32;
+  const boxSisi = 32, hRope = boxSisi / 2, rKat = 9;
+  // Katrol duduk di atas puncak sehingga tali (sejajar tiap bidang, setinggi
+  // garis tengah balok) menyinggung bawahnya: pusatnya berjarak hRope + rKat
+  // dari kedua sisi miring.
+  const nL = [-Math.sin(radKiri), -Math.cos(radKiri)], nR = [Math.sin(radKanan), -Math.cos(radKanan)];
+  const dKat = hRope + rKat, det = nL[0] * nR[1] - nL[1] * nR[0];
+  const vKat = [(dKat * nR[1] - nL[1] * dKat) / det, (nL[0] * dKat - dKat * nR[0]) / det];
+  const pKat = [Apex[0] + vKat[0], Apex[1] + vKat[1]];
   const sisiInfo = [
-    { base: BL, rad: radKiri, arahX: 1, label: labelKiri, massa: massaKiri, rotasi: (r) => -((r * 180) / Math.PI) },
-    { base: BR, rad: radKanan, arahX: -1, label: labelKanan, massa: massaKanan, rotasi: (r) => (r * 180) / Math.PI },
+    { base: BL, rad: radKiri, arahX: 1, label: labelKiri, massa: massaKiri, rotasi: (r) => -((r * 180) / Math.PI), nSisi: nL },
+    { base: BR, rad: radKanan, arahX: -1, label: labelKanan, massa: massaKanan, rotasi: (r) => (r * 180) / Math.PI, nSisi: nR },
   ];
-  sisiInfo.forEach(({ base, rad, arahX, label, massa, rotasi }) => {
+  sisiInfo.forEach(({ base, rad, arahX, label, massa, rotasi, nSisi }) => {
     const f = 0.45;
     const titik = [base[0] + f * (Apex[0] - base[0]), base[1] + f * (Apex[1] - base[1])];
     // Normal menjauhi baji: komponen x searah arahX (menjauhi pusat), y ke atas.
-    const normal = [arahX * Math.sin(rad), -Math.cos(rad)];
+    const normal = [-arahX * Math.sin(rad), -Math.cos(rad)];
     const pusat = [titik[0] + normal[0] * boxSisi / 2, titik[1] + normal[1] * boxSisi / 2];
-    const taliUjung = [titik[0] + normal[0] * boxSisi * 0.35, titik[1] + normal[1] * boxSisi * 0.35];
-    isi += `<line x1="${taliUjung[0].toFixed(1)}" y1="${taliUjung[1].toFixed(1)}" x2="${Apex[0].toFixed(1)}" y2="${Apex[1].toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+    const arah = [arahX * Math.cos(rad), -Math.sin(rad)]; // naik ke puncak
+    const taliUjung = [pusat[0] + arah[0] * boxSisi / 2, pusat[1] + arah[1] * boxSisi / 2];
+    const taliKat = [pKat[0] - nSisi[0] * rKat, pKat[1] - nSisi[1] * rKat];
+    isi += `<line x1="${taliUjung[0].toFixed(1)}" y1="${taliUjung[1].toFixed(1)}" x2="${taliKat[0].toFixed(1)}" y2="${taliKat[1].toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
     isi += kotakBendaSVG(pusat[0], pusat[1], boxSisi, boxSisi, label, rotasi(rad));
     b.titik(pusat[0] + normal[0] * boxSisi, pusat[1] + normal[1] * boxSisi);
     if (massa) {
-      const pos = letakTeksLuar(pusat[0], pusat[1], -normal[1] * arahX, normal[0] * arahX, boxSisi / 2 + 10);
+      const pos = letakTeksLuar(pusat[0], pusat[1], arahX * 0.9, 0.45, boxSisi / 2 + 14);
       isi += teksGeoSVG(pos, `${label} = ${massa} kg`, GAYA.teksKecil);
       b.teks(pos.x, pos.y, `${label} = ${massa} kg`, GAYA.teksKecil, pos.anchor);
     }
+    if (licin) {
+      // "licin" sejajar bidang, di dalam segitiga dekat dasar (tidak bertabrakan dengan balok)
+      const fl = 0.3, ti = [base[0] + fl * (Apex[0] - base[0]), base[1] + fl * (Apex[1] - base[1])];
+      const px = ti[0] - normal[0] * 9, py = ti[1] - normal[1] * 9;
+      isi += `<text x="${px.toFixed(1)}" y="${py.toFixed(1)}" font-size="${GAYA.teksKecil}" font-style="italic" text-anchor="middle" fill="${GAYA.hitam}" transform="rotate(${rotasi(rad).toFixed(1)} ${px.toFixed(1)} ${py.toFixed(1)})">licin</text>`;
+    }
   });
 
-  isi += katrolSVG(Apex[0], Apex[1], 9);
-  b.titik(Apex[0], Apex[1] - 11);
-
-  if (licin) {
-    const pos = { x: Apex[0], y: groundY + 16, anchor: 'middle' };
-    isi += teksGeoSVG(pos, 'licin', GAYA.teksKecil, true);
-    b.teks(pos.x, pos.y, 'licin', GAYA.teksKecil, 'middle');
-  }
+  isi += katrolSVG(pKat[0], pKat[1], rKat);
+  b.titik(pKat[0], pKat[1] - rKat - 3);
 
   return bungkusGambarSVG(isi, b, false);
 }
