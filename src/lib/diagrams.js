@@ -4093,11 +4093,13 @@ function renderForceDiagramSVG(cfg) {
   } else if (cfg.permukaan !== 'tanpa') {
     const rad = (inclineDeg * Math.PI) / 180;
     const halfLen = 120;
-    // Kotak tetap tegak, jadi permukaan miring akan memotong sudut bawah
-    // kotak: garis diturunkan secukupnya sampai lolos dari sudut itu.
-    const gy = cy + boxSize / 2 + 14 + Math.abs(Math.tan(rad)) * (boxSize / 2);
-    const x1 = cx - halfLen, x2 = cx + halfLen;
-    const y1 = gy + Math.tan(rad) * halfLen, y2 = gy - Math.tan(rad) * halfLen;
+    // Kotak ikut miring (diputar sebesar sudut bidang) dan duduk di atas permukaan: garis permukaan
+    // melalui titik di bawah pusat kotak, tegak lurus permukaan, sejauh setengah sisi kotak + celah.
+    // Bidang datar tetap memakai celah 14 px seperti semula.
+    const jarak = boxSize / 2 + (inclineDeg ? 2 : 14);
+    const csx = cx + Math.sin(rad) * jarak, csy = cy + Math.cos(rad) * jarak;
+    const x1 = csx - Math.cos(rad) * halfLen, y1 = csy + Math.sin(rad) * halfLen;
+    const x2 = csx + Math.cos(rad) * halfLen, y2 = csy - Math.sin(rad) * halfLen;
     parts.push(`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`);
     // arsiran tumpuan di sisi yang menjauhi benda
     const nx = -Math.sin(rad), ny = Math.cos(rad); // normal ke bawah (SVG) untuk garis miring
@@ -4112,10 +4114,14 @@ function renderForceDiagramSVG(cfg) {
     }
   }
 
+  const radBidang = (inclineDeg * Math.PI) / 180;
   if (!titik) {
-    parts.push(`<rect x="${(cx - boxSize / 2).toFixed(1)}" y="${(cy - boxSize / 2).toFixed(1)}" width="${boxSize}" height="${boxSize}" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`);
-    parts.push(`<text x="${cx.toFixed(1)}" y="${(cy + 4.5).toFixed(1)}" text-anchor="middle" font-size="${GAYA.teks}" font-weight="700" fill="${GAYA.hitam}">${escText(objek)}</text>`);
-    cover(cx - boxSize / 2, cy - boxSize / 2, cx + boxSize / 2, cy + boxSize / 2);
+    // pada bidang miring kotak diputar mengikuti permukaan (berlawanan jarum jam sebesar sudut bidang)
+    const rot = inclineDeg ? ` transform="rotate(${(-inclineDeg).toFixed(1)} ${cx} ${cy})"` : '';
+    parts.push(`<g${rot}><rect x="${(cx - boxSize / 2).toFixed(1)}" y="${(cy - boxSize / 2).toFixed(1)}" width="${boxSize}" height="${boxSize}" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`
+      + `<text x="${cx.toFixed(1)}" y="${(cy + 4.5).toFixed(1)}" text-anchor="middle" font-size="${GAYA.teks}" font-weight="700" fill="${GAYA.hitam}">${escText(objek)}</text></g>`);
+    const rb = (boxSize / 2) * Math.SQRT2;
+    cover(cx - (inclineDeg ? rb : boxSize / 2), cy - (inclineDeg ? rb : boxSize / 2), cx + (inclineDeg ? rb : boxSize / 2), cy + (inclineDeg ? rb : boxSize / 2));
   }
 
   // Panjang panah mengikuti besar gaya RELATIF terhadap gaya terbesar di
@@ -4150,7 +4156,9 @@ function renderForceDiagramSVG(cfg) {
       const off = (i - (n - 1) / 2) * 18;
       const ox = -diry * off, oy = dirx * off;
       const len = maxMag > 0 && isFinite(f.magnitude) ? 45 + 65 * (Math.abs(f.magnitude) / maxMag) : 70;
-      const startR = boxSize / 2 + 3;
+      // panah keluar dari TEPI kotak (kotak yang miring: arah gaya diubah ke kerangka kotak, lalu jarak ke sisinya)
+      const lokalX = dirx * Math.cos(radBidang) - diry * Math.sin(radBidang), lokalY = dirx * Math.sin(radBidang) + diry * Math.cos(radBidang);
+      const startR = titik ? 0 : (boxSize / 2) / Math.max(Math.abs(lokalX), Math.abs(lokalY), 1e-6) + 3;
       const x1 = cx + dirx * startR + ox, y1 = cy + diry * startR + oy;
       const x2 = x1 + dirx * len, y2 = y1 + diry * len;
       parts.push(arrowSVG(x1, y1, x2, y2, { strokeWidth: GAYA.garis }));
@@ -4163,7 +4171,7 @@ function renderForceDiagramSVG(cfg) {
       // mendatar di pangkal panah.
       const aMut = norm(f.angle);
       const sejajarSumbu = Math.abs(((aMut % 90) + 90) % 90) < 1e-6;
-      if (String(cfg.sudut || '').toLowerCase() !== 'tidak' && !sejajarSumbu) {
+      if (String(cfg.sudut || '').toLowerCase() !== 'tidak' && !sejajarSumbu && !inclineDeg) {
         const ref = titik ? 0 : (dirx >= 0 ? 0 : 180);
         let d = aMut - ref; d = ((d + 540) % 360) - 180;                     // selisih bertanda (-180,180]
         if (titik && aMut > 180) d = aMut - 360;                              // titik: ke bawah = searah jarum jam dari +X
@@ -4183,7 +4191,9 @@ function renderForceDiagramSVG(cfg) {
         cover(px - r, py - r, px + r, py + r);
       }
 
-      const magTxt = f.teks ? ` = ${f.teks} N` : '';
+      // gaya normal pada bidang miring adalah hasil hitungan (N = mg cos), jadi besarnya tidak ditulis kecuali besarN=ya
+      const sembunyiN = inclineDeg && /^N\d*$/.test(String(f.label).trim()) && !/^(ya|true|1)$/i.test(String(cfg.besarN || ''));
+      const magTxt = f.teks && !sembunyiN ? ` = ${f.teks} N` : '';
       const label = `${f.label}${magTxt}`;
       const vertical = Math.abs(dirx) < 0.3;
       let lx, ly, anchor;
