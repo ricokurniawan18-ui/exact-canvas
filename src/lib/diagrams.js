@@ -2501,7 +2501,8 @@ function pangkatSatuan(t) {
 }
 
 function renderFluidaSVG(cfg) {
-  const jenis = String(cfg.jenis || 'hidrolik').toLowerCase();
+  let jenis = String(cfg.jenis || 'hidrolik').toLowerCase();
+  if ((jenis === 'bejana' || jenis === 'u') && String(cfg.cairan2 || '').toLowerCase() === 'tidak' && (cfg.titik || cfg.bentuk)) jenis = 'wadah';
   const C1 = '#e2e2e2', C2 = '#b9b9b9';
   const b = kotakBatas();
   let isi = '';
@@ -2538,8 +2539,10 @@ function renderFluidaSVG(cfg) {
     isi += arrowSVG(xR1 - 9, ysurf - 12, xR1 - 9, 16, { headLen: 8, strokeWidth: 1.8 });
     T(xR1 - 3, 24, lab('F2', cfg.F2), 'start', GAYA.teks, true);
     b.titik(xl, 8); b.titik(xR1 + 70, 8);
-    T(xl, ybot + 18, lab('A1', cfg.A1), 'middle', GAYA.teks, true);
-    T(xr, ybot + 18, lab('A2', cfg.A2), 'middle', GAYA.teks, true);
+    // luas (A), atau jari-jari (r) / diameter (d) bila soal memberikan itu, bukan luas
+    const penampang = (n) => (cfg['r' + n] != null ? lab('r' + n, cfg['r' + n]) : cfg['d' + n] != null ? lab('d' + n, cfg['d' + n]) : lab('A' + n, cfg['A' + n]));
+    T(xl, ybot + 18, penampang(1), 'middle', GAYA.teks, true);
+    T(xr, ybot + 18, penampang(2), 'middle', GAYA.teks, true);
     T((xL1 + xR0) / 2, ych - 10, nama1, 'middle', GAYA.teksKecil);
   } else if (jenis === 'bejana' || jenis === 'pipau' || jenis === 'u') {
     if (String(cfg.cairan2 || '').toLowerCase() === 'tidak') {
@@ -2576,6 +2579,56 @@ function renderFluidaSVG(cfg) {
         T((xr0 + xr1) / 2, ybot + 18, cfg.rho2 ? lab('ρ2', cfg.rho2) : 'ρ2', 'middle', GAYA.teksKecil);
       }
     }
+  } else if (jenis === 'wadah' || jenis === 'tekananhidrostatis' || jenis === 'hidrostatis') {
+    // Satu wadah berisi satu cairan: bentuk (tak-beraturan / lurus / melebar / menyempit), tinggi
+    // permukaan h dari dasar, dan titik berketinggian (titik=A:10 cm,B:25 cm) untuk soal tekanan hidrostatis.
+    const bentuk = String(cfg.bentuk || 'tak-beraturan').toLowerCase();
+    const PROFIL = {
+      lurus: [[0, 48], [1, 48]],
+      melebar: [[0, 28], [1, 62]],
+      menyempit: [[0, 60], [1, 30]],
+      'tak-beraturan': [[0, 56], [0.22, 54], [0.45, 30], [0.62, 30], [0.82, 50], [1, 54]],
+    };
+    const prof = PROFIL[bentuk] || PROFIL['tak-beraturan'];
+    const hw = (f) => { for (let i = 1; i < prof.length; i++) if (f <= prof[i][0] + 1e-9) { const [f0, w0] = prof[i - 1], [f1, w1] = prof[i]; return w0 + ((f - f0) / (f1 - f0)) * (w1 - w0); } return prof[prof.length - 1][1]; };
+    const cx = 120, yb = 196, Hc = 176, ytop = yb - Hc;
+    const hAir = angka(cfg.h, NaN);
+    const titik = String(cfg.titik || '').split(',').map((x) => x.trim()).filter(Boolean).map((x) => { const i = x.indexOf(':'); return { nama: (i < 0 ? x : x.slice(0, i)).trim(), nilai: i < 0 ? '' : x.slice(i + 1).trim() }; });
+    const lf = 0.84, yAir = yb - lf * Hc, skala = isFinite(hAir) ? (lf * Hc) / hAir : null;
+    const xw = (f, sisi) => cx + sisi * hw(f);
+    const fy = (y) => (yb - y) / Hc;
+    // cairan
+    const bp = prof.map((q) => q[0]).filter((f) => f < lf);
+    let pathAir = `M${xw(lf, -1).toFixed(1)},${yAir.toFixed(1)}`;
+    bp.slice().reverse().forEach((f) => { pathAir += ` L${xw(f, -1).toFixed(1)},${(yb - f * Hc).toFixed(1)}`; });
+    bp.forEach((f) => { pathAir += ` L${xw(f, 1).toFixed(1)},${(yb - f * Hc).toFixed(1)}`; });
+    pathAir += ` L${xw(lf, 1).toFixed(1)},${yAir.toFixed(1)} Z`;
+    isi += poly(pathAir.replace(/^M[^L]*L/, (m) => m), C1);
+    // dinding: kiri dari atas ke dasar, lantai, kanan ke atas
+    let dinding = `M${xw(1, -1).toFixed(1)},${ytop}`;
+    prof.slice().reverse().forEach((q) => { dinding += ` L${xw(q[0], -1).toFixed(1)},${(yb - q[0] * Hc).toFixed(1)}`; });
+    prof.forEach((q) => { dinding += ` L${xw(q[0], 1).toFixed(1)},${(yb - q[0] * Hc).toFixed(1)}`; });
+    isi += poly(dinding);
+    const hwMax = Math.max(...prof.map((q) => q[1]));
+    isi += g(cx - hwMax - 12, yAir, cx + hwMax + 12, yAir, 1, true, GAYA.hitam);
+    b.titik(cx - hwMax - 80, ytop - 6); b.titik(cx + hwMax + 80 + 30 * Math.max(0, titik.length - 1), yb + 22);
+    // tinggi permukaan dari dasar (kiri)
+    const xdl = cx - hwMax - 26;
+    isi += g(xdl - 4, yb, cx - hwMax + 6, yb, 1, true, GAYA.hitam) + dim(xdl, yb, xdl, yAir);
+    T(xdl - 6, (yb + yAir) / 2 + 4, lab('h', cfg.h), 'end', GAYA.teks, true);
+    // titik berketinggian (kanan): titik di dalam cairan + panah tinggi dari dasar
+    titik.forEach((q, i) => {
+      const e = angka(q.nilai, NaN);
+      const yP = isFinite(e) && skala ? yb - e * skala : yb - (0.25 + 0.2 * i) * lf * Hc;
+      const xp = cx + (i % 2 ? 10 : -10);
+      isi += `<circle cx="${xp.toFixed(1)}" cy="${yP.toFixed(1)}" r="2.8" fill="${GAYA.hitam}"/>`;
+      T(xp + (i % 2 ? 7 : -7), yP - 5, q.nama, i % 2 ? 'start' : 'end', GAYA.teks, true);
+      const xdr = cx + hwMax + 24 + 34 * i;
+      isi += g(xp + 4, yP, xdr, yP, 1, true, GAYA.hitam) + g(cx + hwMax, yb, xdr + 4, yb, 1, true, GAYA.hitam) + dim(xdr, yb, xdr, yP);
+      T(xdr + 6, (yb + yP) / 2 + 4, q.nilai || ('h' + q.nama), 'start', GAYA.teks, true);
+    });
+    T(cx, yb - 12, nama1, 'middle', GAYA.teks);
+    if (cfg.rho) T(cx, yb + 18, lab('ρ', cfg.rho), 'middle', GAYA.teksKecil);
   } else if (jenis === 'manometer') {
     const xt0 = 4, xt1 = 56, xl0 = 100, xl1 = 124, xr0 = 152, xr1 = 176, ybot = 150, ych = 120, ypa = 60, ypb = 76;
     const gasLebih = String(cfg.gas || 'lebih').toLowerCase() !== 'kurang';
