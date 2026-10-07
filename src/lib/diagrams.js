@@ -2491,6 +2491,215 @@ function renderAlatUkurSVG(cfg) {
 }
 
 // ---------------------------------------------------------------------
+// Fluida statis dan dinamis: hidrolik, bejana berhubungan, manometer,
+// kontinuitas, venturi, tangki bocor (Torricelli), benda terapung/tergantung
+// ---------------------------------------------------------------------
+
+// "cm2" -> "cm²", "kg/m3" -> "kg/m³", "m/s2" -> "m/s²" untuk label bersatuan.
+function pangkatSatuan(t) {
+  return String(t).replace(/\b(mm|cm|m|km)2\b/g, '$1²').replace(/\b(mm|cm|m|km)3\b/g, '$1³').replace(/(\/s)2\b/g, '$1²').replace(/\/(m|cm)3\b/g, '/$1³').replace(/\/(m|cm)2\b/g, '/$1²');
+}
+
+function renderFluidaSVG(cfg) {
+  const jenis = String(cfg.jenis || 'hidrolik').toLowerCase();
+  const C1 = '#e2e2e2', C2 = '#b9b9b9';
+  const b = kotakBatas();
+  let isi = '';
+  const g = (x1, y1, x2, y2, t, dash, warna) => `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${warna || GAYA.hitam}" stroke-width="${t || GAYA.garis}"${dash ? ` stroke-dasharray="${GAYA.putus}"` : ''}/>`;
+  const poly = (d, fill) => `<path d="${d}" fill="${fill || 'none'}" stroke="${fill ? 'none' : GAYA.hitam}" stroke-width="${GAYA.garis}" stroke-linejoin="round"/>`;
+  const T = (x, y, t, anchor, size, italic) => {
+    const teks = pangkatSatuan(t);
+    isi += teksGeoSVG({ x, y, anchor: anchor || 'middle' }, teks, size || GAYA.teks, !!italic, true);
+    b.teks(x, y, teks, size || GAYA.teks, anchor || 'middle');
+  };
+  const dim = (x1, y1, x2, y2) => arrowSVG(x1, y1, x2, y2, { headLen: 5, strokeWidth: 1 }) + arrowSVG(x2, y2, x1, y1, { headLen: 5, strokeWidth: 1 });
+  // "A1 = 10 cm2" kalau nilainya diberikan, "A1" saja kalau tidak (besaran yang dicari / tanpa angka).
+  // Besaran yang dicari cukup ditulis hurufnya (h2=x -> "x", F2=F2 -> "F2"); nilai bersatuan -> "h1 = 10 cm".
+  const lab = (sim, nilai) => {
+    const v = nilai == null ? '' : String(nilai).trim();
+    if (!v || v.toLowerCase() === sim.toLowerCase()) return sim;
+    return /^[A-Za-z]$/.test(v) ? v : `${sim} = ${v}`;
+  };
+  const angka = (v, def) => { const n = numOrDefault(v, NaN); return isFinite(n) && n > 0 ? n : def; };
+  const nama1 = String(cfg.cairan1 || cfg.cairan || 'air'), nama2 = String(cfg.cairan2 || 'minyak');
+
+  if (jenis === 'hidrolik') {
+    const xL0 = 12, xL1 = 52, xR0 = 104, xR1 = 196, ytop = 44, ysurf = 74, ybot = 142, ych = 112;
+    isi += poly(`M${xL0},${ysurf} H${xL1} V${ych} H${xR0} V${ysurf} H${xR1} V${ybot} H${xL0} Z`, C1);
+    isi += poly(`M${xL0},${ytop} V${ybot} H${xR1} V${ytop}`) + poly(`M${xL1},${ytop} V${ych} H${xR0} V${ytop}`);
+    b.titik(xL0, ytop - 4); b.titik(xR1, ybot + 4);
+    const pis = (x0, x1) => `<rect x="${x0 + 1}" y="${ysurf - 9}" width="${x1 - x0 - 2}" height="9" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    isi += pis(xL0, xL1) + pis(xR0, xR1);
+    const xl = (xL0 + xL1) / 2, xr = (xR0 + xR1) / 2;
+    isi += arrowSVG(xl, 16, xl, ysurf - 12, { headLen: 8, strokeWidth: 1.8 });
+    T(xl + 8, 24, lab('F1', cfg.F1), 'start', GAYA.teks, true);
+    isi += `<rect x="${xr - 30}" y="${ysurf - 36}" width="60" height="27" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    T(xr, ysurf - 19, cfg.beban ? String(cfg.beban) : 'beban', 'middle', GAYA.teksKecil);
+    isi += arrowSVG(xR1 - 9, ysurf - 12, xR1 - 9, 16, { headLen: 8, strokeWidth: 1.8 });
+    T(xR1 - 3, 24, lab('F2', cfg.F2), 'start', GAYA.teks, true);
+    b.titik(xl, 8); b.titik(xR1 + 70, 8);
+    T(xl, ybot + 18, lab('A1', cfg.A1), 'middle', GAYA.teks, true);
+    T(xr, ybot + 18, lab('A2', cfg.A2), 'middle', GAYA.teks, true);
+    T((xL1 + xR0) / 2, ych - 10, nama1, 'middle', GAYA.teksKecil);
+  } else if (jenis === 'bejana' || jenis === 'pipau' || jenis === 'u') {
+    if (String(cfg.cairan2 || '').toLowerCase() === 'tidak') {
+      // satu cairan, tiga bejana berbeda bentuk (tabung sempit, corong, tabung lebar) yang berbagi
+      // dinding dan dasar: permukaan sama tinggi walau bentuk dan penampangnya berbeda
+      const yl = 74, yc = 130, ydas = 150, ya = 24;
+      const xL2 = 66 - 22 * (yc - yl) / (yc - ya), xR2 = 96 + 24 * (yc - yl) / (yc - ya);
+      isi += poly(`M14,${yl} H40 V${yc} H66 L${xL2.toFixed(1)},${yl} H${xR2.toFixed(1)} L96,${yc} H132 V${yl} H176 V${ydas} H14 Z`, C1);
+      isi += poly(`M14,${ya} V${ydas} H176 V${ya}`) + g(40, ya, 40, yc) + g(40, yc, 66, yc) + g(66, yc, 44, ya) + g(96, yc, 120, ya) + g(96, yc, 132, yc) + g(132, yc, 132, ya);
+      isi += poly(`M40,${ya} H44 L66,${yc} H40 Z`, '#555555') + poly(`M120,${ya} H132 V${yc} H96 Z`, '#555555');   // sekat antar-bejana: dinding padat
+      isi += g(0, yl, 196, yl, 1, true, GAYA.hitam);
+      T(81, yl + 30, nama1, 'middle', GAYA.teks);
+      b.titik(0, ya - 10); b.titik(200, ydas + 8);
+      if (cfg.h) { isi += dim(188, yl, 188, ydas); T(194, (yl + ydas) / 2 + 4, lab('h', cfg.h), 'start', GAYA.teks, true); b.titik(250, 0); }
+    } else {
+      const xl0 = 24, xl1 = 62, xr0 = 100, xr1 = 138, ytop = 20, ybot = 158, ych = 126, yref = 104;
+      const h1 = angka(cfg.h1, NaN), h2 = angka(cfg.h2, NaN);
+      let p1 = 56, p2 = 78;                                             // tinggi gambar (px)
+      if (isFinite(h1) && isFinite(h2)) { const k = 78 / Math.max(h1, h2); p1 = h1 * k; p2 = h2 * k; }
+      const yL = yref - p1, yR = yref - p2;
+      isi += poly(`M${xl0},${yL} H${xl1} V${ych} H${xr0} V${yref} H${xr1} V${ybot} H${xl0} Z`, C1);
+      isi += poly(`M${xr0},${yR} H${xr1} V${yref} H${xr0} Z`, C2);
+      isi += poly(`M${xl0},${ytop} V${ybot} H${xr1} V${ytop}`) + poly(`M${xl1},${ytop} V${ych} H${xr0} V${ytop}`);
+      b.titik(xl0 - 70, ytop - 6); b.titik(xr1 + 80, ybot + 24);
+      isi += g(xl0 - 8, yref, xr1 + 8, yref, 1, true, GAYA.hitam);
+      isi += dim(xl0 - 16, yref, xl0 - 16, yL);
+      T(xl0 - 22, (yref + yL) / 2 + 4, lab('h1', cfg.h1), 'end', GAYA.teks, true);
+      isi += dim(xr1 + 16, yref, xr1 + 16, yR);
+      T(xr1 + 22, (yref + yR) / 2 + 4, lab('h2', cfg.h2), 'start', GAYA.teks, true);
+      T((xl0 + xl1) / 2, Math.min(yL + 18, ych - 6), nama1, 'middle', GAYA.teksKecil);
+      T((xr0 + xr1) / 2, yR + 16, nama2, 'middle', GAYA.teksKecil);
+      if (cfg.rho1 || cfg.rho2) {
+        T((xl0 + xl1) / 2, ybot + 18, cfg.rho1 ? lab('ρ1', cfg.rho1) : 'ρ1', 'middle', GAYA.teksKecil);
+        T((xr0 + xr1) / 2, ybot + 18, cfg.rho2 ? lab('ρ2', cfg.rho2) : 'ρ2', 'middle', GAYA.teksKecil);
+      }
+    }
+  } else if (jenis === 'manometer') {
+    const xt0 = 4, xt1 = 56, xl0 = 100, xl1 = 124, xr0 = 152, xr1 = 176, ybot = 150, ych = 120, ypa = 60, ypb = 76;
+    const gasLebih = String(cfg.gas || 'lebih').toLowerCase() !== 'kurang';
+    const yTinggi = 66, yRendah = 110;
+    const yL = gasLebih ? yRendah : yTinggi, yR = gasLebih ? yTinggi : yRendah;
+    isi += `<rect x="${xt0}" y="40" width="${xt1 - xt0}" height="56" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    T((xt0 + xt1) / 2, 72, cfg.gasnama || 'gas', 'middle', GAYA.teks);
+    isi += poly(`M${xl0},${yL} H${xl1} V${ych} H${xr0} V${yR} H${xr1} V${ybot} H${xl0} Z`, C2);
+    // pipa dari tangki ke lengan kiri (tertutup di atas), lengan kanan terbuka ke udara
+    isi += g(xt1, ypa, xl1, ypa) + g(xt1, ypb, xl0, ypb);
+    isi += poly(`M${xl0},${ypb} V${ybot} H${xr1} V20`) + poly(`M${xl1},${ypa} V${ych} H${xr0} V20`);
+    isi += arrowSVG((xr0 + xr1) / 2, 0, (xr0 + xr1) / 2, 24, { headLen: 7, strokeWidth: 1.4 });
+    T(xr1 + 8, 12, lab('P0', cfg.P0 && cfg.P0 !== 'ya' ? cfg.P0 : ''), 'start', GAYA.teks, true);
+    const xd = xr1 + 26;
+    isi += g(xl1, yRendah, xd + 4, yRendah, 1, true, GAYA.hitam) + g(xr1, yTinggi, xd + 4, yTinggi, 1, true, GAYA.hitam);
+    isi += dim(xd, yTinggi, xd, yRendah);
+    T(xd + 8, (yTinggi + yRendah) / 2 + 4, lab('h', cfg.h), 'start', GAYA.teks, true);
+    T((xl0 + xr1) / 2, ybot + 18, cfg.cairan || 'raksa', 'middle', GAYA.teksKecil);
+    b.titik(xt0, 0); b.titik(xd + 60, ybot + 24);
+  } else if (jenis === 'kontinuitas') {
+    const x0 = 14, xa = 96, xb = 140, x1 = 262, s1 = 38, s2 = 19;
+    const h1 = angka(cfg.h1, NaN), h2 = angka(cfg.h2, NaN), adaTinggi = isFinite(h1) && isFinite(h2);
+    const k = adaTinggi ? 56 / Math.max(h1, h2) : 0, ref = 176;
+    const yc1 = adaTinggi ? ref - 56 - h1 * k + 4 : 96, yc2 = adaTinggi ? ref - 56 - h2 * k + 4 : 96;
+    const atas = (x) => (x <= xa ? yc1 - s1 : x >= xb ? yc2 - s2 : yc1 - s1 + ((x - xa) / (xb - xa)) * ((yc2 - s2) - (yc1 - s1)));
+    const bawah = (x) => (x <= xa ? yc1 + s1 : x >= xb ? yc2 + s2 : yc1 + s1 + ((x - xa) / (xb - xa)) * ((yc2 + s2) - (yc1 + s1)));
+    isi += poly(`M${x0},${yc1 - s1} H${xa} L${xb},${yc2 - s2} H${x1} V${yc2 + s2} H${xb} L${xa},${yc1 + s1} H${x0} Z`, C1);
+    isi += poly(`M${x0},${yc1 - s1} H${xa} L${xb},${yc2 - s2} H${x1}`) + poly(`M${x0},${yc1 + s1} H${xa} L${xb},${yc2 + s2} H${x1}`);
+    b.titik(x0 - 4, 10); b.titik(x1 + 4, ref + 14);
+    const xs1 = 52, xs2 = 206;
+    isi += g(xs1, atas(xs1), xs1, bawah(xs1), 1, true, GAYA.hitam) + g(xs2, atas(xs2), xs2, bawah(xs2), 1, true, GAYA.hitam);
+    T(xs1, atas(xs1) - 6, lab('A1', cfg.A1), 'middle', GAYA.teks, true);
+    T(xs2, atas(xs2) - 6, lab('A2', cfg.A2), 'middle', GAYA.teks, true);
+    isi += arrowSVG(xs1 - 24, yc1, xs1 + 30, yc1, { headLen: 7, strokeWidth: 1.6 });
+    T(xs1 + 3, yc1 + 15, lab('v1', cfg.v1), 'middle', GAYA.teks, true);
+    isi += arrowSVG(xs2 - 30, yc2, xs2 + 40, yc2, { headLen: 7, strokeWidth: 1.6 });
+    T(xs2 + 6, yc2 + 15, lab('v2', cfg.v2), 'middle', GAYA.teks, true);
+    if (cfg.P1 || cfg.P2) {
+      if (cfg.P1) T(xs1 - 26, atas(xs1) - 22, lab('P1', cfg.P1), 'middle', GAYA.teksKecil);
+      if (cfg.P2) T(xs2 + 10, atas(xs2) - 22, lab('P2', cfg.P2), 'middle', GAYA.teksKecil);
+    }
+    if (adaTinggi) {
+      isi += g(x0 - 8, ref, x1 + 22, ref, 1, true, GAYA.hitam);
+      isi += dim(x0 - 2, ref, x0 - 2, yc1); T(x0 - 8, (ref + yc1) / 2 + 4, lab('h1', cfg.h1), 'end', GAYA.teks, true); b.titik(x0 - 70, ref);
+      isi += dim(x1 + 12, ref, x1 + 12, yc2); T(x1 + 18, (ref + yc2) / 2 + 4, lab('h2', cfg.h2), 'start', GAYA.teks, true);
+      b.titik(x1 + 60, ref);
+    }
+  } else if (jenis === 'venturi') {
+    const x0 = 10, xa = 74, xb = 116, xc = 176, xd = 218, x1 = 282, sw = 30, st = 14, yc = 120;
+    isi += poly(`M${x0},${yc - sw} H${xa} L${xb},${yc - st} H${xc} L${xd},${yc - sw} H${x1} V${yc + sw} H${xd} L${xc},${yc + st} H${xb} L${xa},${yc + sw} H${x0} Z`, C1);
+    isi += poly(`M${x0},${yc - sw} H${xa} L${xb},${yc - st} H${xc} L${xd},${yc - sw} H${x1}`) + poly(`M${x0},${yc + sw} H${xa} L${xb},${yc + st} H${xb} H${xc} L${xd},${yc + sw} H${x1}`);
+    const tub = (xm, yTop, ySambung) => {
+      const w = 9;
+      return `<path d="M${xm - w},${ySambung} V${yTop} M${xm + w},${ySambung} V${yTop}" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    };
+    const xm1 = 44, xm2 = 146, yS1 = yc - sw, yS2 = yc - st, yN1 = 38, yN2 = 74;
+    isi += `<rect x="${xm1 - 8}" y="${yN1}" width="16" height="${yS1 - yN1 + 1}" fill="${C1}"/><rect x="${xm2 - 8}" y="${yN2}" width="16" height="${yS2 - yN2 + 1}" fill="${C1}"/>`;
+    isi += tub(xm1, 14, yS1) + tub(xm2, 14, yS2);
+    isi += g(xm1 - 9, yN1, xm1 + 9, yN1, 1.2) + g(xm2 - 9, yN2, xm2 + 9, yN2, 1.2);
+    isi += g(xm2 + 10, yN1, xm2 + 34, yN1, 1, true, GAYA.hitam);
+    isi += dim(xm2 + 28, yN1, xm2 + 28, yN2);
+    T(xm2 + 36, (yN1 + yN2) / 2 + 4, lab('h', cfg.h), 'start', GAYA.teks, true);
+    isi += arrowSVG(x0 + 4, yc, x0 + 40, yc, { headLen: 7, strokeWidth: 1.6 });
+    T(x0 + 22, yc + 16, lab('v1', cfg.v1), 'middle', GAYA.teks, true);
+    isi += arrowSVG(xb + 6, yc, xc - 6, yc, { headLen: 7, strokeWidth: 1.6 });
+    T((xb + xc) / 2, yc + st + 16, lab('v2', cfg.v2), 'middle', GAYA.teks, true);
+    T(xm1, yc + sw + 18, lab('A1', cfg.A1), 'middle', GAYA.teks, true);
+    T(xm2, yc + st + 34, lab('A2', cfg.A2), 'middle', GAYA.teks, true);
+    b.titik(x0 - 4, 8); b.titik(x1 + 4, yc + sw + 26);
+  } else if (jenis === 'tangki' || jenis === 'torricelli') {
+    const h1 = angka(cfg.h1, NaN), h2 = angka(cfg.h2, NaN);
+    let p1 = 66, p2 = 70;
+    if (isFinite(h1) && isFinite(h2)) { const k = 140 / (h1 + h2); p1 = h1 * k; p2 = h2 * k; }
+    const tanah = 190, yLubang = tanah - p2, yAir = yLubang - p1, xk = 30, xw = 120, jatuh = 2 * Math.sqrt(p1 * p2);
+    isi += `<rect x="${xk}" y="${yAir}" width="${xw - xk}" height="${tanah - yAir}" fill="${C1}"/>`;
+    isi += g(xk, yAir - 14, xk, tanah) + g(xw, yAir - 14, xw, yLubang - 3) + g(xw, yLubang + 3, xw, tanah) + g(xk, tanah, xw, tanah);
+    isi += g(xk - 2, yAir, xw + 2, yAir, 1, true, GAYA.abu);
+    let jet = `M${xw},${yLubang}`;
+    for (let i = 1; i <= 24; i++) { const dx = (jatuh * i) / 24; jet += ` L${(xw + dx).toFixed(1)},${(yLubang + p2 * Math.pow(dx / jatuh, 2)).toFixed(1)}`; }
+    isi += `<path d="${jet}" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    isi += g(xk - 40, tanah, xw + jatuh + 36, tanah, 2) + arsirTumpuanSVG(xk - 40, tanah, xw + jatuh + 36, tanah, 0, 1);
+    b.titik(xk - 56, yAir - 20); b.titik(xw + jatuh + 40, tanah + 10);
+    const xdm = xk - 14;
+    isi += dim(xdm, yAir, xdm, yLubang); T(xdm - 5, (yAir + yLubang) / 2 + 4, lab('h1', cfg.h1), 'end', GAYA.teks, true);
+    isi += dim(xdm, yLubang, xdm, tanah); T(xdm - 5, (yLubang + tanah) / 2 + 4, lab('h2', cfg.h2), 'end', GAYA.teks, true);
+    isi += dim(xw + 2, tanah + 14, xw + jatuh, tanah + 14);
+    T(xw + jatuh / 2, tanah + 30, lab('x', cfg.x), 'middle', GAYA.teks, true);
+    isi += `<circle cx="${xw}" cy="${yLubang}" r="2" fill="${GAYA.hitam}"/>`;
+    T((xk + xw) / 2, yAir + 20, nama1, 'middle', GAYA.teks);
+    if (cfg.P0) T((xk + xw) / 2, yAir - 20, 'terbuka (P0)', 'middle', GAYA.teksKecil);
+  } else if (jenis === 'apung' || jenis === 'archimedes' || jenis === 'tergantung') {
+    const tergantung = jenis === 'tergantung' || /^(ya|true|1)$/i.test(String(cfg.tergantung || ''));
+    const xc0 = 22, xc1 = 188, ybawah = 176, yair = 84, bw = 54, bh = 44, cx = (xc0 + xc1) / 2;
+    const f = tergantung ? 1 : Math.min(0.95, Math.max(0.1, numOrDefault(cfg.bagian, 0.6)));
+    const yAtasBenda = tergantung ? yair + 22 : yair - (1 - f) * bh, yBawahBenda = yAtasBenda + bh;
+    isi += `<rect x="${xc0}" y="${yair}" width="${xc1 - xc0}" height="${ybawah - yair}" fill="${C1}"/>`;
+    isi += g(xc0, 34, xc0, ybawah) + g(xc1, 34, xc1, ybawah) + g(xc0, ybawah, xc1, ybawah);
+    isi += `<rect x="${cx - bw / 2}" y="${yAtasBenda.toFixed(1)}" width="${bw}" height="${bh}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    isi += g(xc0, yair, cx - bw / 2, yair, 1.2) + g(cx + bw / 2, yair, xc1, yair, 1.2);
+    isi += g(cx - bw / 2, yair, cx + bw / 2, yair, 1, true, GAYA.hitam);
+    b.titik(xc0 - 8, 8); b.titik(xc1 + 80, ybawah + 20);
+    T(cx - bw / 2 - 6, yAtasBenda + bh / 2 + 4, cfg.benda ? String(cfg.benda) : 'benda', 'end', GAYA.teksKecil);
+    T(xc0 + 34, ybawah - 12, nama1, 'middle', GAYA.teks);
+    const yMid = (yAtasBenda + yBawahBenda) / 2;
+    const fa = (xx, yy) => `F<tspan baseline-shift="sub" font-size="8">A</tspan>`;
+    const labelFA = cfg.FA ? ` = ${pangkatSatuan(cfg.FA)}` : '';
+    // gaya: w turun dari pusat benda, F_A naik, (T naik bila tergantung pada tali)
+    isi += arrowSVG(cx, yMid, cx, yMid + 56, { headLen: 8, strokeWidth: 1.8 });
+    T(cx + 7, yMid + 62, lab('w', cfg.w), 'start', GAYA.teks, true);
+    isi += arrowSVG(cx - (tergantung ? 14 : 0), yMid, cx - (tergantung ? 14 : 0), yMid - 52, { headLen: 8, strokeWidth: 1.8 });
+    isi += `<text x="${(cx - (tergantung ? 14 : 0) - 7).toFixed(1)}" y="${(yMid - 56).toFixed(1)}" text-anchor="end" font-size="${GAYA.teks}" font-style="italic" fill="${GAYA.hitam}" stroke="#ffffff" stroke-width="3" paint-order="stroke">${fa()}${escText(labelFA)}</text>`;
+    b.teks(cx - 21 - 50, yMid - 56, 'FA' + labelFA, GAYA.teks, 'end');
+    if (tergantung) {
+      isi += g(cx, 10, cx, yAtasBenda, 1.2);
+      isi += arrowSVG(cx + 14, yMid, cx + 14, yMid - 52, { headLen: 8, strokeWidth: 1.8 });
+      T(cx + 21, yMid - 56, lab('T', cfg.T), 'start', GAYA.teks, true);
+    }
+  } else {
+    throw new Error('jenis fluida "' + jenis + '" tidak dikenal (hidrolik, bejana, manometer, kontinuitas, venturi, tangki, apung, tergantung)');
+  }
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// ---------------------------------------------------------------------
 // 2e. Sketsa geometri bebas (segitiga + garis sejajar, sudut pada garis
 // lurus, garis sejajar + transversal, ... — bentuk apa pun dari koordinat)
 // ---------------------------------------------------------------------
@@ -8507,6 +8716,7 @@ const DIAGRAM_TYPE_ALIASES = {
   tatasurya: 'tatasurya', solarsystem: 'tatasurya',
   magnet: 'magnet',
   sketsa: 'sketsa', sketsabebas: 'sketsa', geometribebas: 'sketsa',
+  fluida: 'fluida', hidrolik: 'fluida', bejana: 'fluida', bejanaberhubungan: 'fluida', fluidastatis: 'fluida', fluidadinamis: 'fluida',
   alatukur: 'alatukur', jangkasorong: 'alatukur', mikrometer: 'alatukur', micrometer: 'alatukur', vernier: 'alatukur',
   partikel: 'partikel', modelpartikel: 'partikel', diagrammolekul: 'diagrammolekul', molekulpartikel: 'diagrammolekul',
   tabelperiodik: 'tabelperiodik', sistemperiodik: 'tabelperiodik', periodictable: 'tabelperiodik',
@@ -8648,6 +8858,7 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'sudut') svg = renderAngleSVG(params);
     else if (type === 'sketsa') svg = renderSketsaSVG(params);
     else if (type === 'alatukur') svg = renderAlatUkurSVG(params);
+    else if (type === 'fluida') svg = renderFluidaSVG(params);
     else if (type === 'partikel') svg = renderPartikelSVG(params);
     else if (type === 'diagrammolekul') svg = renderDiagramMolekulSVG(params);
     else if (type === 'tabelperiodik') svg = renderPeriodicTableSVG(params);
@@ -8779,7 +8990,7 @@ if (typeof module !== 'undefined') {
     GAYA, rapikanSVG, satuanALevel, labelSatuan, labelSumbuALevel, sumbuSVG, tidakBerskalaSVG, polaSeri,
     compileExpr, renderFunctionGraphSVG, renderGeometrySVG, renderNumberLineSVG,
     renderVennSVG, renderStatSVG, renderFactorTreeSVG, renderTableHTML,
-    renderPictogramSVG, renderSolidSVG, renderAngleSVG, renderLewisSVG, renderAlatUkurSVG, bacaanJangka, bacaanMikrometer,
+    renderPictogramSVG, renderSolidSVG, renderAngleSVG, renderLewisSVG, renderAlatUkurSVG, renderFluidaSVG, bacaanJangka, bacaanMikrometer,
     renderHydrocarbonSVG, renderForceDiagramSVG, renderFoodChainSVG, renderDiagramTag,
     renderMoleculeShapeSVG, renderCellSVG,
     renderGraphPaperSVG, renderBlankTableHTML, renderAnswerLinesHTML,
