@@ -661,7 +661,10 @@ function renderLinearProgramSVG(cfg) {
   const sx = plotW / (xmax - xmin || 1);
   const sy = plotH / (ymax - ymin || 1);
   const toPx = (x, y) => [padL + (x - xmin) * sx, padT + plotH - (y - ymin) * sy];
-  const legendH = 16 * rawList.length + 8;
+  // sistem=tidak (alias legenda=tidak): daftar pertidaksamaan dan nomor garis disembunyikan, untuk soal
+  // "tentukan sistem pertidaksamaan dari gambar" — daftar itu jawabannya.
+  const tanpaSistem = /^(tidak|false|0)$/i.test(String(cfg.sistem != null ? cfg.sistem : (cfg.legenda != null ? cfg.legenda : '')));
+  const legendH = tanpaSistem ? 0 : 16 * rawList.length + 8;
   const width = padL + plotW + padR;
   const height = padT + plotH + padB + legendH;
   const xAxisY = padT + plotH, yAxisX = padL;
@@ -726,7 +729,7 @@ function renderLinearProgramSVG(cfg) {
     if (lx < padL + 6 || lx > padL + plotW - 6 || ly < padT + 6 || ly > xAxisY - 6) {
       lx = px2 - dx * 14 + dy * 10; ly = py2 - dy * 14 - dx * 10;
     }
-    svg += teksHaloSVG(lx, ly + 3.5, `(${i + 1})`);
+    if (!tanpaSistem) svg += teksHaloSVG(lx, ly + 3.5, `(${i + 1})`);
   });
 
   svg += sumbuALevelSVG({ xAxisY, yAxisX, xFrom: padL, xTo: padL + plotW + 10, yFrom: xAxisY, yTo: padT - 10, labelX: 'x', labelY: 'y' });
@@ -743,7 +746,7 @@ function renderLinearProgramSVG(cfg) {
     });
   }
 
-  rawList.forEach((r, i) => {
+  if (!tanpaSistem) rawList.forEach((r, i) => {
     svg += `<text x="${padL}" y="${(xAxisY + padB + 10 + i * 16).toFixed(1)}" font-size="${GAYA.teksKecil}" fill="${GAYA.hitam}">(${i + 1}) ${escText(r)}</text>`;
   });
 
@@ -9056,13 +9059,23 @@ function tandaiJawaban(inner, konteks) {
   return RE_PERINTAH_GAMBAR.test(barisIni.slice(-320)) ? inner.replace(/\s*;?\s*$/, '') + '; jawab=ya' : inner;
 }
 
+// Soal yang menanyakan sistem pertidaksamaan dari gambar program linear: daftar pertidaksamaan di bawah
+// grafik adalah jawabannya, jadi disembunyikan (sistem=tidak) kalau kalimat sesudah gambar menanyakannya.
+const RE_TANYA_SISTEM = /(?:sistem|model)\s+(?:pertidaksamaan|matematika)\s+(?:linear\s+)?(?:yang\s+)?(?:paling\s+)?tepat|merepresentasikan|mewakili\s+daerah|menyatakan\s+daerah|tentukan\s+(?:sistem\s+)?pertidaksamaan|pertidaksamaan\s+(?:yang\s+)?(?:mewakili|memenuhi|sesuai)|which\s+(?:system|set)\s+of\s+inequalit|represents?\s+the\s+(?:shaded|feasible)/i;
+function tandaiSistem(inner, sesudah) {
+  if (!/^programlinear\s*:|^linearprogram\s*:/i.test(inner) || /(?:^|;)\s*(?:sistem|legenda)\s*=/i.test(inner)) return inner;
+  const sampai = String(sesudah).search(/\n[ \t]*(?:PG|IB|B|I|E|M)\d+\./);
+  const area = sampai > -1 ? String(sesudah).slice(0, sampai) : String(sesudah);
+  return RE_TANYA_SISTEM.test(area) ? inner.replace(/\s*;?\s*$/, '') + '; sistem=tidak' : inner;
+}
+
 function extractDiagramTags(text) {
   const tags = [];
   // Titik yang menempel di belakang tag ("[[gaya: ...]]. Berapakah ...") dibuang: tanpa
   // itu ia tercetak sebagai ". Berapakah" yatim di awal baris sesudah diagram.
   const replaced = String(text || '').replace(/\[\[([\s\S]*?)\]\](?:[ \t]*\.(?=[ \t]|\r?\n|$))?/g, (match, inner, offset, whole) => {
     const idx = tags.length;
-    tags.push(tandaiJawaban(inner.trim(), whole.slice(Math.max(0, offset - 360), offset)));
+    tags.push(tandaiSistem(tandaiJawaban(inner.trim(), whole.slice(Math.max(0, offset - 360), offset)), whole.slice(offset + match.length, offset + match.length + 460)));
     return DIAGRAM_TOKEN_OPEN + idx + DIAGRAM_TOKEN_CLOSE;
   });
   return { text: replaced, tags };
