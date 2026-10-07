@@ -2879,7 +2879,7 @@ function renderSolenoidaSVG(cfg) {
   }
   if (ya('n') || ya('label')) T(x0 - rx - 14, yc + 5, 'N', 'end', GAYA.teks, true);
   if (ya('titikA') || ya('titika')) {
-    const xA = x0 + dx * 1.5, yA = yc - ry + 6;
+    const xA = x1 - dx * 0.5, yA = yc - ry + 6;                                          // di ujung kanan kumparan, jauh dari tulisan "Kumparan" di tengah
     isi += arrowSVG(xA + 34, yA - 22, xA + 4, yA - 1, { headLen: 7, strokeWidth: 1.2 });
     T(xA + 40, yA - 24, 'A', 'start', GAYA.teks + 1, true);
     b.titik(xA + 56, yA - 38);
