@@ -2267,8 +2267,19 @@ const MOLEKUL_PRESET = {
   N2: [['N', -18, 0], ['N', 18, 0]],
   SO2: [['O', -25, -22], ['S', 0, 0], ['O', 25, -22]],
   H2S: [['H', -27, 0], ['S', 0, 0], ['H', 27, 0]],
+  H2O2: [['O', -17, 6], ['O', 17, 6], ['H', -33, -15], ['H', 33, -15]],
+  O3: [['O', -22, 14], ['O', 0, -8], ['O', 22, 14]],
+  SO3: [['S', 0, 0], ['O', 0, -34], ['O', -30, 18], ['O', 30, 18]],
+  C2H2: [['H', -50, 0], ['C', -18, 0], ['C', 18, 0], ['H', 50, 0]],
+  N2O: [['N', -36, 0], ['N', 0, 0], ['O', 36, 0]],
+  PH3: [['P', 0, 0], ['H', -27, 6], ['H', 27, 6], ['H', 0, 28]],
+  HF: [['F', -12, 0], ['H', 20, 0]],
+  HBr: [['Br', -14, 0], ['H', 22, 0]],
+  F2: [['F', -18, 0], ['F', 18, 0]],
+  Cl2: [['Cl', -20, 0], ['Cl', 20, 0]],
+  Br2: [['Br', -20, 0], ['Br', 20, 0]],
 };
-const JARI_UNSUR = { H: 11, Cl: 20 };
+const JARI_UNSUR = { H: 11, Cl: 20, Br: 22, F: 15, P: 20 };
 const ARSIR_UNSUR = { H: 'd', N: 'e', O: 'a', C: 'c', Cl: 'b', S: 'b' };
 
 function renderDiagramMolekulSVG(cfg) {
@@ -2282,7 +2293,7 @@ function renderDiagramMolekulSVG(cfg) {
 
   rumus.forEach((f, idx) => {
     const atom = MOLEKUL_PRESET[f.toUpperCase()] || MOLEKUL_PRESET[f];
-    if (!atom) return;
+    if (!atom) throw new Error('rumus "' + f + '" belum tersedia di diagrammolekul (ada: ' + Object.keys(MOLEKUL_PRESET).join(', ') + ')');
     const pusat = atom.reduce((s, a) => [s[0] + a[1] / atom.length, s[1] + a[2] / atom.length], [0, 0]);
     const minX = Math.min(...atom.map((a) => a[1] - (JARI_UNSUR[a[0]] || 18))), maxX = Math.max(...atom.map((a) => a[1] + (JARI_UNSUR[a[0]] || 18)));
     const lebar = maxX - minX + 56, ox = xKiri + 28 - minX, oy = 44;
@@ -8685,6 +8696,10 @@ function renderDiagramTag(rawTagContent, depth) {
   } catch (err) {
     return `<span style="color:#b91c1c;font-size:11px;">[diagram error: ${escText(err.message)}]</span>`;
   }
+  if (modeSiswaDiagram && /^(ya|true|1)$/i.test(String(params.jawab || ''))) {
+    const vb = svg.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/);
+    if (vb) svg = `<svg class="ws-diagram-svg" viewBox="0 0 ${vb[1]} ${vb[2]}" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="${(parseFloat(vb[1]) - 2).toFixed(1)}" height="${(parseFloat(vb[2]) - 2).toFixed(1)}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.4"/></svg>`;
+  }
   // An inline style beats style.css's own max-width rule regardless of
   // specificity, so this is the one place that needs to touch the <svg> tag.
   if (widthPt) {
@@ -8705,13 +8720,35 @@ function renderDiagramTag(rawTagContent, depth) {
 const DIAGRAM_TOKEN_OPEN = 'DG';
 const DIAGRAM_TOKEN_CLOSE = '';
 
+// Mode lembar siswa: diagram bertanda jawab=ya (jawaban yang diminta digambar murid)
+// dirender sebagai kotak kosong seukuran gambarnya; versi guru menampilkannya penuh.
+let modeSiswaDiagram = false;
+function setModeSiswaDiagram(v) { modeSiswaDiagram = !!v; }
+
+// Diagram jawaban yang tak sengaja ditaruh di soal: tag molekul/partikel/Lewis yang
+// didahului kalimat perintah menggambar ("Complete the molecular diagram in the box",
+// "Gambarlah ...") otomatis ditandai jawab=ya, sehingga lembar siswa menampilkan
+// kotak kosong, bukan jawabannya.
+const RE_TAG_JAWABAN = /^(?:diagrammolekul|molekulpartikel|partikel|modelpartikel|lewis|strukturlewis)\s*:/i;
+const RE_PERINTAH_GAMBAR = /\b(?:complete|draw|sketch)\b|\b(?:gambar(?:lah|kan)?|lengkapi|lukis(?:lah)?)\b/i;
+function tandaiJawaban(inner, konteks) {
+  if (!RE_TAG_JAWABAN.test(inner) || /(?:^|;)\s*(?:jawab|kosong)\s*=/i.test(inner)) return inner;
+  if (/^(?:partikel|modelpartikel)\s*:/i.test(inner) && !/(?:^|[;:\s])(?:isi|padat|panel)\s*=/i.test(inner)) return inner;   // kotak kosong sudah kosong
+  // Kalimat perintah bisa di baris yang sama dengan tag atau di baris tak-kosong
+  // tepat sebelumnya (tag ditaruh di baris sendiri).
+  const baris = String(konteks).split('\n');
+  let barisIni = baris.pop();
+  while (!barisIni.trim() && baris.length) barisIni = baris.pop();
+  return RE_PERINTAH_GAMBAR.test(barisIni.slice(-320)) ? inner.replace(/\s*;?\s*$/, '') + '; jawab=ya' : inner;
+}
+
 function extractDiagramTags(text) {
   const tags = [];
   // Titik yang menempel di belakang tag ("[[gaya: ...]]. Berapakah ...") dibuang: tanpa
   // itu ia tercetak sebagai ". Berapakah" yatim di awal baris sesudah diagram.
-  const replaced = String(text || '').replace(/\[\[([\s\S]*?)\]\](?:[ \t]*\.(?=[ \t]|\r?\n|$))?/g, (match, inner) => {
+  const replaced = String(text || '').replace(/\[\[([\s\S]*?)\]\](?:[ \t]*\.(?=[ \t]|\r?\n|$))?/g, (match, inner, offset, whole) => {
     const idx = tags.length;
-    tags.push(inner.trim());
+    tags.push(tandaiJawaban(inner.trim(), whole.slice(Math.max(0, offset - 360), offset)));
     return DIAGRAM_TOKEN_OPEN + idx + DIAGRAM_TOKEN_CLOSE;
   });
   return { text: replaced, tags };
@@ -8738,7 +8775,7 @@ if (typeof module !== 'undefined') {
     renderCircleTheoremSVG, renderNetSVG, renderViewsSVG, CIRCLE_THEOREMS, SOLID_NETS, SOLID_VIEWS,
     renderPunnettSVG, renderDichotomousKeySVG, renderFoodWebSVG, splitGenotype, gametesOf, combineGametes, phenotypeOf,
     renderFigureHTML, renderImageHTML, setImageResolver, resetFigureCounter, applyAnnotations,
-    extractDiagramTags, substituteDiagramTokens, GEOMETRY_PRESETS, SOLID_PRESETS, LEWIS_PRESETS, VSEPR_PRESETS,
+    extractDiagramTags, substituteDiagramTokens, setModeSiswaDiagram, GEOMETRY_PRESETS, SOLID_PRESETS, LEWIS_PRESETS, VSEPR_PRESETS,
   };
 }
 
