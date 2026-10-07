@@ -2792,6 +2792,87 @@ function renderFluidaSVG(cfg) {
 }
 
 // ---------------------------------------------------------------------
+// Solenoida dan induksi elektromagnetik (hukum Faraday / Lenz)
+// ---------------------------------------------------------------------
+
+// Kumparan N lilitan + galvanometer G + magnet batang yang mendekat/menjauh/diam di salah satu ujung.
+// Arah arus induksi dan arah medan induksi TIDAK digambar kecuali diminta (arus=x>y, medan=kanan),
+// karena itulah yang ditanyakan soal; versi guru memakai tag yang sama dengan arus/medan terisi.
+function renderSolenoidaSVG(cfg) {
+  const N = Math.max(2, Math.min(14, Math.round(numOrDefault(cfg.lilitan, 6))));
+  const sisi = /kiri/i.test(String(cfg.sisi || '')) ? -1 : 1;                       // magnet di ujung kanan (default) atau kiri
+  const kutub = /^s|selatan/i.test(String(cfg.kutub || 'U')) ? 'S' : 'U';            // kutub magnet yang menghadap kumparan
+  const gerak = String(cfg.gerak || 'mendekat').toLowerCase();
+  const arus = String(cfg.arus || '').replace(/\s/g, '').toLowerCase();
+  const medan = String(cfg.medan || '').toLowerCase();
+  const simpangan = String(cfg.simpangan || '').toLowerCase();
+  const b = kotakBatas();
+  let isi = '';
+  const g = (x1, y1, x2, y2, t, dash) => `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="${t || GAYA.garis}"${dash ? ` stroke-dasharray="${GAYA.putus}"` : ''}/>`;
+  const T = (x, y, t, anchor, size, italic) => { isi += teksGeoSVG({ x, y, anchor: anchor || 'middle' }, String(t), size || GAYA.teks, !!italic, true); b.teks(x, y, String(t), size || GAYA.teks, anchor || 'middle'); };
+
+  const yc = 74, ry = 30, rx = 8, dx = 15, x0 = 120, x1 = x0 + (N - 1) * dx;       // pusat vertikal kumparan, jari-jari elips, jarak antar lilitan
+  const yG = 172, cG = (x0 + x1) / 2, rG = 17;
+  const xKiri = x0 - 34, xKanan = x1 + 34;
+
+  // lilitan: elips putih saling menimpa dari kiri ke kanan -> tampak seperti pegas
+  for (let i = 0; i < N; i++) isi += `<ellipse cx="${(x0 + i * dx).toFixed(1)}" cy="${yc}" rx="${rx}" ry="${ry}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
+  b.titik(x0 - rx - 2, yc - ry - 4); b.titik(x1 + rx + 2, yc + ry + 4);
+
+  // kawat dari ujung kumparan ke galvanometer; ujung kiri = x, ujung kanan = y
+  const yB = yc + ry;
+  isi += g(x0, yB, xKiri, yB) + g(xKiri, yB, xKiri, yG) + g(xKiri, yG, cG - rG, yG);
+  isi += g(x1, yB, xKanan, yB) + g(xKanan, yB, xKanan, yG) + g(xKanan, yG, cG + rG, yG);
+  isi += `<circle cx="${xKiri}" cy="${yB}" r="2.4" fill="${GAYA.hitam}"/><circle cx="${xKanan}" cy="${yB}" r="2.4" fill="${GAYA.hitam}"/>`;
+  T(xKiri - 8, yB + 4, 'x', 'end', GAYA.teks, true);
+  T(xKanan + 8, yB + 4, 'y', 'start', GAYA.teks, true);
+  b.titik(xKiri - 24, yc - ry - 10); b.titik(xKanan + 24, yG + rG + 10);
+
+  // galvanometer
+  isi += `<circle cx="${cG}" cy="${yG}" r="${rG}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+  T(cG, yG + 5, 'G', 'middle', GAYA.teks + 1, true);
+  if (/kanan|kiri/.test(simpangan)) {
+    const sd = /kanan/.test(simpangan) ? 1 : -1;
+    isi += g(cG, yG - 4, cG + sd * 9, yG - 13, 1.4);
+  }
+
+  // magnet batang di salah satu ujung, kutub menghadap kumparan sesuai kutub=
+  const gap = gerak === 'diam' ? 30 : 34, mw = 84, mh = 26;
+  const xUjung = sisi > 0 ? x1 + rx : x0 - rx;
+  const xm0 = sisi > 0 ? xUjung + gap : xUjung - gap - mw, xm1 = xm0 + mw;
+  const lain = kutub === 'U' ? 'S' : 'U';
+  const kiriMagnet = sisi > 0 ? kutub : lain, kananMagnet = sisi > 0 ? lain : kutub;   // kutub yang menghadap kumparan ada di sisi dekat kumparan
+  const dekat = sisi > 0 ? 'kiri' : 'kanan';
+  const hurufKiri = dekat === 'kiri' ? kutub : lain, hurufKanan = dekat === 'kiri' ? lain : kutub;
+  isi += `<rect x="${xm0}" y="${yc - mh / 2}" width="${mw}" height="${mh}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>` + g(xm0 + mw / 2, yc - mh / 2, xm0 + mw / 2, yc + mh / 2, 1.2);
+  T(xm0 + mw / 4, yc + 5, hurufKiri, 'middle', GAYA.teks + 1);
+  T(xm0 + (3 * mw) / 4, yc + 5, hurufKanan, 'middle', GAYA.teks + 1);
+  b.titik(xm0 - 4, yc - 40); b.titik(xm1 + 4, yc + 40);
+  if (gerak !== 'diam') {
+    const ya = yc - mh / 2 - 14, panjang = 34;
+    const arahKeKumparan = gerak === 'mendekat' ? -sisi : sisi;                              // mendekat: menuju kumparan
+    const xa = xm0 + mw / 2 - (arahKeKumparan * panjang) / 2;
+    isi += arrowSVG(xa, ya, xa + arahKeKumparan * panjang, ya, { headLen: 8, strokeWidth: 1.8 });
+    b.titik(xa - 6, ya - 8); b.titik(xa + panjang + 6, ya + 8);
+  }
+
+  // jawaban (opsional): arah arus di rangkaian luar dan arah medan induksi di dalam kumparan
+  if (arus === 'x>y' || arus === 'y>x') {
+    const kanan = arus === 'x>y';                                                         // x>y: arus mengalir dari ujung kiri melewati G ke ujung kanan
+    const ya = yG - 9, xa = cG + (kanan ? -rG - 26 : rG + 26);
+    isi += arrowSVG(xa, yG, xa + (kanan ? 18 : -18), yG, { headLen: 7, strokeWidth: 1.8 });
+    T(xa + (kanan ? 9 : -9), yG - 8, 'I', 'middle', GAYA.teks, true);
+  }
+  if (medan === 'kanan' || medan === 'kiri') {
+    const sd = medan === 'kanan' ? 1 : -1;
+    isi += arrowSVG(cG - sd * 22, yc, cG + sd * 22, yc, { headLen: 8, strokeWidth: 1.8 });
+    T(cG, yc - 8, 'B', 'middle', GAYA.teks, true);
+  }
+  if (cfg.judul) T((xKiri + xKanan) / 2, yc - ry - 14, cfg.judul, 'middle', GAYA.teks);
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// ---------------------------------------------------------------------
 // 2e. Sketsa geometri bebas (segitiga + garis sejajar, sudut pada garis
 // lurus, garis sejajar + transversal, ... — bentuk apa pun dari koordinat)
 // ---------------------------------------------------------------------
@@ -8808,6 +8889,7 @@ const DIAGRAM_TYPE_ALIASES = {
   tatasurya: 'tatasurya', solarsystem: 'tatasurya',
   magnet: 'magnet',
   sketsa: 'sketsa', sketsabebas: 'sketsa', geometribebas: 'sketsa',
+  solenoida: 'solenoida', solenoid: 'solenoida', induksi: 'solenoida', kumparan: 'solenoida', induksielektromagnetik: 'solenoida',
   fluida: 'fluida', hidrolik: 'fluida', bejana: 'fluida', bejanaberhubungan: 'fluida', fluidastatis: 'fluida', fluidadinamis: 'fluida',
   alatukur: 'alatukur', jangkasorong: 'alatukur', mikrometer: 'alatukur', micrometer: 'alatukur', vernier: 'alatukur',
   partikel: 'partikel', modelpartikel: 'partikel', diagrammolekul: 'diagrammolekul', molekulpartikel: 'diagrammolekul',
@@ -8951,6 +9033,7 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'sketsa') svg = renderSketsaSVG(params);
     else if (type === 'alatukur') svg = renderAlatUkurSVG(params);
     else if (type === 'fluida') svg = renderFluidaSVG(params);
+    else if (type === 'solenoida') svg = renderSolenoidaSVG(params);
     else if (type === 'partikel') svg = renderPartikelSVG(params);
     else if (type === 'diagrammolekul') svg = renderDiagramMolekulSVG(params);
     else if (type === 'tabelperiodik') svg = renderPeriodicTableSVG(params);
@@ -9092,7 +9175,7 @@ if (typeof module !== 'undefined') {
     GAYA, rapikanSVG, satuanALevel, labelSatuan, labelSumbuALevel, sumbuSVG, tidakBerskalaSVG, polaSeri,
     compileExpr, renderFunctionGraphSVG, renderGeometrySVG, renderNumberLineSVG,
     renderVennSVG, renderStatSVG, renderFactorTreeSVG, renderTableHTML,
-    renderPictogramSVG, renderSolidSVG, renderAngleSVG, renderLewisSVG, renderAlatUkurSVG, renderFluidaSVG, bacaanJangka, bacaanMikrometer,
+    renderPictogramSVG, renderSolidSVG, renderAngleSVG, renderLewisSVG, renderAlatUkurSVG, renderFluidaSVG, renderSolenoidaSVG, bacaanJangka, bacaanMikrometer,
     renderHydrocarbonSVG, renderForceDiagramSVG, renderFoodChainSVG, renderDiagramTag,
     renderMoleculeShapeSVG, renderCellSVG,
     renderGraphPaperSVG, renderBlankTableHTML, renderAnswerLinesHTML,
