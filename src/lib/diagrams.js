@@ -3896,10 +3896,16 @@ function renderInclinePulleySVG(cfg) {
   const normalA = [-Math.sin(rad), -Math.cos(rad)]; // menjauhi baji (ke atas-kiri)
   const boxA = 36;
   const pusatA = [titikA[0] + normalA[0] * boxA / 2, titikA[1] + normalA[1] * boxA / 2];
-  // Tali dari benda A ke katrol, DI ATAS permukaan (digeser sedikit lewat normal).
-  const taliOffset = boxA * 0.35;
-  const taliA1 = [titikA[0] + normalA[0] * taliOffset, titikA[1] + normalA[1] * taliOffset];
-  isi += `<line x1="${taliA1[0].toFixed(1)}" y1="${taliA1[1].toFixed(1)}" x2="${Apex[0].toFixed(1)}" y2="${Apex[1].toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+  // Tali dari benda A ke katrol: SEJAJAR permukaan, setinggi garis tengah benda
+  // (setengah tinggi kotak dari permukaan) dan menyinggung puncak katrol, seperti
+  // gambar buku. Katrol berjari-jari seperempat sisi kotak duduk di sudut permukaan.
+  const rKat = boxA / 4;
+  const pKat = [Apex[0] + normalA[0] * rKat, Apex[1] + normalA[1] * rKat];
+  const arahLereng = [Math.cos(rad), -Math.sin(rad)];
+  const taliA1 = [titikA[0] + normalA[0] * (boxA / 2) + arahLereng[0] * (boxA / 2), titikA[1] + normalA[1] * (boxA / 2) + arahLereng[1] * (boxA / 2)];
+  const taliA2 = [Apex[0] + normalA[0] * (boxA / 2), Apex[1] + normalA[1] * (boxA / 2)];
+  isi += `<line x1="${taliA1[0].toFixed(1)}" y1="${taliA1[1].toFixed(1)}" x2="${taliA2[0].toFixed(1)}" y2="${taliA2[1].toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+  isi += `<line x1="${Apex[0].toFixed(1)}" y1="${Apex[1].toFixed(1)}" x2="${pKat[0].toFixed(1)}" y2="${pKat[1].toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
   isi += kotakBendaSVG(pusatA[0], pusatA[1], boxA, boxA, labelAtas, -sudutDerajat);
   b.titik(pusatA[0] + normalA[0] * boxA, pusatA[1] + normalA[1] * boxA);
   b.titik(pusatA[0] - normalA[0] * boxA * 0.3, pusatA[1] - normalA[1] * boxA * 0.3);
@@ -3912,12 +3918,13 @@ function renderInclinePulleySVG(cfg) {
   }
 
   // Katrol di puncak, tali tegak turun ke benda B yang menggantung.
-  isi += katrolSVG(Apex[0], Apex[1], 10);
-  b.titik(Apex[0], Apex[1] - 12);
+  isi += katrolSVG(pKat[0], pKat[1], rKat);
+  b.titik(pKat[0], pKat[1] - rKat - 3);
   const boxB = 32;
   const taliPanjang = 60;
-  const pusatB = [Apex[0], Apex[1] + taliPanjang + boxB / 2];
-  isi += `<line x1="${Apex[0].toFixed(1)}" y1="${(Apex[1] + 9).toFixed(1)}" x2="${Apex[0].toFixed(1)}" y2="${(pusatB[1] - boxB / 2).toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+  const xTali = pKat[0] + rKat;                       // tali tegak dari tepi kanan katrol
+  const pusatB = [xTali, pKat[1] + taliPanjang + boxB / 2];
+  isi += `<line x1="${xTali.toFixed(1)}" y1="${pKat[1].toFixed(1)}" x2="${xTali.toFixed(1)}" y2="${(pusatB[1] - boxB / 2).toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
   isi += kotakBendaSVG(pusatB[0], pusatB[1], boxB, boxB, labelBawah, 0);
   b.titik(pusatB[0] + boxB / 2 + 55, pusatB[1] + boxB / 2);
   if (massaBawah) {
@@ -3963,8 +3970,8 @@ function renderAtwoodSVG(cfg) {
   const taliKiri = String(cfg.labelTaliKiri || 'T1').trim();
   const taliKanan = String(cfg.labelTaliKanan || 'T2').trim();
 
-  const ceilingY = 10, cx = 90, pulleyY = 46, pulleyR = 11;
-  const lebarCeiling = 90, dropLen = 90, sebar = 46; // jarak horizontal tiap beban dari katrol
+  const ceilingY = 10, cx = 90, pulleyY = 52, pulleyR = 17;
+  const lebarCeiling = 90, dropLen = 84, sebar = pulleyR; // tali tegak lurus dari tepi katrol: beban tepat di bawah tepi kiri/kanan katrol
 
   const b = kotakBatas();
   let isi = '';
@@ -3981,16 +3988,16 @@ function renderAtwoodSVG(cfg) {
   // Tali dari tepi katrol turun ke tiap beban.
   const xKiri = cx - sebar, xKanan = cx + sebar;
   const yBeban = pulleyY + dropLen;
-  isi += `<line x1="${(cx - pulleyR * 0.9).toFixed(1)}" y1="${(pulleyY - pulleyR * 0.4).toFixed(1)}" x2="${xKiri.toFixed(1)}" y2="${yBeban.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
-  isi += `<line x1="${(cx + pulleyR * 0.9).toFixed(1)}" y1="${(pulleyY - pulleyR * 0.4).toFixed(1)}" x2="${xKanan.toFixed(1)}" y2="${yBeban.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
-  const posT1 = letakTeksLuar((cx + xKiri) / 2 - 6, (pulleyY + yBeban) / 2 - 16, -1, 0, 4);
+  isi += `<line x1="${xKiri.toFixed(1)}" y1="${pulleyY.toFixed(1)}" x2="${xKiri.toFixed(1)}" y2="${yBeban.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+  isi += `<line x1="${xKanan.toFixed(1)}" y1="${pulleyY.toFixed(1)}" x2="${xKanan.toFixed(1)}" y2="${yBeban.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+  const posT1 = letakTeksLuar(xKiri, (pulleyY + yBeban) / 2, -1, 0, 6);
   isi += teksGeoSVG(posT1, taliKiri, GAYA.teks);
   b.teks(posT1.x, posT1.y, taliKiri, GAYA.teks, posT1.anchor);
-  const posT2 = letakTeksLuar((cx + xKanan) / 2 + 6, (pulleyY + yBeban) / 2 - 16, 1, 0, 4);
+  const posT2 = letakTeksLuar(xKanan, (pulleyY + yBeban) / 2, 1, 0, 6);
   isi += teksGeoSVG(posT2, taliKanan, GAYA.teks);
   b.teks(posT2.x, posT2.y, taliKanan, GAYA.teks, posT2.anchor);
 
-  const boxSisi = 34;
+  const boxSisi = 28;                   // lebih sempit dari jarak tali (2 x jari-jari katrol) supaya kedua beban tak bersentuhan
   isi += kotakBendaSVG(xKiri, yBeban + boxSisi / 2, boxSisi, boxSisi, labelKiri, 0);
   isi += kotakBendaSVG(xKanan, yBeban + boxSisi / 2, boxSisi, boxSisi, labelKanan, 0);
   b.titik(xKiri - boxSisi / 2 - 50, yBeban + boxSisi);
