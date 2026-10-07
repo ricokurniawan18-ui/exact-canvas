@@ -2174,6 +2174,42 @@ function kotakPartikel(cfg) {
         badan += atomBulatSVG(x, y, r, j);
       }
     }
+  } else if (cfg.cair) {
+    // Cairan: partikel RAPAT (bersentuhan) tetapi TIDAK teratur, hanya mengisi bagian bawah kotak,
+    // dengan beberapa celah kecil dan susunan yang berubah-ubah (beda dari kisi padat).
+    // cair=a (isi otomatis seluas ~55% kotak) atau cair=a:12,b:6 / cair=abb:8 (jumlah tertentu).
+    const mentah = String(cfg.cair);
+    const acak = acakTetap('cair' + mentah);
+    const rSel = 9.5;
+    const kol = Math.max(2, Math.floor((W - 8) / (2.15 * rSel)));
+    let daftar = [];
+    if (/:/.test(mentah)) parseIsiPartikel(mentah).forEach((m) => { for (let i = 0; i < m.n; i++) daftar.push(m.huruf); });
+    else {
+      const jenisCair = mentah.toLowerCase().replace(/[^a-e]/g, '') || 'a';
+      const barisOtomatis = Math.max(2, Math.round((0.55 * H) / (1.78 * rSel)));
+      const n = Math.round(kol * barisOtomatis * 0.92);
+      for (let i = 0; i < n; i++) daftar.push(jenisCair[i % jenisCair.length]);
+    }
+    for (let i = daftar.length - 1; i > 0; i--) { const j = Math.floor(acak() * (i + 1)); const t = daftar[i]; daftar[i] = daftar[j]; daftar[j] = t; }
+    const banyakAtom = daftar.some((hrf) => hrf.length > 1);
+    // Penumpukan acak: tiap partikel dijatuhkan di x acak dan berhenti saat menyentuh dasar atau
+    // partikel lain (dari 5 percobaan dipilih yang paling rendah). Hasilnya rapat dan bersentuhan,
+    // tetapi tanpa baris dan tanpa pola, seperti cairan; tidak ada yang tumpang tindih.
+    const rc = rSel * 0.95, lantai = H - 3 - rc, ada = [];
+    daftar.forEach((huruf) => {
+      let terbaik = null;
+      for (let p = 0; p < 5; p++) {
+        const x = rc + 3 + acak() * (W - 2 * rc - 6);
+        let y = lantai;
+        ada.forEach((e) => { const dx = Math.abs(x - e.x); if (dx < 2 * rc) y = Math.min(y, e.y - Math.sqrt(4 * rc * rc - dx * dx)); });
+        if (!terbaik || y > terbaik.y) terbaik = { x, y };
+      }
+      if (terbaik.y < rc + 3) return;                                         // kotak penuh
+      ada.push(terbaik);
+      if (huruf.length === 1) { pakai[huruf] = true; badan += atomBulatSVG(terbaik.x, terbaik.y, rc, huruf); return; }
+      const sudut = acak() * Math.PI * 2, c = Math.cos(sudut), sn = Math.sin(sudut);
+      susunMolekul(huruf, rSel * (banyakAtom ? 0.42 : 0.5)).forEach((a) => { pakai[a.j] = true; badan += atomBulatSVG(terbaik.x + a.x * c - a.y * sn, terbaik.y + a.x * sn + a.y * c, rSel * 0.42, a.j); });
+    });
   } else if (isi.length) {
     const daftar = [];
     isi.forEach((m) => { for (let i = 0; i < m.n; i++) daftar.push(m.huruf); });
@@ -2224,7 +2260,7 @@ function renderPartikelSVG(cfg) {
     var lebarTotal = k.W;
   } else {
     const kol = Math.max(1, Math.min(6, parseInt(cfg.kolom, 10) || 3)), gap = 16;
-    const dasar = Object.assign({}, cfg); delete dasar.panel; delete dasar.isi; delete dasar.padat; delete dasar.label; delete dasar.legenda;
+    const dasar = Object.assign({}, cfg); delete dasar.panel; delete dasar.isi; delete dasar.padat; delete dasar.cair; delete dasar.label; delete dasar.legenda;
     const huruf = String(cfg.huruf || 'ya').toLowerCase() !== 'tidak';
     let W0 = 0, H0 = 0;
     const panels = panelRaw.map((spec, idx) => {
