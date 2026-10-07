@@ -190,7 +190,7 @@ function labelSatuan(besaran, satuan) {
 // "kecepatan (m/s)" atau "v (m/s)" -> "kecepatan / m s⁻¹": label lama yang
 // ditulis pemakai/AI dengan satuan dalam kurung dibawa ke bentuk A-Level.
 function labelSumbuALevel(teks) {
-  const t = String(teks || '').trim();
+  const t = texKeTeks(String(teks || '').trim());
   const m = t.match(/^(.*?)\s*\(([^()]+)\)\s*$/);
   return m ? labelSatuan(m[1].trim(), m[2]) : t;
 }
@@ -215,12 +215,85 @@ function tidakBerskalaSVG(xKanan, yAtas) {
   return `<text x="${xKanan.toFixed(1)}" y="${yAtas.toFixed(1)}" text-anchor="end" font-size="${GAYA.teksKecil}" font-style="italic" fill="${GAYA.hitam}">NOT TO SCALE</text>`;
 }
 
+// LaTeX -> teks Unicode untuk label di dalam SVG. KaTeX hanya merender HTML,
+// bukan <text> SVG, jadi "\theta" atau "y = \mathrm{f}(x)" yang ditulis AI di
+// nama kurva / sumbu / label tercetak mentah. Cukup untuk notasi label:
+// huruf Yunani, fungsi, pecahan, akar, pangkat/indeks, relasi.
+const TEX_SIMBOL = {
+  alpha: 'α', beta: 'β', gamma: 'γ', delta: 'δ', epsilon: 'ε', varepsilon: 'ε', zeta: 'ζ', eta: 'η',
+  theta: 'θ', vartheta: 'θ', iota: 'ι', kappa: 'κ', lambda: 'λ', mu: 'μ', nu: 'ν', xi: 'ξ', pi: 'π',
+  rho: 'ρ', sigma: 'σ', tau: 'τ', upsilon: 'υ', phi: 'φ', varphi: 'φ', chi: 'χ', psi: 'ψ', omega: 'ω',
+  Gamma: 'Γ', Delta: 'Δ', Theta: 'Θ', Lambda: 'Λ', Xi: 'Ξ', Pi: 'Π', Sigma: 'Σ', Phi: 'Φ', Psi: 'Ψ', Omega: 'Ω',
+  cdot: '·', times: '×', div: '÷', pm: '±', mp: '∓', le: '≤', leq: '≤', leqslant: '≤', ge: '≥', geq: '≥',
+  geqslant: '≥', neq: '≠', ne: '≠', approx: '≈', equiv: '≡', infty: '∞', degree: '°', circ: '°', to: '→',
+  rightarrow: '→', leftarrow: '←', Rightarrow: '⇒', in: '∈', propto: '∝', angle: '∠', triangle: '△',
+  perp: '⊥', parallel: '∥', prime: '′', ldots: '…', cdots: '⋯', dots: '…', partial: '∂', nabla: '∇',
+  sum: 'Σ', int: '∫', '%': '%', '{': '{', '}': '}', '$': '$', '#': '#', '&': '&',
+};
+const TEX_FUNGSI = ['arcsin', 'arccos', 'arctan', 'sinh', 'cosh', 'tanh', 'sin', 'cos', 'tan', 'sec', 'csc', 'cosec', 'cot', 'ln', 'log', 'exp', 'lim', 'max', 'min'];
+const TEX_PECAHAN = { '1/2': '½', '1/3': '⅓', '2/3': '⅔', '1/4': '¼', '3/4': '¾', '1/5': '⅕', '1/6': '⅙', '1/8': '⅛' };
+const TEX_ATAS = { 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹', '+': '⁺', '-': '⁻', '−': '⁻', '=': '⁼', '(': '⁽', ')': '⁾', n: 'ⁿ', i: 'ⁱ', x: 'ˣ', y: 'ʸ', '°': '°' };
+const TEX_BAWAH = { 0: '₀', 1: '₁', 2: '₂', 3: '₃', 4: '₄', 5: '₅', 6: '₆', 7: '₇', 8: '₈', 9: '₉', '+': '₊', '-': '₋', '=': '₌', '(': '₍', ')': '₎', a: 'ₐ', e: 'ₑ', o: 'ₒ', x: 'ₓ', n: 'ₙ', m: 'ₘ', t: 'ₜ', k: 'ₖ', i: 'ᵢ', r: 'ᵣ' };
+
+function texKeTeks(masukan) {
+  let t = String(masukan == null ? '' : masukan);
+  if (!/[\\^_$]/.test(t)) return t;
+  // $...$ dibuka hanya bila isinya memang LaTeX — "$5 dan $10" tetap utuh.
+  t = t.replace(/\$\$?([^$]+?)\$\$?/g, (m, isi) => (/[\\^_{]/.test(isi) ? isi : m));
+  const grup = '\\{([^{}]*)\\}';
+  for (let putaran = 0; putaran < 6; putaran++) {
+    const sebelum = t;
+    t = t.replace(new RegExp('\\\\(?:mathrm|mathit|mathbf|mathsf|textbf|textit|text|operatorname|boldsymbol|mathbb|vec|overline|hat|bar)\\s*' + grup, 'g'), '$1');
+    t = t.replace(new RegExp('\\\\[dt]?frac\\s*' + grup + '\\s*' + grup, 'g'), (m, a, b) => {
+      a = a.trim(); b = b.trim();
+      if (TEX_PECAHAN[a + '/' + b]) return TEX_PECAHAN[a + '/' + b];
+      const sederhana = (v) => /^(?:\\[A-Za-z]+|[\w.θπ°′])+$/.test(v);
+      return (sederhana(a) ? a : '(' + a + ')') + '/' + (sederhana(b) ? b : '(' + b + ')');
+    });
+    t = t.replace(new RegExp('\\\\sqrt\\s*\\[([^\\]]*)\\]\\s*' + grup, 'g'), (m, n, v) => (TEX_ATAS[n] || n) + '√' + (v.length > 1 ? '(' + v + ')' : v));
+    t = t.replace(new RegExp('\\\\sqrt\\s*' + grup, 'g'), (m, v) => '√' + (v.trim().length > 1 ? '(' + v.trim() + ')' : v.trim()));
+    t = t.replace(new RegExp('\\^\\s*' + grup, 'g'), (m, v) => naikTurun(v, TEX_ATAS, '^'));
+    t = t.replace(new RegExp('_\\s*' + grup, 'g'), (m, v) => naikTurun(v, TEX_BAWAH, '_'));
+    if (t === sebelum) break;
+  }
+  t = t.replace(/\\sqrt\s*([\w.])/g, '√$1');
+  t = t.replace(/\^\s*\\circ/g, '°');
+  t = t.replace(/\^([\w+\-])/g, (m, v) => naikTurun(v, TEX_ATAS, '^'));
+  t = t.replace(/_([\w])/g, (m, v) => naikTurun(v, TEX_BAWAH, '_'));
+  t = t.replace(/\\(left|right|big|Big|bigg|Bigg)\s*([()[\]|.]|\\[{}])/g, (m, k, d) => (d === '.' ? '' : d.replace('\\', '')));
+  t = t.replace(/\\[,;:!> ]|\\quad|\\qquad/g, ' ');
+  t = t.replace(/\\([A-Za-z]+)/g, (m, nama) => {
+    if (TEX_SIMBOL[nama] !== undefined) return TEX_SIMBOL[nama];
+    if (TEX_FUNGSI.indexOf(nama) >= 0) return nama;
+    return nama;
+  });
+  t = t.replace(/\\([%{}$#&])/g, '$1');
+  t = t.replace(/[{}]/g, '');
+  // "sinθ", "cos x" -> spasi tunggal sesudah nama fungsi bila diikuti huruf/angka.
+  t = t.replace(new RegExp('\\b(' + TEX_FUNGSI.join('|') + ')(?=[A-Za-zα-ωΑ-Ω0-9])', 'g'), '$1 ');
+  return t.replace(/\s{2,}/g, ' ').trim();
+}
+
+function naikTurun(v, peta, tanda) {
+  const isi = String(v).trim();
+  const huruf = Array.from(isi);
+  if (huruf.length && huruf.every((c) => peta[c] !== undefined)) return huruf.map((c) => peta[c]).join('');
+  return tanda + (huruf.length > 1 ? '(' + isi + ')' : isi);
+}
+
+// Teks di dalam <text>/<tspan> SVG yang masih memuat LaTeX diubah ke Unicode.
+function texDalamSVG(svg) {
+  return svg.replace(/(<(?:text|tspan)\b[^>]*>)([^<]*)/g, (m, buka, isi) => (/[\\^_$]/.test(isi) ? buka + texKeTeks(isi) : m));
+}
+
 // Dipakai renderDiagramTag pada SEMUA keluaran SVG:
 //   1. bingkai abu-abu (rect latar pertama) dihilangkan,
 //   2. warna dipetakan ke hitam-putih,
-//   3. font sans-serif dipasang di akar <svg>.
+//   3. font sans-serif dipasang di akar <svg>,
+//   4. LaTeX yang tertinggal di label (\\theta, \\mathrm{f}) diubah ke Unicode.
 function rapikanSVG(svg) {
   if (!svg || svg.indexOf('<svg') < 0) return svg;
+  svg = texDalamSVG(svg);
   svg = svg.replace(/(<rect [^>]*?fill="#ffffff"[^>]*?)stroke="#d8dce1"/, '$1stroke="none"');
   svg = svg.replace(/#[0-9a-fA-F]{6}\b/g, (h) => PETA_WARNA[h.toLowerCase()] || h);
   if (svg.indexOf('font-family=') < 0 || !/<svg[^>]*font-family=/.test(svg)) {
@@ -249,6 +322,21 @@ function parseCurveRange(raw) {
     const key = chunk.slice(0, idx).trim();
     const nums = chunk.slice(idx + 1).split(',').map((n) => parseFloat(n.trim()));
     if (key && isFinite(nums[0]) && isFinite(nums[1])) out[key] = [nums[0], nums[1]];
+  });
+  return out;
+}
+
+// "f1:y = f(x)|f2:y = g(x)" -> { f1: 'y = f(x)', f2: 'y = g(x)' } — nama
+// kurva. Hanya titik dua PERTAMA yang memisah, jadi namanya bebas memuat
+// tanda sama dengan atau kurung.
+function parseCurveLabels(raw) {
+  const out = {};
+  String(raw || '').split('|').map((s) => s.trim()).filter(Boolean).forEach((chunk) => {
+    const idx = chunk.indexOf(':');
+    if (idx === -1) return;
+    const key = chunk.slice(0, idx).trim();
+    const nama = texKeTeks(chunk.slice(idx + 1).trim());
+    if (key && nama) out[key] = nama;
   });
   return out;
 }
@@ -328,9 +416,16 @@ function renderFunctionGraphSVG(cfg) {
   const plotW = 328, plotH = 228;
   const FN_KEYS = ['f1', 'f2', 'f3', 'f4', 'f5'];
   const activeFns = FN_KEYS.map((key, i) => ({ key, i, expr: cfg[key] })).filter((f) => f.expr);
+  // nama=f1:y = f(x)|f2:y = g(x) — label kurva gaya naskah Cambridge, ditulis
+  // di dekat kurvanya. Begitu ada nama, legenda rumus disembunyikan: pada soal
+  // transformasi atau membaca grafik, rumusnya justru jawaban yang dicari.
+  // legenda=tidak menyembunyikannya tanpa memberi nama.
+  const namaKurva = parseCurveLabels(cfg.nama);
+  const adaNama = Object.keys(namaKurva).length > 0;
+  const tanpaLegenda = adaNama || /^(tidak|no|false|0)$/i.test(String(cfg.legenda || '').trim());
   // Legenda hanya kalau kurvanya lebih dari satu — dengan f1 saja tidak ada
   // yang perlu dibedakan.
-  const legendH = activeFns.length > 1 ? 16 * activeFns.length + 10 : 0;
+  const legendH = activeFns.length > 1 && !tanpaLegenda ? 16 * activeFns.length + 10 : 0;
   const xmin = numOrDefault(cfg.xmin, -10), xmax = numOrDefault(cfg.xmax, 10);
   const ymin = numOrDefault(cfg.ymin, -10), ymax = numOrDefault(cfg.ymax, 10);
   const rangeX = (xmax - xmin) || 1, rangeY = (ymax - ymin) || 1;
@@ -526,39 +621,97 @@ function renderFunctionGraphSVG(cfg) {
   });
   tangentLabels.forEach((t) => { svg += teksHaloSVG(clampX(t.x), clampY(t.y), t.teks, { anchor: t.anchor }); });
 
-  (cfg.titik || []).forEach((p) => {
+  // titik=2,6:R(2, 6)|0,1 — titik bertanda pada grafik. Dari tag, nilainya
+  // teks (dulu langsung di-forEach sehingga seluruh grafik jadi galat); label
+  // ada sesudah titik dua PERTAMA, jadi boleh memuat koma.
+  const titikGrafik = Array.isArray(cfg.titik) ? cfg.titik : String(cfg.titik || '').split('|').map((t) => t.trim()).filter(Boolean).map((t) => {
+    const k = t.indexOf(':');
+    const xy = (k < 0 ? t : t.slice(0, k)).split(',').map((n) => parseFloat(n));
+    return { x: xy[0], y: xy[1], label: k < 0 ? '' : t.slice(k + 1).trim() };
+  }).filter((p) => isFinite(p.x) && isFinite(p.y));
+  titikGrafik.forEach((p) => {
     const [px, py] = toPx(p.x, p.y);
     svg += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="2.5" fill="${GAYA.hitam}"/>`;
     if (p.label) svg += teksHaloSVG(px + 5, py - 5, p.label, { anchor: 'start', size: GAYA.teks });
   });
 
-  // Lebih dari satu kurva: nama f1/f2 ditulis di dekat kurvanya, di titik
-  // yang masih di dalam jendela dan jauh dari kurva lain / label lain.
-  if (activeFns.length > 1) {
-    const dipakai = [];
-    activeFns.forEach(({ key }) => {
-      const fn = compiled[key];
+  // Lebih dari satu kurva (atau ada nama=): nama ditulis di dekat kurvanya.
+  // Yang diuji KOTAK teksnya utuh, bukan satu titik: kotak harus di dalam
+  // jendela plot (tidak terpotong tepi), tidak dilintasi kurva mana pun
+  // (termasuk kurvanya sendiri), tidak menimpa sumbu/angka skala, garis
+  // asimtot, atau label lain. Label panjang seperti "y = a cos(bθ) + c"
+  // dulu dicek di satu titik saja sehingga keluar kanvas atau menindih kurva.
+  if (activeFns.length > 1 || adaNama) {
+    const kotakDipakai = [];
+    const asimtotPx = asymptotes.filter((a) => a.axis === 'x').map((a) => toPx(a.value, 0)[0]);
+    const rentang = (key) => {
       const dom = domains[key];
-      const from = dom ? Math.max(xmin, Math.min(dom[0], dom[1])) : xmin;
-      const to = dom ? Math.min(xmax, Math.max(dom[0], dom[1])) : xmax;
-      const lain = activeFns.filter((f) => f.key !== key).map((f) => compiled[f.key]);
-      const kandidat = [0.84, 0.16, 0.72, 0.28, 0.6, 0.4, 0.5, 0.92, 0.08];
-      for (let k = 0; k < kandidat.length; k++) {
+      return dom ? [Math.max(xmin, Math.min(dom[0], dom[1])), Math.min(xmax, Math.max(dom[0], dom[1]))] : [xmin, xmax];
+    };
+    const kotakBebas = (k) => {
+      if (k.x1 < padL + 2 || k.x2 > padL + plotW - 2 || k.y1 < padT + 2 || k.y2 > padT + plotH - 2) return false;
+      if (xAxisInside && k.y2 > xAxisY - 3 && k.y1 < xAxisY + 14) return false;
+      if (yAxisInside && k.x2 > yAxisX - 26 && k.x1 < yAxisX + 4) return false;
+      if (asimtotPx.some((ax) => ax > k.x1 - 3 && ax < k.x2 + 3)) return false;
+      if (kotakDipakai.some((b) => k.x1 < b.x2 + 4 && k.x2 > b.x1 - 4 && k.y1 < b.y2 + 2 && k.y2 > b.y1 - 2)) return false;
+      for (const f of activeFns) {
+        const [lo, hi] = rentang(f.key);
+        for (let px = k.x1 - 2; px <= k.x2 + 2; px += 2) {
+          const x = xmin + (px - padL) / sx;
+          if (x < lo || x > hi) continue;
+          const y = compiled[f.key](x);
+          if (!isFinite(y)) continue;
+          const py = toPx(x, y)[1];
+          if (py > k.y1 - 3 && py < k.y2 + 3) return false;
+        }
+      }
+      return true;
+    };
+    const tinggiTeks = GAYA.teks;
+    activeFns.forEach(({ key }) => {
+      if (activeFns.length === 1 && !namaKurva[key]) return;
+      const teks = namaKurva[key] || key;
+      const lebar = lebarTeksKira(teks, GAYA.teks) + 2;
+      const fn = compiled[key];
+      const [from, to] = rentang(key);
+      const kandidat = [0.84, 0.16, 0.72, 0.28, 0.6, 0.4, 0.5, 0.92, 0.08, 0.66, 0.34, 0.78, 0.22, 0.96, 0.04];
+      // Posisi relatif titik kurva: kanan-atas, kanan-bawah, kiri-atas, kiri-bawah.
+      const posisi = [[6, -7, 'start'], [6, tinggiTeks + 5, 'start'], [-6, -7, 'end'], [-6, tinggiTeks + 5, 'end']];
+      let dapat = null;
+      for (let k = 0; k < kandidat.length && !dapat; k++) {
         const x = from + (to - from) * kandidat[k];
         const y = fn(x);
-        if (!isFinite(y) || y < ymin + rangeY * 0.06 || y > ymax - rangeY * 0.06) continue;
+        if (!isFinite(y) || y < ymin || y > ymax) continue;
         const [px, py] = toPx(x, y);
-        // Jangan menempel sumbu: di situ sudah ada angka skala.
-        if (Math.abs(py - xAxisY) < 20 || Math.abs(px - yAxisX) < 24) continue;
-        if (dipakai.some((s) => Math.hypot(s[0] - px, s[1] - py) < 32)) continue;
-        if (lain.some((g) => { const gy = g(x); return isFinite(gy) && Math.abs(toPx(x, gy)[1] - py) < 16; })) continue;
-        dipakai.push([px, py]);
-        svg += teksHaloSVG(px + 6, py - 6, key, { anchor: 'start', size: GAYA.teks, italic: true });
-        break;
+        for (const [dx, dy, anchor] of posisi) {
+          const tx = px + dx, ty = py + dy;
+          const x1 = anchor === 'start' ? tx : tx - lebar;
+          const kotak = { x1, x2: x1 + lebar, y1: ty - tinggiTeks + 2, y2: ty + 3 };
+          if (kotakBebas(kotak)) { dapat = { tx, ty, anchor, kotak }; break; }
+        }
       }
+      // Tidak ada tempat yang benar-benar bebas: pakai cara lama (dekat titik
+      // pertama yang di dalam jendela), tapi tetap dijaga tidak keluar kanvas.
+      if (!dapat) {
+        for (let k = 0; k < kandidat.length && !dapat; k++) {
+          const x = from + (to - from) * kandidat[k];
+          const y = fn(x);
+          if (!isFinite(y) || y < ymin + rangeY * 0.06 || y > ymax - rangeY * 0.06) continue;
+          const [px, py] = toPx(x, y);
+          const muatKanan = px + 6 + lebar <= padL + plotW;
+          const tx = muatKanan ? px + 6 : px - 6;
+          const x1 = muatKanan ? tx : tx - lebar;
+          dapat = { tx, ty: py - 6, anchor: muatKanan ? 'start' : 'end', kotak: { x1, x2: x1 + lebar, y1: py - 6 - tinggiTeks, y2: py - 3 } };
+        }
+      }
+      if (!dapat) return;
+      kotakDipakai.push(dapat.kotak);
+      svg += teksHaloSVG(dapat.tx, dapat.ty, teks, namaKurva[key]
+        ? { anchor: dapat.anchor, size: GAYA.teks }
+        : { anchor: dapat.anchor, size: GAYA.teks, italic: true });
     });
     // Legenda: pola garis -> rumus, karena "f1" saja belum menyebut rumusnya.
-    activeFns.forEach(({ expr, i }, row) => {
+    if (!tanpaLegenda) activeFns.forEach(({ expr, i }, row) => {
       const ly = padT + plotH + padB + 12 + row * 16;
       svg += `<line x1="${padL}" y1="${ly - 4}" x2="${padL + 28}" y2="${ly - 4}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"${polaSeri(i)}/>`;
       svg += `<text x="${padL + 34}" y="${ly}" font-size="${GAYA.teks}" fill="${GAYA.hitam}"><tspan font-style="italic">f${i + 1}</tspan> = ${escText(expr)}</text>`;
@@ -9234,6 +9387,7 @@ function substituteDiagramTokens(html, tags) {
 // Export for Node-based testing (no-op in browser).
 if (typeof module !== 'undefined') {
   module.exports = {
+    texKeTeks,
     GAYA, rapikanSVG, satuanALevel, labelSatuan, labelSumbuALevel, sumbuSVG, tidakBerskalaSVG, polaSeri,
     compileExpr, renderFunctionGraphSVG, renderGeometrySVG, renderNumberLineSVG,
     renderVennSVG, renderStatSVG, renderFactorTreeSVG, renderTableHTML,
