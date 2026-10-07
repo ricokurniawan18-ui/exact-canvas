@@ -3622,6 +3622,7 @@ function arsirTumpuanSVG(x1, y1, x2, y2, nx, ny) {
   return s;
 }
 
+const norm0 = (a) => ((a % 360) + 360) % 360;
 function renderForceDiagramSVG(cfg) {
   // Digambar dalam kerangka berpusat di benda, lalu dipotong pas ke apa
   // yang benar-benar tergambar: kanvas tetap 340x300 yang lama sebagian
@@ -3651,8 +3652,11 @@ function renderForceDiagramSVG(cfg) {
       const axisLen = 95;
       parts.push(arrowSVG(-axisLen, 0, axisLen, 0, { strokeWidth: GAYA.garisBantu, color: '#8a93a3' }));
       parts.push(arrowSVG(0, axisLen, 0, -axisLen, { strokeWidth: GAYA.garisBantu, color: '#8a93a3' }));
-      parts.push(`<text x="${(axisLen + 6).toFixed(1)}" y="4" font-size="${GAYA.teksKecil}" fill="#8a93a3">X</text>`);
-      parts.push(`<text x="-5" y="${(-axisLen - 6).toFixed(1)}" font-size="${GAYA.teksKecil}" fill="#8a93a3" text-anchor="middle">Y</text>`);
+      // Gaya yang searah sumbu positif memakai ujung sumbu itu: huruf X/Y digeser ke
+      // samping garis gayanya supaya tidak tertimpa anak panah.
+      const searahX = forces.some((f) => Math.abs(norm0(f.angle)) < 1e-6), searahY = forces.some((f) => Math.abs(norm0(f.angle) - 90) < 1e-6);
+      parts.push(`<text x="${(axisLen + 6).toFixed(1)}" y="${searahX ? 17 : 4}" font-size="${GAYA.teksKecil}" fill="#8a93a3">X</text>`);
+      parts.push(`<text x="${searahY ? 7 : -5}" y="${(-axisLen - (searahY ? 0 : 6)).toFixed(1)}" font-size="${GAYA.teksKecil}" fill="#8a93a3" text-anchor="${searahY ? 'start' : 'middle'}">Y</text>`);
       cover(-axisLen - 4, -axisLen - 14, axisLen + 14, axisLen + 4);
     }
     parts.push(`<circle cx="0" cy="0" r="3.2" fill="${GAYA.hitam}"/>`);
@@ -4022,7 +4026,7 @@ function renderLiftSVG(cfg) {
   const massaBawah = cfg.massaBawah != null ? String(cfg.massaBawah).trim() : '';
   const arah = String(cfg.arah || 'atas').toLowerCase() === 'bawah' ? 'bawah' : 'atas';
 
-  const liftW = 110, liftTopY = 14, liftBottomY = 230, cx = 60;
+  const liftW = 170, liftTopY = 14, liftBottomY = 230, cx = 90;
   const b = kotakBatas();
   let isi = '';
 
