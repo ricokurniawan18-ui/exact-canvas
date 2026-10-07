@@ -2812,13 +2812,26 @@ function renderSolenoidaSVG(cfg) {
   const g = (x1, y1, x2, y2, t, dash) => `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="${t || GAYA.garis}"${dash ? ` stroke-dasharray="${GAYA.putus}"` : ''}/>`;
   const T = (x, y, t, anchor, size, italic) => { isi += teksGeoSVG({ x, y, anchor: anchor || 'middle' }, String(t), size || GAYA.teks, !!italic, true); b.teks(x, y, String(t), size || GAYA.teks, anchor || 'middle'); };
 
-  const yc = 74, ry = 30, rx = 8, dx = 15, x0 = 120, x1 = x0 + (N - 1) * dx;       // pusat vertikal kumparan, jari-jari elips, jarak antar lilitan
+  const yc = 74, ry = 30, rx = 4, dx = 21, x0 = 120, x1 = x0 + N * dx;              // pusat vertikal kumparan, jari-jari lilitan, jarak antar lilitan (satu putaran)
   const cG = (x0 + x1) / 2, yBox = 150, bw = 58, bh = 42;                           // galvanometer: kotak berdial di bawah kumparan
   const xKiri = x0 - 34, xKanan = x1 + 34, yB = yc + ry;
   const tL = cG - 16, tR = cG + 16;                                                 // dua terminal di sisi atas galvanometer
 
-  // lilitan: elips putih saling menimpa dari kiri ke kanan -> tampak seperti pegas
-  for (let i = 0; i < N; i++) isi += `<ellipse cx="${(x0 + i * dx).toFixed(1)}" cy="${yc}" rx="${rx}" ry="${ry}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
+  // Kumparan sebagai heliks: x maju searah sumbu, y = yc + ry sin(sudut), kedalaman z = cos(sudut). Bagian
+  // DEPAN (z>0) digambar tebal hitam miring "\" dengan alas putih yang menutupi garis di belakangnya; bagian
+  // BELAKANG (z<0) tipis abu-abu miring "/". Kedua ujung kawat keluar dari bagian bawah (z=0).
+  const titikHeliks = (phi) => ({ x: x0 + (dx * (phi - Math.PI / 2)) / (2 * Math.PI), y: yc + ry * Math.sin(phi), z: Math.cos(phi) });
+  const rute = (a, c) => { let d = ''; for (let k = 0; k <= 18; k++) { const q = titikHeliks(a + ((c - a) * k) / 18); d += (k ? ' L' : 'M') + q.x.toFixed(1) + ' ' + q.y.toFixed(1); } return d; };
+  isi += g(x0, yc - ry, x1, yc - ry, 0.8).replace(`stroke="${GAYA.hitam}"`, 'stroke="#d0d0d0"') + g(x0, yc + ry, x1, yc + ry, 0.8).replace(`stroke="${GAYA.hitam}"`, 'stroke="#d0d0d0"');
+  for (let i = 0; i < N; i++) {
+    const a0 = Math.PI / 2 + i * 2 * Math.PI;
+    isi += `<path class="sol-belakang" d="${rute(a0, a0 + Math.PI)}" fill="none" stroke="#7c7c7c" stroke-width="1.15"/>`;
+  }
+  for (let i = 0; i < N; i++) {
+    const a1 = (3 * Math.PI) / 2 + i * 2 * Math.PI;
+    const d = rute(a1, a1 + Math.PI);
+    isi += `<path d="${d}" fill="none" stroke="#ffffff" stroke-width="4.2" stroke-linecap="round"/><path class="sol-depan" d="${d}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.9" stroke-linecap="round"/>`;
+  }
   b.titik(x0 - rx - 2, yc - ry - 4); b.titik(x1 + rx + 2, yc + ry + 4);
 
   // dua kawat BERBEDA: ujung kiri (x) masuk ke terminal kiri lewat jalur rendah, ujung kanan (y) ke terminal kanan
