@@ -17,7 +17,10 @@ function escText(s) {
 }
 
 function numOrDefault(v, def) {
-  const n = parseFloat(v);
+  // Koma desimal ala Indonesia ("8,66", "8,66 m"): tanpa ini parseFloat berhenti di koma
+  // dan diam-diam memotong jadi 8. Daftar ("1,2,3") dan "0,0" tidak terpengaruh nilainya.
+  const t = typeof v === 'string' ? v.replace(/^(\s*-?\d+),(\d+)(?=[^\d,.:|;]*$)/, '$1.$2') : v;
+  const n = parseFloat(t);
   return isFinite(n) ? n : def;
 }
 
