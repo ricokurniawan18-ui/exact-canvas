@@ -4617,12 +4617,12 @@ function renderDoubleInclineSVG(cfg) {
     b.teks(pos.x, pos.y, `${derajat}°`, GAYA.teks, 'middle');
   });
 
-  const boxSisi = 32, hRope = boxSisi / 2, rKat = 9;
-  // Katrol duduk di atas puncak sehingga tali (sejajar tiap bidang, setinggi
-  // garis tengah balok) menyinggung bawahnya: pusatnya berjarak hRope + rKat
-  // dari kedua sisi miring.
+  const boxSisi = 32, hRope = boxSisi / 2, rKat = 11;
+  // Tali sejajar tiap bidang, setinggi garis tengah balok, melewati sisi atas
+  // katrol: pusat katrol berjarak hRope - rKat dari kedua sisi miring, jadi
+  // katrol menempel di puncak bidang.
   const nL = [-Math.sin(radKiri), -Math.cos(radKiri)], nR = [Math.sin(radKanan), -Math.cos(radKanan)];
-  const dKat = hRope + rKat, det = nL[0] * nR[1] - nL[1] * nR[0];
+  const dKat = hRope - rKat, det = nL[0] * nR[1] - nL[1] * nR[0];
   const vKat = [(dKat * nR[1] - nL[1] * dKat) / det, (nL[0] * dKat - dKat * nR[0]) / det];
   const pKat = [Apex[0] + vKat[0], Apex[1] + vKat[1]];
   const sisiInfo = [
@@ -4637,7 +4637,7 @@ function renderDoubleInclineSVG(cfg) {
     const pusat = [titik[0] + normal[0] * boxSisi / 2, titik[1] + normal[1] * boxSisi / 2];
     const arah = [arahX * Math.cos(rad), -Math.sin(rad)]; // naik ke puncak
     const taliUjung = [pusat[0] + arah[0] * boxSisi / 2, pusat[1] + arah[1] * boxSisi / 2];
-    const taliKat = [pKat[0] - nSisi[0] * rKat, pKat[1] - nSisi[1] * rKat];
+    const taliKat = [pKat[0] + nSisi[0] * rKat, pKat[1] + nSisi[1] * rKat];
     isi += `<line x1="${taliUjung[0].toFixed(1)}" y1="${taliUjung[1].toFixed(1)}" x2="${taliKat[0].toFixed(1)}" y2="${taliKat[1].toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
     isi += kotakBendaSVG(pusat[0], pusat[1], boxSisi, boxSisi, label, rotasi(rad));
     b.titik(pusat[0] + normal[0] * boxSisi, pusat[1] + normal[1] * boxSisi);
