@@ -1000,7 +1000,11 @@ const GEOMETRY_PRESETS = {
   },
   trapesium: {
     build: (p) => {
-      const atas = numOrDefault(p.atas, 4), bawah = numOrDefault(p.bawah, 8), tinggi = numOrDefault(p.tinggi, 5);
+      // atas/bawah/tinggi boleh berupa huruf ("a cm"): bentuk gambar memakai
+      // angka bawaan, labelnya teks apa adanya — soal "a, b, h bilangan bulat".
+      const teksAtau = (v, bawaan) => (v != null && String(v).trim() !== '' && isNaN(parseFloat(v)) ? String(v).trim() : null);
+      const lAtas = teksAtau(p.atas), lBawah = teksAtau(p.bawah), lTinggi = teksAtau(p.tinggi);
+      const atas = lAtas ? 4 : numOrDefault(p.atas, 4), bawah = lBawah ? 8 : numOrDefault(p.bawah, 8), tinggi = lTinggi ? 5 : numOrDefault(p.tinggi, 5);
       const offset = (bawah - atas) / 2;
       return {
         points: [
@@ -1017,10 +1021,10 @@ const GEOMETRY_PRESETS = {
         // eksplisit memakai SEMUA titik berurutan).
         polygons: [['A', 'B', 'C', 'D']],
         segments: [
-          { from: 'A', to: 'B', label: `${bawah}` }, { from: 'B', to: 'C', label: '' },
-          { from: 'C', to: 'D', label: `${atas}` }, { from: 'D', to: 'A', label: '' },
+          { from: 'A', to: 'B', label: lBawah || `${bawah}` }, { from: 'B', to: 'C', label: '' },
+          { from: 'C', to: 'D', label: lAtas || `${atas}` }, { from: 'D', to: 'A', label: '' },
         ],
-        bantu: [{ from: 'D', to: 'H', arah: 'B', label: `${tinggi}` }],
+        bantu: [{ from: 'D', to: 'H', arah: 'B', label: lTinggi || `${tinggi}` }],
       };
     },
   },
@@ -1980,30 +1984,46 @@ const SOLID_PRESETS = {
     };
   },
   'limas-segiempat': (p) => {
-    const s = numOrDefault(p.alas, 6), tAsli = numOrDefault(p.tinggi, 8);
+    const s = numOrDefault(p.alas, 6);
+    // miring= tinggi SISI TEGAK (apotema, garis dari puncak tegak lurus ke
+    // rusuk alas) — soal luas permukaan Cambridge memberi angka ini, bukan
+    // tinggi limas. Tinggi gambar diturunkan dari situ: t = sqrt(m² - (s/2)²).
+    const miring = p.miring != null && String(p.miring).trim() !== '' ? numOrDefault(p.miring, 0) : null;
+    const tAsli = miring ? Math.sqrt(Math.max(miring * miring - (s / 2) * (s / 2), 1)) : numOrDefault(p.tinggi, 8);
     const t = Math.min(tAsli, 1.6 * s); // lihat catatan di tabung
+    // satuan=cm -> label "10 cm" gaya naskah Cambridge, bukan "s = 10".
+    const satuan = String(p.satuan || '').trim();
+    const tulis = (awalan, v) => (satuan ? `${v} ${satuan}` : `${awalan} = ${v}`);
     const depth = s * 0.6;
     const A = [0, 0], B = [s, 0];
     const C = obliquePt(s, 0, depth), D = obliquePt(0, 0, depth);
     const O = [(A[0] + B[0] + C[0] + D[0]) / 4, (A[1] + B[1] + C[1] + D[1]) / 4];
     const V = [O[0], O[1] + t];
+    const M = [(B[0] + C[0]) / 2, (B[1] + C[1]) / 2];
+    const edges = [
+      { a: A, b: B }, { a: B, b: C }, { a: C, b: D, dashed: true }, { a: D, b: A, dashed: true },
+      { a: A, b: V }, { a: B, b: V }, { a: C, b: V }, { a: D, b: V, dashed: true },
+    ];
+    const labels = [{ pos: [s / 2, 0], text: tulis('s', s), n: [0, -1] }];
+    let siku = [], dots = [O];
+    if (miring) {
+      // Apotema di sisi tegak kanan (VBC): garis tipis V->tengah BC + siku.
+      edges.push({ a: V, b: M, tipis: true });
+      siku = [{ v: M, a: V, b: C }];
+      dots = [];
+      labels.push({ pos: [(V[0] + M[0]) / 2, (V[1] + M[1]) / 2], text: tulis('m', miring), n: [1, 0.2] });
+    } else {
+      edges.push({ a: V, b: O, dashed: true });
+      // Rendah (22% tinggi) dan di kiri: menjauhi rusuk VB/VC yang padat;
+      // yang terdekat tinggal VD putus-putus, dan halo putih menjaga keterbacaan.
+      labels.push({ pos: [O[0], O[1] + t * 0.22], text: tulis('t', tAsli), n: [-1, 0] });
+    }
     return {
-      edges: [
-        { a: A, b: B }, { a: B, b: C }, { a: C, b: D, dashed: true }, { a: D, b: A, dashed: true },
-        { a: A, b: V }, { a: B, b: V }, { a: C, b: V }, { a: D, b: V, dashed: true },
-        { a: V, b: O, dashed: true },
-      ],
-      dots: [O],
-      labels: [
-        { pos: [s / 2, 0], text: `s = ${s}`, n: [0, -1] },
-        // Rendah (22% tinggi) dan di kiri: menjauhi rusuk VB/VC yang padat;
-        // yang terdekat tinggal VD putus-putus, dan halo putih menjaga keterbacaan.
-        { pos: [O[0], O[1] + t * 0.22], text: `t = ${tAsli}`, n: [-1, 0] },
-      ],
+      edges, siku, dots, labels,
       vertices: [
         { pos: A, name: 'A', n: [-0.7, -0.7] }, { pos: B, name: 'B', n: [0.7, -0.7] },
         { pos: C, name: 'C', n: [1, -0.2] }, { pos: D, name: 'D', n: [-1, 0.2] },
-        { pos: V, name: 'V', n: [0, 1] }, { pos: O, name: 'O', n: [-1, -0.5] },
+        { pos: V, name: 'V', n: [0, 1] }, ...(miring ? [] : [{ pos: O, name: 'O', n: [-1, -0.5] }]),
       ],
     };
   },
@@ -2115,7 +2135,10 @@ function renderSolidSVG(cfg) {
     isi += teksGeoSVG(pos, l.text, GAYA.teks, false, true);
     b.teks(pos.x, pos.y, l.text, GAYA.teks, pos.anchor);
   });
-  (shape.vertices || []).forEach((v) => {
+  // huruf=tidak: tanpa nama titik sudut, seperti gambar limas/prisma di
+  // naskah Checkpoint yang hanya memberi ukuran.
+  const tanpaHuruf = /^(tidak|no|false|0)$/i.test(String(cfg.huruf || '').trim());
+  (tanpaHuruf ? [] : shape.vertices || []).forEach((v) => {
     const [x, y] = toPx(v.pos[0], v.pos[1]);
     const pos = letakTeksLuar(x, y, v.n[0], -v.n[1], 7, 12.5);
     isi += teksGeoSVG(pos, v.name, 12.5, true);
@@ -3159,6 +3182,33 @@ function renderSketsaSVG(cfg) {
   garis.forEach((s) => { isi += garisSVG(px[s[0]], px[s[1]], false); });
   putus.forEach((s) => { isi += garisSVG(px[s[0]], px[s[1]], true); });
   sinar.forEach((s) => { isi += arrowSVG(px[s[0]][0], px[s[0]][1], px[s[1]][0], px[s[1]][1], { headLen: 8, strokeWidth: GAYA.garis }); });
+  // busur=A:5|B:6 — busur jangka berpusat di titik A berjari-jari 5 (satuan
+  // koordinat), seperti lukisan sumbu/garis bagi. A:5:30:150 memberi sudut
+  // awal-akhir (derajat, berlawanan jarum jam dari arah kanan); tanpa itu
+  // busur menghadap pusat gambar selebar ±70°.
+  const pusatData = pts.reduce((acc, p) => [acc[0] + p.x / pts.length, acc[1] + p.y / pts.length], [0, 0]);
+  String(cfg.busur || '').split('|').map((t) => t.trim()).filter(Boolean).forEach((t) => {
+    const [nm, rRaw, a0Raw, a1Raw] = t.split(':').map((x) => x.trim());
+    const titikPusat = pts.find((q) => q.name === nm);
+    const r = parseFloat(rRaw);
+    if (!titikPusat || !(r > 0)) return;
+    let a0 = parseFloat(a0Raw), a1 = parseFloat(a1Raw);
+    if (isNaN(a0) || isNaN(a1)) {
+      const arah = (Math.atan2(pusatData[1] - titikPusat.y, pusatData[0] - titikPusat.x) * 180) / Math.PI;
+      const tepat = Math.hypot(pusatData[0] - titikPusat.x, pusatData[1] - titikPusat.y) < 1e-6 ? 90 : arah;
+      a0 = tepat - 70; a1 = tepat + 70;
+    }
+    const [cx, cy] = px[nm], rp = r * skala;
+    const titikBusur = (deg) => [cx + rp * Math.cos((deg * Math.PI) / 180), cy - rp * Math.sin((deg * Math.PI) / 180)];
+    const langkah = 24;
+    let d = '';
+    for (let i = 0; i <= langkah; i++) {
+      const [x, y] = titikBusur(a0 + ((a1 - a0) * i) / langkah);
+      d += (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1) + ' ';
+      b.titik(x, y);
+    }
+    isi += `<path d="${d}" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garisBantu + 0.3}"/>`;
+  });
   pts.forEach((p) => b.titik(px[p.name][0], px[p.name][1]));
   const sisiSemua = garis.concat(putus, sinar);
 
@@ -3278,8 +3328,16 @@ function renderNumberLineSVG(cfg) {
   const sx = (width - 2 * pad) / (max - min || 1);
   const toPx = (v) => pad + (v - min) * sx;
   const adaTitik = (cfg.titik || []).length > 0;
+  // tunjuk=5.48 (boleh 5.48:P, pisah koma) — panah tegak menunjuk satu nilai
+  // TANPA titik dan tanpa angka, untuk soal "bilangan mana yang ditunjuk
+  // panah" (Checkpoint). angka=4,5,6 — hanya nilai ini yang diberi angka;
+  // tanda skala lain tetap digambar.
+  // (Bukan "panah=": nama itu milik anotasi umum, lihat applyAnnotations.)
+  const panah = parseTitikList(cfg.tunjuk);
+  const angkaSaja = cfg.angka != null && String(cfg.angka).trim() !== ''
+    ? String(cfg.angka).split(',').map((v) => Math.round(parseFloat(v) * 1000) / 1000).filter((v) => !isNaN(v)) : null;
   // Kanvas dipotong pas: ruang di atas garis hanya kalau ada titik berlabel.
-  const y = adaTitik ? 34 : 14;
+  const y = panah.length ? 56 : (adaTitik ? 34 : 14);
   const height = y + 30;
 
   let svg = `<svg class="ws-diagram-svg" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">`;
@@ -3297,8 +3355,14 @@ function renderNumberLineSVG(cfg) {
     const px = toPx(rv);
     const utama = k % tiap === 0;
     svg += `<line x1="${px.toFixed(1)}" y1="${y - (utama ? 6 : 4)}" x2="${px.toFixed(1)}" y2="${y + (utama ? 6 : 4)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
-    if (utama) svg += `<text x="${px.toFixed(1)}" y="${y + 20}" font-size="${GAYA.teks}" text-anchor="middle" fill="${GAYA.hitam}">${rv}</text>`;
+    const beriAngka = angkaSaja ? angkaSaja.some((a) => Math.abs(a - rv) < 1e-6) : utama;
+    if (beriAngka) svg += `<text x="${px.toFixed(1)}" y="${y + 20}" font-size="${GAYA.teks}" text-anchor="middle" fill="${GAYA.hitam}">${rv}</text>`;
   }
+  panah.forEach((p) => {
+    const px = toPx(p.value);
+    svg += arrowSVG(px, y - 46, px, y - 2, { headLen: 6, strokeWidth: 1.1 });
+    if (p.label) svg += teksHaloSVG(px + 8, y - 40, p.label, { size: 12, bold: true, anchor: 'start' });
+  });
   (cfg.titik || []).forEach((p) => {
     const px = toPx(p.value);
     svg += `<circle cx="${px.toFixed(1)}" cy="${y}" r="3.5" fill="${GAYA.hitam}"/>`;
@@ -5163,7 +5227,15 @@ function renderCircuitSVG(cfg) {
     svg += `<text x="${(leftX - 16).toFixed(1)}" y="${(bcy + 2).toFixed(1)}" font-size="${GAYA.teks}" text-anchor="end" fill="${GAYA.hitam}">${sumber} V</text>`;
   }
 
-  svg += W(leftX, bottomY, rightX, bottomY);
+  // terbuka=ya: kawat bawah diputus di tengah — rangkaian tidak lengkap untuk
+  // soal "lengkapi diagram: pasang amperemeter dan voltmeter" (Checkpoint).
+  if (/^(ya|iya|true|1)$/i.test(String(cfg.terbuka || '').trim())) {
+    const span = rightX - leftX;
+    svg += W(leftX, bottomY, leftX + span * 0.3, bottomY);
+    svg += W(rightX - span * 0.3, bottomY, rightX, bottomY);
+  } else {
+    svg += W(leftX, bottomY, rightX, bottomY);
+  }
   svg += W(rightX, topY, rightX, bottomY);
 
   blocks.forEach((block, i) => {
@@ -6423,12 +6495,22 @@ function applyGeoTransform(points, cfg) {
 function renderTransformSVG(cfg) {
   const orig = parseVertexList(cfg.titik);
   const points = orig.length ? orig : [{ name: 'A', x: 1, y: 1 }, { name: 'B', x: 4, y: 1 }, { name: 'C', x: 1, y: 5 }];
-  const image = applyGeoTransform(points, cfg);
-  const jenis = String(cfg.jenis || 'translasi').toLowerCase();
+  // bayangan=tidak: hanya bangun asal — soal "gambarkan bayangannya" (siswa
+  // yang menggambar), jadi bayangan, cermin, dan pusat tidak boleh tampak.
+  const tanpaBayangan = /^(tidak|no|false|0)$/i.test(String(cfg.bayangan || '').trim());
+  const image = tanpaBayangan ? [] : applyGeoTransform(points, cfg);
+  const jenis = tanpaBayangan ? '' : String(cfg.jenis || 'translasi').toLowerCase();
   const pusat = String(cfg.pusat || '0,0').split(',').map(Number);
   const garis = String(cfg.garis || 'y-axis').toLowerCase();
+  // tanda=0,0|0,-3 — tanda silang di titik-titik itu (pusat rotasi yang
+  // disebut di soal, seperti naskah Checkpoint).
+  const tanda = String(cfg.tanda || '').split('|').map((t) => t.split(',').map(Number)).filter((t) => t.length === 2 && t.every((v) => !isNaN(v)));
+  // nama=T: bangun diberi satu nama di tengahnya (dan diarsir), bukan huruf
+  // di tiap titik sudut. arsir=ya mengarsir tanpa mengganti huruf.
+  const namaBangun = String(cfg.nama || '').trim();
+  const arsir = !!namaBangun || /^(ya|iya|true|1)$/i.test(String(cfg.arsir || '').trim());
   const allPts = points.concat(image);
-  const xs = allPts.map((p) => p.x), ys = allPts.map((p) => p.y);
+  const xs = allPts.map((p) => p.x).concat(tanda.map((t) => t[0])), ys = allPts.map((p) => p.y).concat(tanda.map((t) => t[1]));
   // Pusat rotasi/dilatasi dan cermin x=k / y=k ikut dihitung dalam jangkauan
   // sumbu: unsur yang menentukan transformasi harus terlihat di gambar.
   if (jenis === 'rotasi' || jenis === 'dilatasi') { xs.push(pusat[0]); ys.push(pusat[1]); }
@@ -6522,10 +6604,21 @@ function renderTransformSVG(cfg) {
 
   // Bangun asal padat, bayangan putus-putus; huruf titik di sisi luar bangun
   // (menjauhi pusat bangun) dengan halo putih supaya terbaca di atas grid.
+  tanda.forEach(([tx, ty]) => {
+    const [px, py] = toPx(tx, ty), r = 4.5;
+    isi += `<path d="M${(px - r).toFixed(1)} ${(py - r).toFixed(1)} L${(px + r).toFixed(1)} ${(py + r).toFixed(1)} M${(px - r).toFixed(1)} ${(py + r).toFixed(1)} L${(px + r).toFixed(1)} ${(py - r).toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+  });
   const gambarPoligon = (pts, putus) => {
+    if (!pts.length) return;
     const d = pts.map((p, i) => { const [px, py] = toPx(p.x, p.y); return (i === 0 ? 'M' : 'L') + px.toFixed(1) + ' ' + py.toFixed(1); }).join(' ') + ' Z';
-    isi += `<path d="${d}" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}" stroke-linejoin="round"${putus ? ` stroke-dasharray="${GAYA.putus}"` : ''}/>`;
+    const isiWarna = arsir && !putus ? '#d9d9d9' : 'none';
+    isi += `<path d="${d}" fill="${isiWarna}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}" stroke-linejoin="round"${putus ? ` stroke-dasharray="${GAYA.putus}"` : ''}/>`;
     const c = pts.reduce((s, p) => [s[0] + p.x / pts.length, s[1] + p.y / pts.length], [0, 0]);
+    if (namaBangun && !putus) {
+      const [cx, cy] = toPx(c[0], c[1]);
+      isi += `<text x="${cx.toFixed(1)}" y="${(cy + 4).toFixed(1)}" font-size="12" text-anchor="middle" fill="${GAYA.hitam}">${escText(namaBangun)}</text>`;
+      return;
+    }
     pts.forEach((p) => {
       const [px, py] = toPx(p.x, p.y);
       const dx = p.x - c[0], dy = -(p.y - c[1]), len = Math.hypot(dx, dy) || 1;
@@ -7267,14 +7360,20 @@ function renderWaveSVG(cfg) {
   let width, height;
 
   if (jenis === 'transversal') {
+    // label=tidak: tanpa penanda amplitudo dan λ — soal "gambar panah
+    // amplitudo / panjang gelombang pada diagram" (Checkpoint). sumbux= dan
+    // sumbuy= mengganti nama sumbu; isi "-" untuk sumbu tanpa nama.
+    const tanpaLabel = /^(tidak|no|false|0)$/i.test(String(cfg.label || '').trim());
+    const namaX = cfg.sumbux != null ? String(cfg.sumbux).trim() : 'jarak';
+    const namaY = cfg.sumbuy != null ? String(cfg.sumbuy).trim() : 'simpangan';
     // Sumbu simpangan (tegak, berpanah) dan jarak (mendatar, berpanah)
     // dari titik asal di awal gelombang; kurva sinus hitam tebal.
     const midY = 26 + amp + 12;
     const yEnd = midY - amp - 24, xEnd = x0 + panjang + 26;
     svg += arrowSVG(x0, midY, xEnd, midY, { headLen: 7, strokeWidth: 1.2 });
-    svg += arrowSVG(x0, midY, x0, yEnd, { headLen: 7, strokeWidth: 1.2 });
-    svg += `<text x="${(xEnd + 6).toFixed(1)}" y="${(midY + 4).toFixed(1)}" font-size="${GAYA.teks}" fill="${GAYA.hitam}">jarak</text>`;
-    svg += `<text x="${(x0 + 8).toFixed(1)}" y="${(yEnd + 4).toFixed(1)}" font-size="${GAYA.teks}" fill="${GAYA.hitam}">simpangan</text>`;
+    svg += arrowSVG(x0, tanpaLabel ? midY + amp + 24 : midY, x0, yEnd, { headLen: 7, strokeWidth: 1.2 });
+    if (namaX && namaX !== '-') svg += `<text x="${(xEnd + 6).toFixed(1)}" y="${(midY + 4).toFixed(1)}" font-size="${GAYA.teks}" fill="${GAYA.hitam}">${escText(namaX)}</text>`;
+    if (namaY && namaY !== '-') svg += `<text x="${(x0 + 8).toFixed(1)}" y="${(yEnd + 4).toFixed(1)}" font-size="${GAYA.teks}" fill="${GAYA.hitam}">${escText(namaY)}</text>`;
 
     let d = '';
     const steps = 60 * jumlah;
@@ -7284,6 +7383,12 @@ function renderWaveSVG(cfg) {
       d += (s === 0 ? 'M' : 'L') + x.toFixed(1) + ' ' + y.toFixed(1) + ' ';
     }
     svg += `<path d="${d}" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}" stroke-linejoin="round"/>`;
+    if (tanpaLabel) {
+      width = xEnd + 6 + (namaX && namaX !== '-' ? 34 : 0);
+      height = midY + amp + 30;
+      return `<svg class="ws-diagram-svg" viewBox="0 0 ${width.toFixed(1)} ${height.toFixed(1)}" xmlns="http://www.w3.org/2000/svg">`
+        + `<rect x="0.5" y="0.5" width="${(width - 1).toFixed(1)}" height="${(height - 1).toFixed(1)}" fill="#ffffff" stroke="#d8dce1"/>` + svg + '</svg>';
+    }
 
     // Amplitudo: garis putus-putus dari puncak pertama ke sumbu, garis
     // dimensi dua panah di sampingnya berlabel A.
@@ -7834,6 +7939,8 @@ function combineGametes(g1, g2) {
   let out = '';
   for (let i = 0; i < g1.length; i++) {
     const pair = [g1[i], g2[i]].sort((a, b) => {
+      // Kromosom seks selalu ditulis X dulu: XY, bukan YX.
+      if (a !== b && /^[XY]$/.test(a) && /^[XY]$/.test(b)) return a === 'X' ? -1 : 1;
       if (a.toLowerCase() !== b.toLowerCase()) return 0;
       return a === a.toUpperCase() ? -1 : 1;
     });
@@ -7876,28 +7983,40 @@ function renderPunnettSVG(cfg) {
   const pad = 14;
   const gridW = head + cols.length * cell;
   const gridH = head + rows.length * cell;
+  const kromosomSeks = /^[XY]+$/.test(String(cfg.induk1 || '') + String(cfg.induk2 || ''));
   const showRatio = String(cfg.rasio || 'ya').toLowerCase() !== 'tidak';
   const ratioH = showRatio ? 42 : 8;
-  const W = Math.max(260, gridW + pad * 2);
-  const H = gridH + pad * 2 + ratioH;
+  // nama1=parent 1; nama2=parent 2 — judul induk di atas kolom dan di kiri
+  // baris, seperti kotak Punnett naskah Checkpoint.
+  const nama1 = String(cfg.nama1 || '').trim(), nama2 = String(cfg.nama2 || '').trim();
+  const atasH = nama1 ? 20 : 0, kiriW = nama2 ? Math.max(40, nama2.length * 6.6 + 10) : 0;
+  const W = Math.max(260, gridW + pad * 2 + kiriW * 2);
+  const H = gridH + pad * 2 + ratioH + atasH;
   const blank = String(cfg.jawaban || 'lengkap').toLowerCase() === 'kosong';
+  // gamet1=kosong / gamet2=kosong: gamet induk itu tidak ditulis — soal
+  // "tuliskan kromosom seks sel telur/sperma induk 1". Isi kotak tetap ada.
+  const kosong1 = /^(kosong|tidak|no)$/i.test(String(cfg.gamet1 || '').trim());
+  const kosong2 = /^(kosong|tidak|no)$/i.test(String(cfg.gamet2 || '').trim());
 
   let svg = `<svg class="ws-diagram-svg" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
   svg += `<rect x="0.5" y="0.5" width="${W - 1}" height="${H - 1}" fill="#ffffff" stroke="#d8dce1"/>`;
-  const ox = (W - gridW) / 2, oy = pad;
+  const ox = (W - gridW) / 2, oy = pad + atasH;
+  if (nama1) svg += `<text x="${(ox + head + (gridW - head) / 2).toFixed(1)}" y="${(oy - 8).toFixed(1)}" text-anchor="middle" font-size="12" font-weight="700" fill="#000000">${escText(nama1)}</text>`;
+  if (nama2) svg += `<text x="${(ox - 6).toFixed(1)}" y="${(oy + head + (gridH - head) / 2 + 4).toFixed(1)}" text-anchor="end" font-size="12" font-weight="700" fill="#000000">${escText(nama2)}</text>`;
 
   const genoCounts = {}, phenoCounts = {};
   cols.forEach((cg, i) => {
+    if (kosong1) return;
     svg += `<text x="${(ox + head + i * cell + cell / 2).toFixed(1)}" y="${(oy + head / 2 + 4).toFixed(1)}" text-anchor="middle" font-size="12" font-weight="700" fill="#000000">${escText(cg)}</text>`;
   });
   rows.forEach((rg, j) => {
-    svg += `<text x="${(ox + head / 2).toFixed(1)}" y="${(oy + head + j * cell + cell / 2 + 4).toFixed(1)}" text-anchor="middle" font-size="12" font-weight="700" fill="#000000">${escText(rg)}</text>`;
+    if (!kosong2) svg += `<text x="${(ox + head / 2).toFixed(1)}" y="${(oy + head + j * cell + cell / 2 + 4).toFixed(1)}" text-anchor="middle" font-size="12" font-weight="700" fill="#000000">${escText(rg)}</text>`;
     cols.forEach((cg, i) => {
       const x = ox + head + i * cell, y = oy + head + j * cell;
       svg += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${cell.toFixed(1)}" height="${cell.toFixed(1)}" fill="none" stroke="#000000" stroke-width="1.3"/>`;
       const geno = combineGametes(cg, rg);
       genoCounts[geno] = (genoCounts[geno] || 0) + 1;
-      const pheno = phenotypeOf(geno);
+      const pheno = kromosomSeks ? (geno.indexOf('Y') >= 0 ? 'laki-laki' : 'perempuan') : phenotypeOf(geno);
       phenoCounts[pheno] = (phenoCounts[pheno] || 0) + 1;
       if (!blank) {
         svg += `<text x="${(x + cell / 2).toFixed(1)}" y="${(y + cell / 2 + 4).toFixed(1)}" text-anchor="middle" font-size="11.5" fill="#000000">${escText(geno)}</text>`;
@@ -8497,7 +8616,94 @@ const LAB_APPARATUS = {
   }
 };
 
+// Gelas kimia berisi lapisan cairan (atas -> bawah) dan/atau endapan —
+// soal massa jenis (minyak di atas air) dan pemisahan campuran.
+//   lapisan=oil:20,water:50  (nama:tinggi persen; tinggi boleh dikosongkan)
+//   endapan=insoluble zinc carbonate   gelas=beaker (label dinding, opsional)
+LAB_APPARATUS.gelaskimia = function (cfg) {
+  cfg = cfg || {};
+  // Tanpa lapisan maupun endapan: contoh lengkap berlabel (minyak di atas
+  // air, endapan di dasar) supaya jenis ini tetap bermakna dipanggil polos.
+  if (!cfg.lapisan && !cfg.endapan) cfg = Object.assign({ lapisan: 'minyak:15,air:45', endapan: 'endapan', gelas: 'gelas kimia' }, cfg);
+  const W = 330, H = 250;
+  const x0 = 80, x1 = 200, top = 34, base = 214, r = 10;
+  let s = '';
+  const lapisan = String(cfg.lapisan || '').split(',').map((t) => t.trim()).filter(Boolean).map((t) => {
+    const k = t.lastIndexOf(':');
+    const tinggi = k > 0 ? parseFloat(t.slice(k + 1)) : NaN;
+    return { nama: k > 0 && !isNaN(tinggi) ? t.slice(0, k).trim() : t, tinggi };
+  });
+  const tinggiDalam = base - top - 12;
+  const bawaan = lapisan.length ? 70 / lapisan.length : 0;
+  let y = base;
+  const kotak = [];
+  lapisan.slice().reverse().forEach((l) => {
+    const h = tinggiDalam * (isNaN(l.tinggi) ? bawaan : l.tinggi) / 100;
+    kotak.unshift({ nama: l.nama, y0: y - h, y1: y });
+    y -= h;
+  });
+  kotak.forEach((k, i) => {
+    const op = 0.05 + 0.07 * i;
+    if (i === kotak.length - 1) {
+      // Lapisan paling bawah mengikuti sudut dasar yang membulat.
+      s += `<path d="M${x0} ${k.y0.toFixed(1)} L${x0} ${base - r} Q${x0} ${base} ${x0 + r} ${base} L${x1 - r} ${base} Q${x1} ${base} ${x1} ${base - r} L${x1} ${k.y0.toFixed(1)} Z" fill="#000000" fill-opacity="${op.toFixed(2)}" stroke="none"/>`;
+    } else {
+      s += `<rect x="${x0 + 1}" y="${k.y0.toFixed(1)}" width="${x1 - x0 - 2}" height="${(k.y1 - k.y0).toFixed(1)}" fill="#000000" fill-opacity="${op.toFixed(2)}" stroke="none"/>`;
+    }
+    s += `<line x1="${x0}" y1="${k.y0.toFixed(1)}" x2="${x1}" y2="${k.y0.toFixed(1)}" stroke="#000000" stroke-width="1.1"/>`;
+    s += labelLead(x1 + 46, (k.y0 + k.y1) / 2 - 8, x1 - 30, (k.y0 + k.y1) / 2, k.nama, 'start');
+  });
+  // Dinding: bibir melengkung keluar di atas, sudut bawah membulat.
+  s += `<path d="M${x0 - 6} ${top - 4} Q${x0} ${top - 2} ${x0} ${top + 6} L${x0} ${base - r} Q${x0} ${base} ${x0 + r} ${base} L${x1 - r} ${base} Q${x1} ${base} ${x1} ${base - r} L${x1} ${top + 6} Q${x1} ${top - 2} ${x1 + 6} ${top - 4}" fill="none" stroke="#000000" stroke-width="1.6"/>`;
+  if (cfg.endapan) {
+    const cx = (x0 + x1) / 2, hb = base - 1;
+    s += `<path d="M${cx - 34} ${hb} Q${cx - 22} ${hb - 6} ${cx - 12} ${hb - 15} Q${cx} ${hb - 22} ${cx + 10} ${hb - 14} Q${cx + 22} ${hb - 7} ${cx + 34} ${hb} Z" fill="#000000" fill-opacity="0.18" stroke="#000000" stroke-width="1"/>`;
+    for (let i = 0; i < 14; i++) {
+      const px = cx - 24 + ((i * 37) % 48), py = hb - 3 - ((i * 23) % 11);
+      s += `<circle cx="${px}" cy="${py}" r="0.9" fill="#000000"/>`;
+    }
+    s += labelLead(cx + 8, base + 26, cx, hb - 8, String(cfg.endapan), 'middle');
+  }
+  if (cfg.gelas) s += labelLead(x1 + 46, top + 8, x1, top + 22, String(cfg.gelas), 'start');
+  const lebarLabel = Math.max(0, ...kotak.map((k) => lebarTeksKira(k.nama, 9.5)), cfg.gelas ? lebarTeksKira(String(cfg.gelas), 9.5) : 0);
+  const lebarEndapan = cfg.endapan ? lebarTeksKira(String(cfg.endapan), 9.5) / 2 + (x0 + x1) / 2 + 16 : 0;
+  return { W: Math.max(W, x1 + 52 + lebarLabel, lebarEndapan), H: H + (cfg.endapan ? 14 : 0), s };
+};
+
+// Panci logam di atas nyala api — soal perpindahan kalor (konduksi pada
+// gagang, konveksi air). nama=pan,handle,water,flame mengganti keempat label.
+LAB_APPARATUS.panci = function (cfg) {
+  cfg = cfg || {};
+  const W = 340, H = 230;
+  const nama = String(cfg.nama || '').split(',').map((t) => t.trim());
+  const lbl = (i, bawaan) => nama[i] || bawaan;
+  let s = '';
+  const x0 = 130, x1 = 250, top = 60, base = 160;
+  // Air mendidih: permukaan bergelombang.
+  let d = `M${x0} 78`;
+  for (let x = x0; x < x1; x += 12) d += ` Q${x + 6} 72 ${x + 12} 78`;
+  s += `<path d="${d} L${x1} ${base - 8} Q${x1} ${base} ${x1 - 8} ${base} L${x0 + 8} ${base} Q${x0} ${base} ${x0} ${base - 8} Z" fill="#000000" fill-opacity="0.08" stroke="none"/>`;
+  s += `<path d="${d}" fill="none" stroke="#000000" stroke-width="1"/>`;
+  s += `<path d="M${x0 - 4} ${top - 6} Q${x0} ${top - 4} ${x0} ${top + 4} L${x0} ${base - 8} Q${x0} ${base} ${x0 + 8} ${base} L${x1 - 8} ${base} Q${x1} ${base} ${x1} ${base - 8} L${x1} ${top + 4} Q${x1} ${top - 4} ${x1 + 4} ${top - 6}" fill="none" stroke="#000000" stroke-width="1.8"/>`;
+  // Gagang: menempel di dinding kiri, naik serong ke kiri.
+  s += `<path d="M${x0} ${top + 14} L${x0 - 8} ${top + 14} L${x0 - 8} ${top + 4} L40 ${top - 22} Q30 ${top - 26} 32 ${top - 16} L${x0 - 12} ${top + 12}" fill="none" stroke="#000000" stroke-width="1.6"/>`;
+  // Nyala api: deretan lidah api di atas pembakar.
+  for (let i = 0; i < 7; i++) {
+    const cx = x0 + 18 + i * 14;
+    s += `<path d="M${cx - 5} 186 Q${cx - 6} 176 ${cx} 168 Q${cx + 6} 176 ${cx + 5} 186 Z" fill="#000000" fill-opacity="0.12" stroke="#000000" stroke-width="1"/>`;
+  }
+  s += `<path d="M${x0 - 6} 206 L${x0 - 6} 196 Q${x0 - 6} 190 ${x0} 190 L${x1} 190 Q${x1 + 6} 190 ${x1 + 6} 196 L${x1 + 6} 206" fill="none" stroke="#000000" stroke-width="1.6"/>`;
+  s += labelLead(x1 + 22, 40, x1, top + 2, lbl(0, 'panci logam'), 'start');
+  s += labelLead(60, 88, 70, top - 8, lbl(1, 'gagang'), 'middle');
+  s += labelLead(x1 + 22, 112, x1 - 30, 112, lbl(2, 'air'), 'start');
+  s += labelLead(x1 + 22, 176, x1 - 12, 178, lbl(3, 'api'), 'start');
+  const lebarLabel = Math.max(...[0, 2, 3].map((i) => lebarTeksKira(lbl(i, 'panci logam'), 9.5)));
+  return { W: Math.max(W, x1 + 30 + lebarLabel), H, s };
+};
+
 const LAB_ALIASES = {
+  gelaskimia: 'gelaskimia', beaker: 'gelaskimia', gelas: 'gelaskimia', lapisan: 'gelaskimia',
+  panci: 'panci', pan: 'panci', cookingpan: 'panci', memasak: 'panci',
   destilasi: 'destilasi', distilasi: 'destilasi', distillation: 'destilasi',
   titrasi: 'titrasi', titration: 'titrasi',
   elektrolisis: 'elektrolisis', electrolysis: 'elektrolisis', selelektrolisis: 'elektrolisis',
@@ -8512,7 +8718,7 @@ function renderLabApparatusSVG(cfg) {
   if (!build) {
     throw new Error('jenis alat lab tidak dikenal: "' + String(cfg.jenis || '') + '"');
   }
-  const { W, H, s } = build();
+  const { W, H, s } = build(cfg);
   // "label=tidak" strips the leader-line captions, turning any apparatus
   // diagram into a blank one for the student to name themselves — the
   // standard "label the parts of the apparatus" question.
@@ -8978,7 +9184,10 @@ function renderGraphPaperSVG(cfg) {
   const height = padT + plotH + padB;
   const top = padT;
   const xAxisY = top + plotH, yAxisX = padL;
-  const toPx = (x, y) => [padL + ((x - xmin) / spanX) * plotW, top + plotH - ((y - ymin) / spanY) * plotH];
+  // balikx=ya: sumbu x menurun ke kanan (xmax di kiri), mis. "juta tahun
+  // yang lalu" 500 -> 0 seperti grafik laju kepunahan Checkpoint.
+  const balikX = /^(ya|iya|true|1)$/i.test(String(cfg.balikx || '').trim());
+  const toPx = (x, y) => [padL + ((balikX ? xmax - x : x - xmin) / spanX) * plotW, top + plotH - ((y - ymin) / spanY) * plotH];
 
   let svg = `<svg class="ws-diagram-svg" viewBox="0 0 ${width.toFixed(0)} ${height}" xmlns="http://www.w3.org/2000/svg">`;
   if (cfg.judul) {
@@ -9011,11 +9220,19 @@ function renderGraphPaperSVG(cfg) {
   // mengukur; label "besaran / satuan" di ujung panah bernilai di naskah
   // praktikum, jadi diberi ruang sendiri.
   svg += sumbuALevelSVG({ xAxisY, yAxisX, xFrom: padL, xTo: padL + plotW + 10, yFrom: xAxisY, yTo: top - 10, labelX, labelY });
-  const originShown = xmin === 0 && ymin === 0;
+  const originShown = xmin === 0 && ymin === 0 && !balikX;
   xTicks.forEach((gx) => { if (!(originShown && Math.abs(gx) < 1e-9)) svg += tickXSVG(toPx(gx, ymin)[0], xAxisY, formatTick(gx)); });
   yTicks.forEach((gy) => { if (!(originShown && Math.abs(gy) < 1e-9)) svg += tickYSVG(yAxisX, toPx(xmin, gy)[1], formatTick(gy)); });
   if (originShown) svg += teksHaloSVG(yAxisX - 5, xAxisY + 13, 'O', { anchor: 'end', italic: true });
 
+  // garis=x:y,x:y,... — grafik garis jadi (titik data disambung lurus, tanpa
+  // tanda silang), untuk soal membaca grafik data deret seperti laju
+  // kepunahan; titik= tetap dipakai untuk data yang diplot bertanda silang.
+  const dataGaris = parseXYList(cfg.garis);
+  if (dataGaris.length > 1) {
+    const d = dataGaris.map((p, i) => { const [px, py] = toPx(p.x, p.y); return (i ? 'L' : 'M') + px.toFixed(1) + ' ' + py.toFixed(1); }).join(' ');
+    svg += `<path d="${d}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.3" stroke-linejoin="round"/>`;
+  }
   parseXYList(cfg.titik).forEach((p) => {
     const [px, py] = toPx(p.x, p.y);
     // Tanda silang, bukan titik: konvensi plot yang dinilai semua dewan
@@ -9070,6 +9287,9 @@ const DIAGRAM_TYPE_ALIASES = {
   bangun: 'bangun', geometri: 'bangun',
   sektor: 'sektor', juring: 'sektor',
   garisbilangan: 'garisbilangan',
+  tumbuhan: 'tumbuhan', tanaman: 'tumbuhan', plant: 'tumbuhan',
+  aliranenergi: 'aliranenergi', transferenergi: 'aliranenergi', energyflow: 'aliranenergi', sankey: 'aliranenergi',
+  jodohkan: 'jodohkan', menjodohkan: 'jodohkan', matching: 'jodohkan', pasangkan: 'jodohkan',
   venn: 'venn',
   statistik: 'statistik', stat: 'statistik',
   pohonfaktor: 'pohonfaktor', faktor: 'pohonfaktor',
@@ -9152,6 +9372,205 @@ function parseTagParams(raw) {
     if (key) params[key] = val;
   });
   return params;
+}
+
+// ---------------------------------------------------------------------
+// Tumbuhan utuh dalam pot — jalur air (akar -> batang -> daun), penanda
+// huruf di bagian tertentu, label nama bagian. Soal Checkpoint "pathway of
+// water through a plant".
+//   tanda=akar:X,batang:Y,daun:Z   aliran=ya (panah jalur air)
+//   label=ya (nama bagian bawaan) atau label=tanah:soil,daun:leaf (pilih sendiri)
+// ---------------------------------------------------------------------
+function renderPlantSVG(cfg) {
+  const b = kotakBatas();
+  let isi = '';
+  const garis = (d, w, extra) => `<path d="${d}" fill="none" stroke="${GAYA.hitam}" stroke-width="${w || 1.4}" stroke-linecap="round"${extra || ''}/>`;
+  const adaPot = !/^(tidak|no|false|0)$/i.test(String(cfg.pot || '').trim());
+
+  // Pot dan tanah.
+  if (adaPot) {
+    isi += `<path d="M118 300 L302 300 L282 404 L138 404 Z" fill="#f2f2f2" stroke="${GAYA.hitam}" stroke-width="1.6"/>`;
+    isi += `<path d="M112 292 L308 292 L308 304 L112 304 Z" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.6"/>`;
+    b.titik(110, 290); b.titik(310, 406);
+  } else {
+    isi += garis('M110 304 L310 304', 1.2);
+    b.titik(110, 300); b.titik(310, 400);
+  }
+  // Akar bercabang di dalam tanah.
+  const akar = [
+    'M210 304 C200 330 180 350 158 386', 'M210 304 C206 340 190 365 182 394', 'M210 304 C212 345 214 370 210 398',
+    'M210 304 C222 340 236 365 240 394', 'M210 304 C222 330 246 350 266 384',
+    'M178 352 C168 358 160 366 150 370', 'M232 352 C244 360 254 364 268 366', 'M196 344 C192 360 196 372 198 380',
+  ];
+  akar.forEach((d) => { isi += garis(d, 1.3); });
+  // Batang dengan dua garis tepi (pembuluh), sedikit berkelok.
+  isi += garis('M206 304 C200 240 214 160 206 52', 2);
+  isi += garis('M214 304 C208 240 222 160 214 52', 2);
+
+  // Daun: elips runcing dengan tulang daun, dihubungkan tangkai ke batang.
+  const daunList = [
+    { tx: 207, ty: 244, bx: 168, by: 236, sudut: 196, p: 78 },
+    { tx: 213, ty: 186, bx: 248, by: 176, sudut: -18, p: 74 },
+    { tx: 208, ty: 138, bx: 176, by: 128, sudut: 206, p: 62 },
+    { tx: 213, ty: 98, bx: 240, by: 88, sudut: -32, p: 56 },
+    { tx: 210, ty: 54, bx: 210, by: 50, sudut: -90, p: 46 },
+  ];
+  const ujungDaun = [];
+  daunList.forEach((dn) => {
+    const w = dn.p * 0.42, L = dn.p;
+    isi += garis(`M${dn.tx} ${dn.ty} L${dn.bx} ${dn.by}`, 1.4);
+    isi += `<g transform="translate(${dn.bx},${dn.by}) rotate(${dn.sudut})">`
+      + `<path d="M0 0 C${(L * 0.2).toFixed(1)} ${(-w).toFixed(1)} ${(L * 0.75).toFixed(1)} ${(-w).toFixed(1)} ${L} 0 C${(L * 0.75).toFixed(1)} ${w.toFixed(1)} ${(L * 0.2).toFixed(1)} ${w.toFixed(1)} 0 0 Z" fill="#d9d9d9" stroke="${GAYA.hitam}" stroke-width="1.4"/>`
+      + `<path d="M0 0 L${(L * 0.9).toFixed(1)} 0" stroke="${GAYA.hitam}" stroke-width="0.9"/></g>`;
+    const r = (dn.sudut * Math.PI) / 180, ux = Math.cos(r), uy = Math.sin(r);
+    const tip = [dn.bx + ux * L, dn.by + uy * L];
+    ujungDaun.push({ tip, ux, uy, tengah: [dn.bx + ux * L * 0.5, dn.by + uy * L * 0.5], dn, w });
+    [0, 0.5, 1].forEach((t) => [-1, 1].forEach((sg) => b.titik(dn.bx + ux * L * t - uy * w * sg, dn.by + uy * L * t + ux * w * sg)));
+  });
+
+  // aliran=ya: panah jalur air — masuk ke akar, naik di batang, keluar daun.
+  if (/^(ya|iya|true|1)$/i.test(String(cfg.aliran || '').trim())) {
+    const panahKecil = (x1, y1, x2, y2) => arrowSVG(x1, y1, x2, y2, { headLen: 6, strokeWidth: 1.1 });
+    [[150, 402, 160, 378], [204, 404, 206, 380], [262, 400, 252, 376]].forEach((a) => { isi += panahKecil(...a); });
+    [[210, 290, 210, 262], [210, 222, 210, 198], [210, 160, 210, 134]].forEach((a) => { isi += panahKecil(...a); });
+    ujungDaun.forEach((u) => {
+      const x1 = u.tip[0] + u.ux * 4, y1 = u.tip[1] + u.uy * 4, x2 = x1 + u.ux * 20, y2 = y1 + u.uy * 20;
+      isi += panahKecil(x1, y1, x2, y2); b.titik(x2, y2, 4);
+    });
+  }
+
+  // tanda=akar:X,batang:Y,daun:Z — huruf dalam lingkaran kecil.
+  const letak = { akar: [186, 362], batang: [210, 206], daun: ujungDaun[1].tengah, tanah: [150, 330] };
+  String(cfg.tanda || '').split(',').map((t) => t.trim()).filter(Boolean).forEach((t) => {
+    const [bagian, huruf] = t.split(':').map((x) => x.trim());
+    const pos = letak[String(bagian).toLowerCase()];
+    if (!pos || !huruf) return;
+    isi += `<circle cx="${pos[0].toFixed(1)}" cy="${pos[1].toFixed(1)}" r="9.5" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+    isi += `<text x="${pos[0].toFixed(1)}" y="${(pos[1] + 4.2).toFixed(1)}" font-size="11.5" font-weight="700" text-anchor="middle" fill="${GAYA.hitam}">${escText(huruf)}</text>`;
+  });
+
+  // label=ya atau label=tanah:soil,daun:leaf,... — garis penunjuk nama bagian.
+  const labelRaw = String(cfg.label || '').trim();
+  if (labelRaw && !/^(tidak|no|false|0)$/i.test(labelRaw)) {
+    const bawaan = { tanah: 'tanah', akar: 'akar', batang: 'batang', daun: 'daun' };
+    const pilihan = /^(ya|iya|true|1)$/i.test(labelRaw) ? bawaan : parseLabelMap(labelRaw);
+    const penunjuk = {
+      tanah: [70, 318, 132, 318, 'end'], akar: [70, 372, 166, 372, 'end'],
+      batang: [330, 262, 214, 262, 'start'], daun: [330, 124, ujungDaun[1].tengah[0] + 6, ujungDaun[1].tengah[1] - 8, 'start'],
+    };
+    Object.keys(pilihan).forEach((k) => {
+      const pz = penunjuk[k.toLowerCase()];
+      if (!pz || !pilihan[k]) return;
+      const [x1, y1, x2, y2, anc] = pz;
+      isi += labelLead(x1, y1, x2, y2, pilihan[k], anc);
+      b.teks(x1, y1 + 3, pilihan[k], 9.5, anc);
+    });
+  }
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// ---------------------------------------------------------------------
+// Diagram aliran energi (kotak alat + panah masuk/keluar) — soal kekekalan
+// energi: "80 J masuk, 60 J cahaya, berapa kalor?".
+//   alat=electric lamp; masuk=80 J of energy transferred electrically;
+//   keluar=60 J of energy transferred as light|energy transferred as heat
+// Keluaran pertama ke kanan, kedua ke bawah, ketiga ke atas.
+// ---------------------------------------------------------------------
+function pecahBarisTeks(teks, maks) {
+  const kata = String(teks || '').split(/\s+/).filter(Boolean);
+  const baris = [];
+  let kini = '';
+  kata.forEach((k) => {
+    if (kini && (kini + ' ' + k).length > maks) { baris.push(kini); kini = k; } else kini = kini ? kini + ' ' + k : k;
+  });
+  if (kini) baris.push(kini);
+  return baris.length ? baris : [''];
+}
+
+function renderEnergyFlowSVG(cfg) {
+  const b = kotakBatas();
+  let isi = '';
+  const ukuran = GAYA.teks;
+  const blokTeks = (x, yAtas, teks, anchor, maks) => {
+    const baris = pecahBarisTeks(teks, maks || 24);
+    baris.forEach((t, i) => {
+      const y = yAtas + i * (ukuran + 3);
+      isi += `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${ukuran}" text-anchor="${anchor}" fill="${GAYA.hitam}">${escText(t)}</text>`;
+      b.teks(x, y, t, ukuran, anchor);
+    });
+    return baris.length * (ukuran + 3);
+  };
+  const alat = pecahBarisTeks(cfg.alat || 'alat', 12);
+  const bw = Math.max(80, ...alat.map((t) => lebarTeksKira(t, ukuran) + 20));
+  const bh = Math.max(46, alat.length * (ukuran + 3) + 18);
+  const bx = 190, by = 80;
+  isi += `<rect x="${bx}" y="${by}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+  b.titik(bx, by); b.titik(bx + bw, by + bh);
+  alat.forEach((t, i) => {
+    const y = by + bh / 2 - ((alat.length - 1) * (ukuran + 3)) / 2 + i * (ukuran + 3) + 4;
+    isi += `<text x="${(bx + bw / 2).toFixed(1)}" y="${y.toFixed(1)}" font-size="${ukuran}" text-anchor="middle" fill="${GAYA.hitam}">${escText(t)}</text>`;
+  });
+  const midY = by + bh / 2;
+  // Masuk dari kiri, teks di atas panah.
+  if (cfg.masuk) {
+    isi += arrowSVG(20, midY, bx, midY, { headLen: 8, strokeWidth: 1.3 });
+    const tinggi = pecahBarisTeks(cfg.masuk, 24).length * (ukuran + 3);
+    blokTeks((20 + bx) / 2, midY - 6 - tinggi + ukuran, cfg.masuk, 'middle');
+    b.titik(20, midY);
+  }
+  const keluar = String(cfg.keluar || '').split('|').map((t) => t.trim()).filter(Boolean);
+  keluar.forEach((teks, i) => {
+    if (i === 0) {
+      const x1 = bx + bw, x2 = x1 + 110;
+      isi += arrowSVG(x1, midY, x2, midY, { headLen: 8, strokeWidth: 1.3 });
+      const tinggi = pecahBarisTeks(teks, 20).length * (ukuran + 3);
+      blokTeks(x2 + 8, midY - tinggi / 2 + ukuran - 2, teks, 'start', 20);
+    } else if (i === 1) {
+      const x = bx + bw / 2, y2 = by + bh + 50;
+      isi += arrowSVG(x, by + bh, x, y2, { headLen: 8, strokeWidth: 1.3 });
+      blokTeks(x, y2 + ukuran + 6, teks, 'middle', 26);
+    } else if (i === 2) {
+      const x = bx + bw / 2, y2 = by - 46;
+      isi += arrowSVG(x, by, x, y2, { headLen: 8, strokeWidth: 1.3 });
+      const tinggi = pecahBarisTeks(teks, 26).length * (ukuran + 3);
+      blokTeks(x, y2 - 6 - tinggi + ukuran, teks, 'middle', 26);
+    }
+  });
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// ---------------------------------------------------------------------
+// Jodohkan: dua kolom kotak, siswa menarik garis dari kiri ke kanan.
+//   kiri=5 \times 10^{-1}|0.05 \times 10^{4}|...; kanan=0.005|0.5|500|5000;
+//   garis=4-1 (contoh yang sudah dikerjakan: kotak kiri ke-4 ke kanan ke-1)
+// ---------------------------------------------------------------------
+function renderMatchingSVG(cfg) {
+  const kiri = String(cfg.kiri || '').split('|').map((t) => texKeTeks(t.trim())).filter(Boolean);
+  const kanan = String(cfg.kanan || '').split('|').map((t) => texKeTeks(t.trim())).filter(Boolean);
+  if (!kiri.length || !kanan.length) throw new Error('jodohkan perlu kiri= dan kanan= (pisah |)');
+  const ukuran = GAYA.teks;
+  const wKiri = Math.max(90, ...kiri.map((t) => lebarTeksKira(t, ukuran) + 26));
+  const wKanan = Math.max(90, ...kanan.map((t) => lebarTeksKira(t, ukuran) + 26));
+  const tinggiKotak = 30, jarak = 46, celah = 130;
+  const xKanan = wKiri + celah;
+  const n = Math.max(kiri.length, kanan.length);
+  const yAwal = (len) => ((n - len) * jarak) / 2;
+  const b = kotakBatas();
+  let isi = '';
+  const kotak = (x, y, w, t) => {
+    isi += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${tinggiKotak}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+    isi += `<text x="${(x + w / 2).toFixed(1)}" y="${(y + tinggiKotak / 2 + 4).toFixed(1)}" font-size="${ukuran}" text-anchor="middle" fill="${GAYA.hitam}">${escText(t)}</text>`;
+    b.titik(x, y); b.titik(x + w, y + tinggiKotak);
+  };
+  kiri.forEach((t, i) => kotak(0, yAwal(kiri.length) + i * jarak, wKiri, t));
+  kanan.forEach((t, i) => kotak(xKanan, yAwal(kanan.length) + i * jarak, wKanan, t));
+  String(cfg.garis || '').split(',').map((t) => t.trim()).filter(Boolean).forEach((t) => {
+    const [a, c] = t.split('-').map((v) => parseInt(v, 10) - 1);
+    if (!(a >= 0 && a < kiri.length && c >= 0 && c < kanan.length)) return;
+    const y1 = yAwal(kiri.length) + a * jarak + tinggiKotak / 2, y2 = yAwal(kanan.length) + c * jarak + tinggiKotak / 2;
+    isi += `<line x1="${wKiri.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${xKanan.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1"/>`;
+  });
+  return bungkusGambarSVG(isi, b, false);
 }
 
 function parseTitikList(raw) {
@@ -9239,6 +9658,9 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'sektor') svg = renderSectorSVG(params);
     else if (type === 'garisbilangan') { params.titik = parseTitikList(params.titik); svg = renderNumberLineSVG(params); }
     else if (type === 'venn') svg = renderVennSVG(params);
+    else if (type === 'tumbuhan') svg = renderPlantSVG(params);
+    else if (type === 'aliranenergi') svg = renderEnergyFlowSVG(params);
+    else if (type === 'jodohkan') svg = renderMatchingSVG(params);
     else if (type === 'statistik') svg = renderStatSVG(params);
     else if (type === 'pohonfaktor') svg = renderFactorTreeSVG(params);
     else if (type === 'pembagian') svg = renderLongDivisionSVG(params);
@@ -9399,7 +9821,7 @@ if (typeof module !== 'undefined') {
     componentSVG, parseCircuitComponent, CIRCUIT_KINDS,
     renderLabApparatusSVG, LAB_APPARATUS,
     renderCircleTheoremSVG, renderNetSVG, renderViewsSVG, CIRCLE_THEOREMS, SOLID_NETS, SOLID_VIEWS,
-    renderPunnettSVG, renderDichotomousKeySVG, renderFoodWebSVG, splitGenotype, gametesOf, combineGametes, phenotypeOf,
+    renderPunnettSVG, renderDichotomousKeySVG, renderPlantSVG, renderEnergyFlowSVG, renderMatchingSVG, renderFoodWebSVG, splitGenotype, gametesOf, combineGametes, phenotypeOf,
     renderFigureHTML, renderImageHTML, setImageResolver, resetFigureCounter, applyAnnotations,
     extractDiagramTags, substituteDiagramTokens, setModeSiswaDiagram, GEOMETRY_PRESETS, SOLID_PRESETS, LEWIS_PRESETS, VSEPR_PRESETS,
   };
