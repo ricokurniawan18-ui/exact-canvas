@@ -2806,66 +2806,96 @@ function renderSolenoidaSVG(cfg) {
   const arus = String(cfg.arus || '').replace(/\s/g, '').toLowerCase();
   const medan = String(cfg.medan || '').toLowerCase();
   const simpangan = String(cfg.simpangan || '').toLowerCase();
+  const ya = (k) => /^(ya|true|1)$/i.test(String(cfg[k] || ''));
   const b = kotakBatas();
   let isi = '';
   const g = (x1, y1, x2, y2, t, dash) => `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="${t || GAYA.garis}"${dash ? ` stroke-dasharray="${GAYA.putus}"` : ''}/>`;
   const T = (x, y, t, anchor, size, italic) => { isi += teksGeoSVG({ x, y, anchor: anchor || 'middle' }, String(t), size || GAYA.teks, !!italic, true); b.teks(x, y, String(t), size || GAYA.teks, anchor || 'middle'); };
 
   const yc = 74, ry = 30, rx = 8, dx = 15, x0 = 120, x1 = x0 + (N - 1) * dx;       // pusat vertikal kumparan, jari-jari elips, jarak antar lilitan
-  const yG = 172, cG = (x0 + x1) / 2, rG = 17;
-  const xKiri = x0 - 34, xKanan = x1 + 34;
+  const cG = (x0 + x1) / 2, yBox = 150, bw = 58, bh = 42;                           // galvanometer: kotak berdial di bawah kumparan
+  const xKiri = x0 - 34, xKanan = x1 + 34, yB = yc + ry;
+  const tL = cG - 16, tR = cG + 16;                                                 // dua terminal di sisi atas galvanometer
 
   // lilitan: elips putih saling menimpa dari kiri ke kanan -> tampak seperti pegas
   for (let i = 0; i < N; i++) isi += `<ellipse cx="${(x0 + i * dx).toFixed(1)}" cy="${yc}" rx="${rx}" ry="${ry}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
   b.titik(x0 - rx - 2, yc - ry - 4); b.titik(x1 + rx + 2, yc + ry + 4);
 
-  // kawat dari ujung kumparan ke galvanometer; ujung kiri = x, ujung kanan = y
-  const yB = yc + ry;
-  isi += g(x0, yB, xKiri, yB) + g(xKiri, yB, xKiri, yG) + g(xKiri, yG, cG - rG, yG);
-  isi += g(x1, yB, xKanan, yB) + g(xKanan, yB, xKanan, yG) + g(xKanan, yG, cG + rG, yG);
+  // dua kawat BERBEDA: ujung kiri (x) masuk ke terminal kiri lewat jalur rendah, ujung kanan (y) ke terminal kanan
+  // lewat jalur lebih tinggi, jadi tak pernah saling menyilang dan tiap kawat jelas milik ujung yang mana
+  const yLewatKiri = yBox - 14, yLewatKanan = yBox - 28;
+  isi += g(x0, yB, xKiri, yB) + g(xKiri, yB, xKiri, yLewatKiri) + g(xKiri, yLewatKiri, tL, yLewatKiri) + g(tL, yLewatKiri, tL, yBox);
+  isi += g(x1, yB, xKanan, yB) + g(xKanan, yB, xKanan, yLewatKanan) + g(xKanan, yLewatKanan, tR, yLewatKanan) + g(tR, yLewatKanan, tR, yBox);
   isi += `<circle cx="${xKiri}" cy="${yB}" r="2.4" fill="${GAYA.hitam}"/><circle cx="${xKanan}" cy="${yB}" r="2.4" fill="${GAYA.hitam}"/>`;
   T(xKiri - 8, yB + 4, 'x', 'end', GAYA.teks, true);
   T(xKanan + 8, yB + 4, 'y', 'start', GAYA.teks, true);
-  b.titik(xKiri - 24, yc - ry - 10); b.titik(xKanan + 24, yG + rG + 10);
+  b.titik(xKiri - 24, yc - ry - 10); b.titik(xKanan + 24, yBox + bh + 10);
 
-  // galvanometer
-  isi += `<circle cx="${cG}" cy="${yG}" r="${rG}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
-  T(cG, yG + 5, 'G', 'middle', GAYA.teks + 1, true);
-  if (/kanan|kiri/.test(simpangan)) {
-    const sd = /kanan/.test(simpangan) ? 1 : -1;
-    isi += g(cG, yG - 4, cG + sd * 9, yG - 13, 1.4);
-  }
+  // galvanometer: kotak, dial setengah lingkaran, jarum, dua terminal
+  isi += `<rect x="${(cG - bw / 2).toFixed(1)}" y="${yBox}" width="${bw}" height="${bh}" rx="3" fill="#d8d8d8" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+  const cy0 = yBox + bh - 7, rd = 19;
+  isi += `<path d="M${(cG - rd).toFixed(1)},${cy0} A${rd},${rd} 0 0 1 ${(cG + rd).toFixed(1)},${cy0} Z" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.1"/>`;
+  for (let k = -2; k <= 2; k++) { const a = (k * 32 * Math.PI) / 180; isi += g(cG + Math.sin(a) * (rd - 5), cy0 - Math.cos(a) * (rd - 5), cG + Math.sin(a) * (rd - 1.5), cy0 - Math.cos(a) * (rd - 1.5), 0.9); }
+  const sd = /kanan/.test(simpangan) ? 1 : /kiri/.test(simpangan) ? -1 : 0;
+  const aJarum = (sd * 38 * Math.PI) / 180;
+  isi += g(cG, cy0, cG + Math.sin(aJarum) * (rd - 3), cy0 - Math.cos(aJarum) * (rd - 3), 1.6);
+  isi += `<circle cx="${tL}" cy="${yBox}" r="3.2" fill="${GAYA.hitam}"/><circle cx="${tR}" cy="${yBox}" r="3.2" fill="${GAYA.hitam}"/>`;
+  T(cG + bw / 2 + 8, yBox + bh / 2 + 5, 'G', 'start', GAYA.teks + 1, true);
+  b.titik(cG - bw / 2 - 4, yBox - 2); b.titik(cG + bw / 2 + 24, yBox + bh + 4);
 
   // magnet batang di salah satu ujung, kutub menghadap kumparan sesuai kutub=
   const gap = gerak === 'diam' ? 30 : 34, mw = 84, mh = 26;
   const xUjung = sisi > 0 ? x1 + rx : x0 - rx;
   const xm0 = sisi > 0 ? xUjung + gap : xUjung - gap - mw, xm1 = xm0 + mw;
   const lain = kutub === 'U' ? 'S' : 'U';
-  const kiriMagnet = sisi > 0 ? kutub : lain, kananMagnet = sisi > 0 ? lain : kutub;   // kutub yang menghadap kumparan ada di sisi dekat kumparan
   const dekat = sisi > 0 ? 'kiri' : 'kanan';
   const hurufKiri = dekat === 'kiri' ? kutub : lain, hurufKanan = dekat === 'kiri' ? lain : kutub;
   isi += `<rect x="${xm0}" y="${yc - mh / 2}" width="${mw}" height="${mh}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>` + g(xm0 + mw / 2, yc - mh / 2, xm0 + mw / 2, yc + mh / 2, 1.2);
   T(xm0 + mw / 4, yc + 5, hurufKiri, 'middle', GAYA.teks + 1);
   T(xm0 + (3 * mw) / 4, yc + 5, hurufKanan, 'middle', GAYA.teks + 1);
-  b.titik(xm0 - 4, yc - 40); b.titik(xm1 + 4, yc + 40);
+  b.titik(xm0 - 4, yc - 52); b.titik(xm1 + 4, yc + 52);
+  const arahKeKumparan = gerak === 'mendekat' ? -sisi : sisi;                                  // mendekat: menuju kumparan
   if (gerak !== 'diam') {
-    const ya = yc - mh / 2 - 14, panjang = 34;
-    const arahKeKumparan = gerak === 'mendekat' ? -sisi : sisi;                              // mendekat: menuju kumparan
+    const ya0 = yc - mh / 2 - 14, panjang = 34;
     const xa = xm0 + mw / 2 - (arahKeKumparan * panjang) / 2;
-    isi += arrowSVG(xa, ya, xa + arahKeKumparan * panjang, ya, { headLen: 8, strokeWidth: 1.8 });
-    b.titik(xa - 6, ya - 8); b.titik(xa + panjang + 6, ya + 8);
+    isi += arrowSVG(xa, ya0, xa + arahKeKumparan * panjang, ya0, { headLen: 8, strokeWidth: 1.8 });
+    if (ya('besaran')) T(xa + (arahKeKumparan * panjang) / 2, ya0 - 8, 'v', 'middle', GAYA.teks, true);
+    b.titik(xa - 6, ya0 - 18); b.titik(xa + panjang + 6, ya0 + 8);
+  }
+  // besaran=ya: arah medan magnet B (keluar dari kutub U): menuju kumparan bila U menghadap kumparan
+  if (ya('besaran')) {
+    const sdB = (kutub === 'U' ? -1 : 1) * sisi;                                               // -1 = ke kiri
+    const yb2 = yc + mh / 2 + 16, xa = xm0 + mw / 2 - (sdB * 34) / 2;
+    isi += arrowSVG(xa, yb2, xa + sdB * 34, yb2, { headLen: 8, strokeWidth: 1.8 });
+    T(xa + (sdB * 34) / 2, yb2 + 15, 'B', 'middle', GAYA.teks, true);
   }
 
-  // jawaban (opsional): arah arus di rangkaian luar dan arah medan induksi di dalam kumparan
+  // label nama (label=ya), N lilitan dan titik A pada kumparan (titikA=ya), seperti gambar buku
+  if (ya('label')) {
+    T(xm0 + mw / 2, yc + mh / 2 + (ya('besaran') ? 44 : 20), 'Magnet', 'middle', GAYA.teks);
+    T(cG, yc - ry - 8, 'Kumparan', 'middle', GAYA.teks);
+    T(cG, yBox + bh + 16, 'Galvanometer', 'middle', GAYA.teks);
+    b.titik(cG, yBox + bh + 22);
+  }
+  if (ya('n') || ya('label')) T(x0 - rx - 14, yc + 5, 'N', 'end', GAYA.teks, true);
+  if (ya('titikA') || ya('titika')) {
+    const xA = x0 + dx * 1.5, yA = yc - ry + 6;
+    isi += arrowSVG(xA + 34, yA - 22, xA + 4, yA - 1, { headLen: 7, strokeWidth: 1.2 });
+    T(xA + 40, yA - 24, 'A', 'start', GAYA.teks + 1, true);
+    b.titik(xA + 56, yA - 38);
+  }
+
+  // jawaban (opsional): arah arus di rangkaian luar (panah pada KEDUA kawat), arah medan induksi di dalam kumparan
   if (arus === 'x>y' || arus === 'y>x') {
-    const kanan = arus === 'x>y';                                                         // x>y: arus mengalir dari ujung kiri melewati G ke ujung kanan
-    const ya = yG - 9, xa = cG + (kanan ? -rG - 26 : rG + 26);
-    isi += arrowSVG(xa, yG, xa + (kanan ? 18 : -18), yG, { headLen: 7, strokeWidth: 1.8 });
-    T(xa + (kanan ? 9 : -9), yG - 8, 'I', 'middle', GAYA.teks, true);
+    const dari = arus === 'x>y';                                                         // x>y: arus keluar dari ujung x, melewati G, kembali lewat ujung y
+    const yTengahKiri = (yB + yLewatKiri) / 2, yTengahKanan = (yB + yLewatKanan) / 2;
+    isi += arrowSVG(xKiri, yTengahKiri - (dari ? 10 : -10), xKiri, yTengahKiri + (dari ? 10 : -10), { headLen: 7, strokeWidth: 1.8 });
+    isi += arrowSVG(xKanan, yTengahKanan + (dari ? 10 : -10), xKanan, yTengahKanan - (dari ? 10 : -10), { headLen: 7, strokeWidth: 1.8 });
+    T(xKiri - 8, yTengahKiri + 4, 'I', 'end', GAYA.teks, true);
   }
   if (medan === 'kanan' || medan === 'kiri') {
-    const sd = medan === 'kanan' ? 1 : -1;
-    isi += arrowSVG(cG - sd * 22, yc, cG + sd * 22, yc, { headLen: 8, strokeWidth: 1.8 });
+    const sdM = medan === 'kanan' ? 1 : -1;
+    isi += arrowSVG(cG - sdM * 22, yc, cG + sdM * 22, yc, { headLen: 8, strokeWidth: 1.8 });
     T(cG, yc - 8, 'B', 'middle', GAYA.teks, true);
   }
   if (cfg.judul) T((xKiri + xKanan) / 2, yc - ry - 14, cfg.judul, 'middle', GAYA.teks);
