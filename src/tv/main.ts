@@ -131,10 +131,14 @@ let arah: string | null = null
 let tanyaSaya: { id: string; status: string; urutan?: number } | null = null
 /**
  * Menjelajah sendiri: murid boleh menggeser dan memperbesar kanvas grupnya
- * dengan jari. Layar baru kembali mengikuti guru setelah murid menekan
- * tombol "Follow the teacher" (guru mencoret tidak lagi menariknya kembali).
+ * dengan jari. Layar kembali mengikuti guru bila murid menekan "Follow the
+ * teacher", atau pada coretan guru pertama setelah murid diam 2 menit.
  */
 let bebas = false
+/** Kapan murid terakhir menggeser/memperbesar layarnya sendiri (ms). */
+let terakhirBebasMs = 0
+/** Jeda tanpa ikut guru setelah murid terakhir menggeser layar: sesudahnya, coretan guru berikutnya menariknya kembali. */
+const JEDA_BEBAS_MS = 2 * 60 * 1000
 /** ?mode=fit: selalu satu halaman penuh, apa pun zoom guru. */
 const modeMuat = paramMode === 'fit'
 /**
@@ -540,10 +544,14 @@ function terima(p: PesanLangsung) {
   else if (sumber === null) gantiSumber(p)
   if (p.src !== sumber) return
 
-  // Murid yang sudah menggeser/memperbesar layarnya sendiri (bebas) TETAP bebas, sekalipun
-  // guru mencoret atau menggeser kameranya: ia kembali mengikuti hanya bila menekan tombol
-  // "Follow the teacher" (kembaliIkuti). Pandangan guru tetap dicatat di bawah, jadi saat
-  // tombol ditekan layar langsung pindah ke tempat guru sekarang.
+  // Murid yang menggeser/memperbesar layarnya sendiri (bebas) tidak diikutkan ke kamera guru
+  // selama JEDA_BEBAS_MS sejak gesernya yang terakhir. Sesudah jeda itu, coretan guru berikutnya
+  // menariknya kembali (kembaliIkuti); sebelum itu hanya tombol "Follow the teacher" yang
+  // mengembalikannya. Pandangan guru tetap dicatat, jadi layar langsung pindah ke posisi guru sekarang.
+  if (bebas && !modeCoret && !izinCoret.boleh && (p.t === 'goresan' || p.t === 'instrumen' || p.t === 'objek') && p.src === sumber
+      && Date.now() - terakhirBebasMs >= JEDA_BEBAS_MS) {
+    kembaliIkuti()
+  }
   // Berizin menulis (mencoret atau baru diizinkan): pandangan guru tidak
   // menggeser layar ini — layarnya penuh miliknya sendiri.
   if ((modeCoret || izinCoret.boleh) && p.t === 'pandangan') return
@@ -1667,6 +1675,7 @@ function pasangGestur() {
   tombol.onclick = kembaliIkuti
 
   const mulaiBebas = () => {
+    terakhirBebasMs = Date.now()
     if (!bebas) {
       bebas = true
       tombol.hidden = false
