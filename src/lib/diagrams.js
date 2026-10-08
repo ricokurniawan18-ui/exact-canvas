@@ -9800,6 +9800,325 @@ function renderKolomFraksiSVG(cfg) {
   return bungkusGambarSVG(isi, b, false);
 }
 
+
+// ---------------------------------------------------------------------
+// Biologi gaya Cambridge/IB: penampang daun, osmosis pada sel, jantung,
+// alveolus, lengkung refleks, mata, kurva enzim, siklus karbon
+// ---------------------------------------------------------------------
+
+// Label bagian dengan garis penunjuk. bagian = [{n: nama, a: [x,y] titik di benda, t: [x,y] posisi teks, anchor}]
+// kosong (Set indeks 1-based) mengganti nama dengan huruf P,Q,R… (soal "namai bagian").
+function labelBagianBio(b, bagian, kosong, size) {
+  let isi = '', hi = 0;
+  const huruf = 'PQRSTUVWXYZ';
+  bagian.forEach((p, i) => {
+    const teks = kosong.has(i + 1) ? (huruf[hi++] || '?') : p.n;
+    const anchor = p.anchor || (p.t[0] >= p.a[0] ? 'start' : 'end');
+    const gx = anchor === 'start' ? p.t[0] - 3 : anchor === 'end' ? p.t[0] + 3 : p.t[0];
+    isi += gFis(p.a[0], p.a[1], gx, p.t[1] - 3, { tebal: 0.9 });
+    isi += `<circle cx="${p.a[0].toFixed(1)}" cy="${p.a[1].toFixed(1)}" r="1.5" fill="${GAYA.hitam}"/>`;
+    isi += `<text x="${p.t[0].toFixed(1)}" y="${p.t[1].toFixed(1)}" font-size="${size || 10.5}" text-anchor="${anchor}" fill="${GAYA.hitam}"${kosong.has(i + 1) ? ' font-weight="700"' : ''}>${escText(teks)}</text>`;
+    b.teks(p.t[0], p.t[1], teks, size || 10.5, anchor);
+  });
+  return isi;
+}
+
+function himpunanKosong(cfg, jumlah) {
+  if (tidakFis(cfg.label)) return new Set(Array.from({ length: jumlah }, (_, i) => i + 1));
+  return new Set(String(cfg.kosong || '').split(/[,\s]+/).map((x) => parseInt(x, 10)).filter(Number.isFinite));
+}
+
+// Penampang melintang daun.
+function renderDaunSVG(cfg) {
+  const b = kotakBatas();
+  let isi = '';
+  const W = 220, x0 = 0;
+  const yKut = 0, yEpA = 4, hEp = 14, yPal = yEpA + hEp, hPal = 40, ySpon = yPal + hPal, hSpon = 44, yEpB = ySpon + hSpon, hB = hEp;
+  const dasar = yEpB + hB;
+  isi += `<rect x="${x0}" y="${yKut}" width="${W}" height="${dasar}" fill="${GAYA.putih}" stroke="none"/>`;
+  isi += gFis(x0, yKut + 1.5, x0 + W, yKut + 1.5, { tebal: 2.4 });             // kutikula atas
+  for (let x = x0; x < x0 + W; x += 22) isi += `<rect x="${x}" y="${yEpA}" width="22" height="${hEp}" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.1"/>`;
+  for (let x = x0 + 3; x < x0 + W - 12; x += 18) {
+    isi += `<rect x="${x}" y="${yPal + 1}" width="14" height="${hPal - 2}" rx="3" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1"/>`;
+    for (let k = 0; k < 3; k++) isi += `<ellipse cx="${x + 7}" cy="${yPal + 8 + k * 11}" rx="3.4" ry="2.2" fill="#8d8d8d"/>`;
+  }
+  // mesofil bunga karang: sel bulat tak beraturan dengan ruang udara
+  const spon = [[14, 12], [40, 28], [30, 8], [62, 14], [80, 30], [96, 10], [118, 26], [140, 12], [160, 30], [176, 10], [196, 24], [208, 8], [56, 34], [150, 36]];
+  spon.forEach(([dx, dy]) => { isi += `<ellipse cx="${x0 + dx + 4}" cy="${ySpon + dy + 4}" rx="11" ry="9" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1"/><circle cx="${x0 + dx + 1}" cy="${ySpon + dy + 4}" r="2" fill="#8d8d8d"/>`; });
+  // berkas pembuluh
+  const bx = x0 + 104, by = ySpon + 22;
+  isi += `<circle cx="${bx}" cy="${by}" r="15" fill="#ececec" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+  isi += `<path d="M${bx - 9} ${by - 2} a6 6 0 1 1 12 0 z" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1"/><circle cx="${bx - 3}" cy="${by - 6}" r="1.4" fill="${GAYA.hitam}"/>`;
+  isi += `<circle cx="${bx - 6}" cy="${by + 7}" r="3.2" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1"/><circle cx="${bx + 4}" cy="${by + 7}" r="3.2" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1"/>`;
+  // epidermis bawah + stomata (dua sel penutup mengapit celah)
+  const xs = x0 + 150;
+  for (let x = x0; x < x0 + W; x += 22) {
+    if (Math.abs(x + 11 - xs) < 14) continue;
+    isi += `<rect x="${x}" y="${yEpB}" width="22" height="${hB}" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.1"/>`;
+  }
+  isi += `<path d="M${xs - 12} ${yEpB} q0 ${hB / 2} 5 ${hB} h6 q-4 -${hB / 2} -2 -${hB} z" fill="#9a9a9a" stroke="${GAYA.hitam}" stroke-width="1.1"/>`;
+  isi += `<path d="M${xs + 12} ${yEpB} q0 ${hB / 2} -5 ${hB} h-6 q4 -${hB / 2} 2 -${hB} z" fill="#9a9a9a" stroke="${GAYA.hitam}" stroke-width="1.1"/>`;
+  isi += gFis(x0, dasar - 1.5, xs - 12, dasar - 1.5, { tebal: 2.2 }) + gFis(xs + 12, dasar - 1.5, x0 + W, dasar - 1.5, { tebal: 2.2 });
+  isi += `<rect x="${x0}" y="${yKut}" width="${W}" height="${dasar}" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis - 0.6}"/>`;
+  b.titik(x0, 0); b.titik(x0 + W, dasar);
+  const kiriT = x0 - 12, kananT = x0 + W + 12;
+  const bagian = [
+    { n: 'kutikula', a: [x0 + 190, yKut + 1.5], t: [kananT, 8] },
+    { n: 'epidermis atas', a: [x0 + 200, yEpA + 8], t: [kananT, 28] },
+    { n: 'mesofil palisade', a: [x0 + 198, yPal + 22], t: [kananT, 52] },
+    { n: 'mesofil bunga karang', a: [x0 + 206, ySpon + 20], t: [kananT, 82] },
+    { n: 'xilem', a: [bx - 3, by - 3], t: [kiriT, 66], anchor: 'end' },
+    { n: 'floem', a: [bx, by + 7], t: [kiriT, 92], anchor: 'end' },
+    { n: 'sel penutup', a: [xs - 9, yEpB + 7], t: [kananT, 118] },
+    { n: 'stomata', a: [xs, yEpB + 7], t: [kananT - 0, 136] },
+    { n: 'epidermis bawah', a: [x0 + 30, yEpB + 7], t: [kiriT, 124], anchor: 'end' },
+  ];
+  isi += labelBagianBio(b, bagian, himpunanKosong(cfg, bagian.length));
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Sel dalam larutan: tiga keadaan (osmosis).
+function renderOsmosisSVG(cfg) {
+  const hewan = /hewan|darah|animal/i.test(String(cfg.jenis || ''));
+  const nama = hewan ? ['normal', 'membengkak (lisis)', 'mengerut (krenasi)'] : ['turgid', 'flasid', 'plasmolisis'];
+  const tulis = yaFis(cfg.nama);
+  const b = kotakBatas();
+  let isi = '';
+  const huruf = 'PQR';
+  const cx = [50, 160, 270], cy = 52;
+  cx.forEach((x, i) => {
+    if (!hewan) {
+      isi += `<rect x="${x - 34}" y="${cy - 30}" width="68" height="60" rx="8" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="2.6"/>`;
+      if (i === 0) isi += `<rect x="${x - 31}" y="${cy - 27}" width="62" height="54" rx="6" fill="#efefef" stroke="${GAYA.hitam}" stroke-width="1.1"/>`;
+      if (i === 1) isi += `<path d="M${x - 29} ${cy - 22} q29 -4 58 0 q4 22 0 44 q-29 4 -58 0 q-4 -22 0 -44z" fill="#efefef" stroke="${GAYA.hitam}" stroke-width="1.1"/>`;
+      if (i === 2) isi += `<ellipse cx="${x}" cy="${cy}" rx="21" ry="17" fill="#efefef" stroke="${GAYA.hitam}" stroke-width="1.1"/>`;
+      isi += `<ellipse cx="${x + (i === 2 ? 4 : 2)}" cy="${cy}" rx="${i === 0 ? 17 : i === 1 ? 15 : 11}" ry="${i === 0 ? 14 : i === 1 ? 12 : 8}" fill="${GAYA.putih}" stroke="${GAYA.abu}" stroke-width="1" stroke-dasharray="3 2"/>`;
+      isi += `<circle cx="${x - (i === 2 ? 14 : 20)}" cy="${cy - 6}" r="4" fill="#8d8d8d" stroke="${GAYA.hitam}" stroke-width="1"/>`;
+    } else {
+      const r = i === 0 ? 24 : i === 1 ? 30 : 19;
+      if (i === 2) {
+        let d = '';
+        for (let k = 0; k < 16; k++) { const a = k * Math.PI / 8, rr = r + (k % 2 ? -4 : 3); d += `${k ? 'L' : 'M'}${(x + rr * Math.cos(a)).toFixed(1)} ${(cy + rr * Math.sin(a)).toFixed(1)} `; }
+        isi += `<path d="${d}Z" fill="#efefef" stroke="${GAYA.hitam}" stroke-width="1.8"/>`;
+      } else {
+        isi += `<circle cx="${x}" cy="${cy}" r="${r}" fill="${i === 1 ? '#f7f7f7' : '#efefef'}" stroke="${GAYA.hitam}" stroke-width="1.8"${i === 1 ? ' stroke-dasharray="5 3"' : ''}/>`;
+        isi += `<ellipse cx="${x}" cy="${cy}" rx="${r * 0.42}" ry="${r * 0.36}" fill="${GAYA.putih}" stroke="${GAYA.abu}" stroke-width="1"/>`;
+      }
+    }
+    b.titik(x - 38, cy - 34); b.titik(x + 38, cy + 34);
+    isi += teksFis(b, x, cy + 52, tulis ? nama[i] : huruf[i], 'middle', { bold: !tulis, size: tulis ? GAYA.teksKecil : 13 });
+  });
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Jantung manusia (skematik, tampak depan).
+function renderJantungSVG(cfg) {
+  const b = kotakBatas();
+  let isi = '';
+  const st = `fill="#f4f4f4" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"`;
+  const gel = `fill="#dcdcdc" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"`;
+  // atrium kanan (kiri gambar) dan kiri (kanan gambar)
+  isi += `<path d="M20 52 q0 -16 18 -16 h30 v46 h-48 z" ${st}/>`;
+  isi += `<path d="M112 36 h30 q18 0 18 16 v30 h-48 z" ${st}/>`;
+  // ventrikel kanan (dinding tipis) dan kiri (dinding tebal)
+  isi += `<path d="M20 82 h48 v38 q0 36 -22 52 q-26 -20 -26 -60 z" ${st}/>`;
+  isi += `<path d="M112 82 h48 v28 q0 44 -34 62 q-14 -10 -14 -50 z" ${gel}/>`;
+  isi += `<path d="M118 90 h36 v20 q0 32 -24 50 q-12 -12 -12 -40 z" ${st}/>`;
+  // septum
+  isi += `<path d="M68 36 h44 v120 q-4 14 -22 20 q-22 -8 -22 -22 z" fill="#c9c9c9" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+  // katup
+  isi += gFis(24, 82, 64, 82, { tebal: 2.2 }) + gFis(116, 82, 156, 82, { tebal: 2.2 });
+  // pembuluh: vena kava (atas kiri), arteri pulmonalis, vena pulmonalis, aorta
+  isi += `<path d="M30 36 v-34 h16 v34" ${st}/>`;
+  isi += `<path d="M62 84 v-36 q0 -26 -14 -34 h-4" fill="none" stroke="${GAYA.hitam}" stroke-width="0"/>`;
+  isi += `<path d="M70 36 q0 -22 22 -22 h14" fill="none" stroke="${GAYA.hitam}" stroke-width="12" stroke-linecap="butt"/><path d="M70 36 q0 -22 22 -22 h14" fill="none" stroke="#f4f4f4" stroke-width="9"/>`;
+  isi += `<path d="M130 36 v-26 q0 -16 26 -16 h20" fill="none" stroke="${GAYA.hitam}" stroke-width="14"/><path d="M130 36 v-26 q0 -16 26 -16 h20" fill="none" stroke="#dcdcdc" stroke-width="11"/>`;
+  isi += `<path d="M148 36 v-8 h20" fill="none" stroke="${GAYA.hitam}" stroke-width="10"/><path d="M148 36 v-8 h20" fill="none" stroke="#f4f4f4" stroke-width="7"/>`;
+  b.titik(0, -4); b.titik(180, 176);
+  const kiriT = -8, kananT = 204;
+  const bagian = [
+    { n: 'vena kava', a: [38, 14], t: [kiriT, 14], anchor: 'end' },
+    { n: 'atrium kanan', a: [42, 58], t: [kiriT, 58], anchor: 'end' },
+    { n: 'katup trikuspid', a: [44, 82], t: [kiriT, 92], anchor: 'end' },
+    { n: 'ventrikel kanan', a: [40, 126], t: [kiriT, 132], anchor: 'end' },
+    { n: 'arteri pulmonalis', a: [92, 12], t: [kiriT + 0, -8], anchor: 'end' },
+    { n: 'aorta', a: [150, -2], t: [kananT, -2] },
+    { n: 'vena pulmonalis', a: [158, 28], t: [kananT, 24] },
+    { n: 'atrium kiri', a: [142, 58], t: [kananT, 58] },
+    { n: 'katup bikuspid', a: [136, 82], t: [kananT, 92] },
+    { n: 'ventrikel kiri', a: [138, 128], t: [kananT, 132] },
+    { n: 'septum', a: [90, 120], t: [kananT, 162] },
+  ];
+  isi += labelBagianBio(b, bagian, himpunanKosong(cfg, bagian.length));
+  if (yaFis(cfg.arah)) {
+    isi += arrowSVG(38, 4, 38, 24, { headLen: 6, strokeWidth: 1.4 }) + arrowSVG(110, 64, 110, 76, { headLen: 5, strokeWidth: 1.2 });
+  }
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Alveolus dan kapiler: pertukaran gas.
+function renderAlveolusSVG(cfg) {
+  const b = kotakBatas();
+  let isi = '';
+  isi += `<circle cx="80" cy="80" r="58" fill="#f6f6f6" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+  isi += `<path d="M138 30 q40 20 40 50 t-40 50" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/><path d="M150 28 q40 22 40 52 t-40 52" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+  for (let k = 0; k < 3; k++) isi += `<ellipse cx="${176 + k * 4}" cy="${56 + k * 24}" rx="9" ry="6" fill="#bdbdbd" stroke="${GAYA.hitam}" stroke-width="1"/>`;
+  isi += gFis(40, 80, 88, 80, { tebal: 0.001 });
+  isi += arrowSVG(112, 64, 160, 64, { headLen: 7, strokeWidth: 1.8 });
+  isi += arrowSVG(160, 96, 112, 96, { headLen: 7, strokeWidth: 1.8, dash: '5 3' });
+  isi += teksFis(b, 134, 58, 'O₂', 'middle', { bold: true });
+  isi += teksFis(b, 134, 112, 'CO₂', 'middle', { bold: true });
+  b.titik(22, 22); b.titik(196, 138);
+  const bagian = [
+    { n: 'alveolus', a: [60, 50], t: [60, -6], anchor: 'middle' },
+    { n: 'dinding alveolus (1 sel tebal)', a: [136, 36], t: [100, 4], anchor: 'start' },
+    { n: 'kapiler darah', a: [188, 100], t: [192, 150], anchor: 'start' },
+    { n: 'sel darah merah', a: [176, 56], t: [200, 40], anchor: 'start' },
+  ];
+  isi += labelBagianBio(b, bagian.slice(0, 1).concat(bagian.slice(2)), himpunanKosong(cfg, 3));
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Lengkung refleks (penampang sumsum tulang belakang).
+function renderRefleksSVG(cfg) {
+  const b = kotakBatas();
+  let isi = '';
+  isi += `<ellipse cx="150" cy="86" rx="62" ry="46" fill="#f6f6f6" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+  isi += `<path d="M150 86 c-30 -10 -34 -34 -22 -40 c8 -3 14 8 22 20 c8 -12 14 -23 22 -20 c12 6 8 30 -22 40 c20 8 40 12 36 28 c-6 10 -22 2 -36 -10 c-14 12 -30 20 -36 10 c-4 -16 16 -20 36 -28z" fill="#cfcfcf" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+  // reseptor (kulit) -> neuron sensorik -> neuron perantara -> neuron motorik -> efektor (otot)
+  isi += `<rect x="0" y="18" width="38" height="22" fill="#efefef" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+  isi += `<path d="M38 29 q40 -2 70 22 l22 14" fill="none" stroke="${GAYA.hitam}" stroke-width="1.8"/>`;
+  isi += `<ellipse cx="96" cy="44" rx="7" ry="5" fill="#bdbdbd" stroke="${GAYA.hitam}" stroke-width="1"/>`;
+  isi += `<path d="M130 65 q18 -6 20 12" fill="none" stroke="${GAYA.hitam}" stroke-width="1.8"/>`;
+  isi += `<path d="M150 77 q4 14 20 18" fill="none" stroke="${GAYA.hitam}" stroke-width="1.8"/>`;
+  isi += `<path d="M170 95 q24 6 32 36 l4 24" fill="none" stroke="${GAYA.hitam}" stroke-width="1.8"/>`;
+  isi += `<rect x="188" y="156" width="52" height="22" rx="10" fill="#efefef" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+  if (yaFis(cfg.arah)) {
+    isi += arrowSVG(54, 33, 76, 40, { headLen: 6, strokeWidth: 1.3 }) + arrowSVG(188, 118, 200, 140, { headLen: 6, strokeWidth: 1.3 });
+  }
+  b.titik(0, 18); b.titik(246, 182);
+  const bagian = [
+    { n: 'reseptor', a: [18, 29], t: [-4, 8], anchor: 'start' },
+    { n: 'neuron sensorik', a: [60, 36], t: [44, 6], anchor: 'start' },
+    { n: 'badan sel neuron sensorik', a: [96, 44], t: [110, -6], anchor: 'start' },
+    { n: 'neuron perantara', a: [150, 77], t: [226, 52], anchor: 'start' },
+    { n: 'neuron motorik', a: [196, 116], t: [250, 104], anchor: 'start' },
+    { n: 'efektor', a: [214, 167], t: [250, 168], anchor: 'start' },
+    { n: 'sumsum tulang belakang', a: [112, 100], t: [-4, 128], anchor: 'start' },
+  ];
+  isi += labelBagianBio(b, bagian, himpunanKosong(cfg, bagian.length), 10);
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Penampang mata manusia.
+function renderMataSVG(cfg) {
+  const b = kotakBatas();
+  let isi = '';
+  const hit = GAYA.hitam;
+  isi += `<path d="M54.3 44.3 A58 58 0 1 1 54.3 115.7 Q28 80 54.3 44.3 Z" fill="#fafafa" stroke="${hit}" stroke-width="2.4"/>`;
+  isi += `<path d="M117 33 A50 50 0 0 1 117 127" fill="none" stroke="#8d8d8d" stroke-width="4"/>`;       // retina
+  isi += `<path d="M156 92 L186 99 L186 111 L154 104 Z" fill="#d9d9d9" stroke="${hit}" stroke-width="1.4"/>`; // saraf optik
+  isi += `<polygon points="62,46 69,46 69,67 64,67" fill="#8d8d8d" stroke="${hit}" stroke-width="1.2"/><polygon points="62,114 69,114 69,93 64,93" fill="#8d8d8d" stroke="${hit}" stroke-width="1.2"/>`; // iris
+  isi += `<rect x="70" y="38" width="12" height="10" fill="#bdbdbd" stroke="${hit}" stroke-width="1"/><rect x="70" y="112" width="12" height="10" fill="#bdbdbd" stroke="${hit}" stroke-width="1"/>`; // otot siliaris
+  isi += gFis(76, 48, 76, 58, { tebal: 0.9 }) + gFis(76, 112, 76, 102, { tebal: 0.9 });                   // ligamen penggantung
+  isi += `<ellipse cx="76" cy="80" rx="9" ry="22" fill="#ececec" stroke="${hit}" stroke-width="1.6"/>`;    // lensa
+  isi += `<circle cx="150" cy="80" r="2.6" fill="${hit}"/>`;                                                // bintik kuning
+  b.titik(20, 20); b.titik(190, 140);
+  const bagian = [
+    { n: 'kornea', a: [41, 80], t: [-8, 62], anchor: 'end' },
+    { n: 'humor akueus', a: [55, 80], t: [-8, 98], anchor: 'end' },
+    { n: 'iris', a: [64, 52], t: [-8, 30], anchor: 'end' },
+    { n: 'lensa', a: [76, 70], t: [54, 6], anchor: 'middle' },
+    { n: 'otot siliaris', a: [78, 40], t: [110, 8], anchor: 'start' },
+    { n: 'sklera', a: [108, 24], t: [176, 22], anchor: 'start' },
+    { n: 'retina', a: [141, 52], t: [200, 46], anchor: 'start' },
+    { n: 'bintik kuning', a: [150, 80], t: [200, 78], anchor: 'start' },
+    { n: 'saraf optik', a: [180, 106], t: [200, 124], anchor: 'start' },
+    { n: 'humor vitreus', a: [118, 84], t: [80, 150], anchor: 'middle' },
+  ];
+  isi += labelBagianBio(b, bagian, himpunanKosong(cfg, bagian.length), 10);
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Kurva enzim: laju reaksi terhadap suhu atau pH, dengan titik bertanda huruf.
+function renderKurvaEnzimSVG(cfg) {
+  const ph = /ph/i.test(String(cfg.jenis || ''));
+  const tanda = pasangNamaNilai(cfg.titik || '');
+  const b = kotakBatas();
+  let isi = '';
+  const x0 = 40, y0 = 150, W = 250, H = 120;
+  isi += arrowSVG(x0, y0, x0 + W + 8, y0, { headLen: 7, strokeWidth: 1.5 }) + arrowSVG(x0, y0, x0, y0 - H - 8, { headLen: 7, strokeWidth: 1.5 });
+  b.titik(x0 - 6, y0 - H - 8); b.titik(x0 + W + 8, y0 + 4);
+  const f = (t) => {      // t 0..1 -> tinggi 0..1
+    if (ph) return Math.exp(-Math.pow((t - 0.5) / 0.2, 2));
+    return t <= 0.62 ? Math.pow(t / 0.62, 2.1) : Math.max(0, 1 - Math.pow((t - 0.62) / 0.2, 1.6));
+  };
+  const pts = [];
+  for (let i = 0; i <= 80; i++) { const t = i / 80; pts.push([x0 + 4 + t * (W - 8), y0 - 2 - f(t) * (H - 10)]); }
+  isi += `<polyline points="${pts.map((p) => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ')}" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis + 0.2}"/>`;
+  tanda.forEach((tt) => {
+    const t = Math.max(0, Math.min(1, parseFloat(tt.t.replace(',', '.'))));
+    if (!isFinite(t)) return;
+    const x = x0 + 4 + t * (W - 8), y = y0 - 2 - f(t) * (H - 10);
+    isi += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.8" fill="${GAYA.hitam}"/>`;
+    isi += teksFis(b, x + (t < 0.62 ? -7 : 8), y - 6, tt.n, 'middle', { bold: true });
+  });
+  isi += teksFis(b, x0 + W / 2, y0 + 24, cfg.sumbux || (ph ? 'pH' : 'Suhu / °C'), 'middle');
+  isi += `<text transform="translate(${x0 - 20},${y0 - H / 2}) rotate(-90)" text-anchor="middle" font-size="${GAYA.teks}" fill="${GAYA.hitam}">${escText(cfg.sumbuy || 'Laju reaksi enzim')}</text>`;
+  b.titik(x0 - 28, y0 - H / 2);
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Siklus karbon: kotak organisme/reservoir dan panah proses.
+function renderSiklusKarbonSVG(cfg) {
+  const inggris = /^(inggris|english|en)$/i.test(String(cfg.bahasa || ''));
+  const kotak = inggris
+    ? ['carbon dioxide in the air', 'plants', 'animals', 'decomposers', 'fossil fuels']
+    : ['karbon dioksida di udara', 'tumbuhan', 'hewan', 'pengurai', 'bahan bakar fosil'];
+  const T = inggris
+    ? { foto: 'photosynthesis', resp: 'respiration', makan: 'feeding', mati: 'death', bakar: 'combustion' }
+    : { foto: 'fotosintesis', resp: 'respirasi', makan: 'makan', mati: 'kematian', bakar: 'pembakaran' };
+  const kosong = himpunanKosong(cfg, 5);
+  const huruf = /huruf|tidak/i.test(String(cfg.proses || ''));
+  const b = kotakBatas();
+  let isi = '';
+  const pos = [[150, 20], [40, 118], [262, 118], [150, 200], [262, 200]];
+  const bw = [124, 76, 70, 76, 108], bh = 34;
+  let hi = 0;
+  pos.forEach(([x, y], i) => {
+    isi += `<rect x="${x - bw[i] / 2}" y="${y - bh / 2}" width="${bw[i]}" height="${bh}" rx="6" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    b.titik(x - bw[i] / 2, y - bh / 2); b.titik(x + bw[i] / 2, y + bh / 2);
+    if (kosong.has(i + 1)) {
+      isi += `<text x="${x}" y="${y + 5}" text-anchor="middle" font-size="14" font-weight="700" fill="${GAYA.hitam}">${'PQRST'[hi++]}</text>`;
+      return;
+    }
+    const t = kotak[i], sp = t.lastIndexOf(' ', 14);
+    const baris = t.length > 14 && sp > 0 ? [t.slice(0, sp), t.slice(sp + 1)] : [t];
+    baris.forEach((s2, k) => { isi += `<text x="${x}" y="${y + 4 + (k - (baris.length - 1) / 2) * 12}" text-anchor="middle" font-size="10.5" fill="${GAYA.hitam}">${escText(s2)}</text>`; });
+  });
+  let hp = 0;
+  const hurufProses = 'WXYZVUT';
+  const panah = (x1, y1, x2, y2, teks, lx, ly, anchor) => {
+    isi += arrowSVG(x1, y1, x2, y2, { headLen: 7, strokeWidth: 1.5 });
+    isi += teksFis(b, lx, ly, huruf ? hurufProses[hp++] : teks, anchor || 'middle', { size: 9.5, bold: huruf });
+  };
+  panah(92, 38, 38, 100, T.foto, 56, 62, 'end');            // udara -> tumbuhan
+  panah(54, 100, 108, 38, T.resp, 86, 76, 'start');         // tumbuhan -> udara
+  panah(252, 100, 198, 38, T.resp, 236, 62, 'start');       // hewan -> udara
+  panah(80, 122, 226, 122, T.makan, 153, 140, 'middle');    // tumbuhan -> hewan
+  panah(40, 136, 114, 192, T.mati, 56, 172, 'end');         // tumbuhan -> pengurai
+  panah(262, 136, 188, 192, T.mati, 246, 172, 'start');     // hewan -> pengurai
+  panah(150, 182, 150, 38, T.resp, 158, 90, 'start');       // pengurai -> udara
+  // bahan bakar fosil -> udara lewat sisi kanan (pembakaran)
+  isi += `<path d="M316 200 L316 20 L216 20" fill="none" stroke="${GAYA.hitam}" stroke-width="1.5"/><path d="M316 200 H316" stroke="${GAYA.hitam}"/>`;
+  isi += `<line x1="316" y1="200" x2="316" y2="200" stroke="none"/><line x1="316" y1="200" x2="316" y2="200"/>`;
+  isi += gFis(316, 200, 316, 200) + `<line x1="297" y1="200" x2="316" y2="200" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
+  isi += `<polygon points="212,20 221,16 221,24" fill="${GAYA.hitam}"/>`;
+  isi += teksFis(b, 322, 110, huruf ? hurufProses[hp++] : T.bakar, 'start', { size: 9.5, bold: huruf });
+  b.titik(0, 0); b.titik(372, 220);
+  return bungkusGambarSVG(isi, b, false);
+}
+
 const FIGURE_PANEL_LABELS = 'abcdefgh';
 
 function renderFigureHTML(headRaw, panelsRaw, depth) {
@@ -10000,6 +10319,14 @@ const DIAGRAM_TYPE_ALIASES = {
   kromatografi: 'kromatografi', chromatography: 'kromatografi', kromatogram: 'kromatografi',
   skalaph: 'skalaph', ph: 'skalaph', phscale: 'skalaph',
   selelektro: 'selelektro', selgalvani: 'selelektro', voltaik: 'selelektro', electrochemicalcell: 'selelektro',
+  daun: 'daun', leaf: 'daun', penampangdaun: 'daun',
+  osmosis: 'osmosis', plasmolisis: 'osmosis',
+  jantung: 'jantung', heart: 'jantung',
+  alveolus: 'alveolus', paru: 'alveolus', pertukarangas: 'alveolus',
+  refleks: 'refleks', lengkungrefleks: 'refleks', reflexarc: 'refleks',
+  mata: 'mata', eye: 'mata',
+  kurvaenzim: 'kurvaenzim', enzim: 'kurvaenzim', enzymecurve: 'kurvaenzim',
+  sikluskarbon: 'sikluskarbon', carboncycle: 'sikluskarbon',
   kolomfraksi: 'kolomfraksi', fraksinasi: 'kolomfraksi', distilasifraksi: 'kolomfraksi', fractionaldistillation: 'kolomfraksi',
   transformator: 'transformator', trafo: 'transformator', transformer: 'transformator',
   lift: 'lift', elevator: 'lift',
@@ -10389,6 +10716,14 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'skalaph') svg = renderSkalaPhSVG(params);
     else if (type === 'selelektro') svg = renderSelElektroSVG(params);
     else if (type === 'kolomfraksi') svg = renderKolomFraksiSVG(params);
+    else if (type === 'daun') svg = renderDaunSVG(params);
+    else if (type === 'osmosis') svg = renderOsmosisSVG(params);
+    else if (type === 'jantung') svg = renderJantungSVG(params);
+    else if (type === 'alveolus') svg = renderAlveolusSVG(params);
+    else if (type === 'refleks') svg = renderRefleksSVG(params);
+    else if (type === 'mata') svg = renderMataSVG(params);
+    else if (type === 'kurvaenzim') svg = renderKurvaEnzimSVG(params);
+    else if (type === 'siklusKarbon' || type === 'sikluskarbon') svg = renderSiklusKarbonSVG(params);
     else if (type === 'lift') svg = renderLiftSVG(params);
     else if (type === 'balokberurutan') svg = renderBeratBerurutanSVG(params);
     else if (type === 'katroldua') svg = renderDoubleInclineSVG(params);
