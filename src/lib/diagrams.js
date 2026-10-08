@@ -2051,7 +2051,99 @@ const SOLID_PRESETS = {
       ],
     };
   },
+  // Prisma tegak dengan alas segiempat (dan variannya): satu mesin, alas berbeda.
+  'prisma-persegi': (p) => buatPrisma('persegi', p),
+  'prisma-persegi-panjang': (p) => buatPrisma('persegi-panjang', p),
+  'prisma-jajargenjang': (p) => buatPrisma('jajargenjang', p),
+  'prisma-belah-ketupat': (p) => buatPrisma('belah-ketupat', p),
+  'prisma-layang-layang': (p) => buatPrisma('layang-layang', p),
+  'prisma-trapesium': (p) => buatPrisma('trapesium', p),
+  'prisma-trapesium-siku': (p) => buatPrisma('trapesium-siku', p),
 };
+
+// Prisma tegak umum: alas (poligon cembung berlawanan arah jarum jam) di depan,
+// tutupnya digeser miring sejauh `panjang` (tinggi prisma). Rusuk tampak/tersembunyi
+// ditentukan dari arah normal tiap sisi tegak terhadap arah geser: sisi tegak
+// tampak bila normalnya searah geseran (atas/kanan), selain itu tersembunyi.
+function buatPrisma(jenis, p) {
+  const num = (k, d) => numOrDefault(p[k], d);
+  const satuan = String(p.satuan || '').trim();
+  const tulis = (awalan, v) => (satuan ? `${v} ${satuan}` : `${awalan} = ${v}`);
+  const panjang = num('panjang', 8);
+  const labels = [], extra = [], siku = [];
+  let poly;
+  if (jenis === 'persegi' || jenis === 'persegi-panjang') {
+    const a = jenis === 'persegi' ? num('sisi', num('alas', 5)) : num('alas', 6);
+    const t = jenis === 'persegi' ? a : num('tinggi', 4);
+    poly = [[0, 0], [a, 0], [a, t], [0, t]];
+    labels.push({ pos: [a / 2, 0], text: tulis(jenis === 'persegi' ? 's' : 'a', a), n: [0, -1] });
+    if (jenis !== 'persegi') labels.push({ pos: [0, t / 2], text: tulis('b', t), n: [-1, 0] });
+  } else if (jenis === 'jajargenjang') {
+    const a = num('alas', 7), t = num('tinggi', 4), g = p.geser != null && String(p.geser).trim() !== '' ? num('geser', a * 0.3) : a * 0.3;
+    poly = [[0, 0], [a, 0], [a + g, t], [g, t]];
+    labels.push({ pos: [a / 2, 0], text: tulis('a', a), n: [0, -1] });
+    extra.push({ a: [g, t], b: [g, 0], dashed: true });
+    siku.push({ v: [g, 0], a: [g, t], b: [a, 0] });
+    labels.push({ pos: [g, t / 2], text: tulis('t', t), n: [-1, 0] });
+  } else if (jenis === 'belah-ketupat') {
+    const d1 = num('d1', 8), d2 = num('d2', 6);
+    poly = [[d1 / 2, 0], [d1, d2 / 2], [d1 / 2, d2], [0, d2 / 2]];
+    extra.push({ a: [0, d2 / 2], b: [d1, d2 / 2], dashed: true }, { a: [d1 / 2, 0], b: [d1 / 2, d2], dashed: true });
+    siku.push({ v: [d1 / 2, d2 / 2], a: [d1, d2 / 2], b: [d1 / 2, d2] });
+    labels.push({ pos: [d1 * 0.78, d2 / 2], text: tulis('d1', d1), n: [0, -1] }, { pos: [d1 / 2, d2 * 0.22], text: tulis('d2', d2), n: [-1, 0] });
+  } else if (jenis === 'layang-layang') {
+    const d1 = num('d1', 8), d2 = num('d2', 10), k = d2 * 0.38;
+    poly = [[d1 / 2, 0], [d1, k], [d1 / 2, d2], [0, k]];
+    extra.push({ a: [0, k], b: [d1, k], dashed: true }, { a: [d1 / 2, 0], b: [d1 / 2, d2], dashed: true });
+    siku.push({ v: [d1 / 2, k], a: [d1, k], b: [d1 / 2, d2] });
+    labels.push({ pos: [d1 * 0.78, k], text: tulis('d1', d1), n: [0, -1] }, { pos: [d1 / 2, d2 * 0.17], text: tulis('d2', d2), n: [-1, 0] });
+  } else { // trapesium sama kaki / siku-siku
+    const siku90 = jenis === 'trapesium-siku';
+    const atas = num('atas', 5), bawah = num('bawah', 9), t = num('tinggi', 4);
+    const o = siku90 ? 0 : (bawah - atas) / 2;
+    poly = [[0, 0], [bawah, 0], [o + atas, t], [o, t]];
+    labels.push({ pos: [bawah / 2, 0], text: tulis('b', bawah), n: [0, -1] });
+    labels.push({ pos: [o + atas / 2, t], text: tulis('a', atas), n: [0, -1] });
+    if (siku90) {
+      labels.push({ pos: [0, t / 2], text: tulis('t', t), n: [-1, 0] });
+      siku.push({ v: [0, 0], a: [bawah, 0], b: [0, t] });
+    } else {
+      extra.push({ a: [o, t], b: [o, 0], dashed: true });
+      siku.push({ v: [o, 0], a: [o, t], b: [bawah, 0] });
+      labels.push({ pos: [o, t / 2], text: tulis('t', t), n: [-1, 0] });
+    }
+    if (p.sisi != null && String(p.sisi).trim() !== '') {
+      const mid = [(bawah + o + atas) / 2, t / 2];
+      labels.push({ pos: mid, text: tulis('c', String(p.sisi).trim()), n: [1, 0.2] });
+    }
+  }
+  const n = poly.length;
+  const back = poly.map(([x, y]) => obliquePt(x, y, panjang));
+  const d = obliquePt(0, 0, 1);
+  const tampak = poly.map((q, i) => {
+    const r = poly[(i + 1) % n], nx = r[1] - q[1], ny = -(r[0] - q[0]);
+    return nx * d[0] + ny * d[1] > 1e-9;
+  });
+  const edges = [];
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    edges.push({ a: poly[i], b: poly[j] });
+    edges.push({ a: back[i], b: back[j], dashed: !tampak[i] });
+    edges.push({ a: poly[i], b: back[i], dashed: !tampak[i] && !tampak[(i + n - 1) % n] });
+  }
+  extra.forEach((e) => edges.push(e));
+  // Panjang (tinggi prisma): label di sisi kanan rusuk geser terluar.
+  let tk = 0;
+  poly.forEach((q, i) => { if (q[0] > poly[tk][0]) tk = i; });
+  labels.push({ pos: [(poly[tk][0] + back[tk][0]) / 2, (poly[tk][1] + back[tk][1]) / 2], text: tulis(p.labelPanjang || 'p', panjang), n: [0.7, -0.7] });
+  const cx = poly.concat(back).reduce((s, q) => s + q[0], 0) / (2 * n), cy = poly.concat(back).reduce((s, q) => s + q[1], 0) / (2 * n);
+  const nama = 'ABCDEFGHIJKL';
+  const vertices = poly.concat(back).map((q, i) => {
+    const vx = q[0] - cx, vy = q[1] - cy, m = Math.hypot(vx, vy) || 1;
+    return { pos: q, name: nama[i], n: [vx / m, vy / m] };
+  });
+  return { edges, siku, labels, vertices };
+}
 
 // PATCH EXACTSEARCH (hilang bila wsm/ disinkronkan ulang lewat perbarui-mesin.sh):
 // Kolom tabel dipisah koma, tapi koma juga sah muncul DI DALAM rumus — misalnya
