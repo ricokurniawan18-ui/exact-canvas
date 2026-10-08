@@ -10285,6 +10285,381 @@ function renderJamSVG(cfg) {
   return bungkusGambarSVG(isi, b, false);
 }
 
+
+// ---------------------------------------------------------------------
+// Lanjutan standar soal ujian internasional: bandul, osiloskop, fase bulan,
+// proyektil, tanur tiup, difusi gas, pengumpulan gas, DNA, silsilah,
+// siklus nitrogen
+// ---------------------------------------------------------------------
+
+function renderBandulSVG(cfg) {
+  const sudut = Math.max(2, Math.min(80, numOrDefault(cfg.sudut, 30)));
+  const tiga = yaFis(cfg.tiga);
+  const b = kotakBatas();
+  let isi = '';
+  const L = 120, px = 0, py = 0, rad = (d) => (d * Math.PI) / 180;
+  isi += gFis(-60, py, 60, py, { tebal: 2.4 }) + arsirTumpuanSVG(-60, py, 60, py, 0, -1);
+  b.titik(-60, py - 10); b.titik(60, py);
+  isi += gFis(px, py, px, py + L + 30, { putus: true, warna: GAYA.abu, tebal: 1 });
+  const bola = (x, y, putus) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="9" fill="${putus ? GAYA.putih : '#9a9a9a'}" stroke="${GAYA.hitam}" stroke-width="${putus ? 1 : 1.6}"${putus ? ` stroke-dasharray="${GAYA.putusHalus}"` : ''}/>`;
+  const bx = px + L * Math.sin(rad(sudut)), by = py + L * Math.cos(rad(sudut));
+  if (tiga) {
+    const ax = px - L * Math.sin(rad(sudut)), ay = by;
+    isi += gFis(px, py, ax, ay, { putus: true, warna: GAYA.abu, tebal: 1 }) + bola(ax, ay, true);
+    isi += bola(px, py + L, true);
+    isi += teksFis(b, ax - 12, ay + 14, 'A', 'middle', { bold: true }) + teksFis(b, px, py + L + 28, 'O', 'middle', { bold: true }) + teksFis(b, bx + 12, by + 14, 'B', 'middle', { bold: true });
+    b.titik(ax - 16, ay + 18); b.titik(bx + 16, by + 18);
+  }
+  isi += gFis(px, py, bx, by) + bola(bx, by, false);
+  b.titik(bx + 10, by + 10);
+  isi += busurFis(px, py, 46, 270 + 0, 270 + 0) ;
+  const a0 = 270, a1 = 270 + sudut;                 // 270° = ke bawah (derajat matematika, y ke atas)
+  isi += busurFis(px, py, 46, a0, a1);
+  isi += teksFis(b, px + 62 * Math.sin(rad(sudut / 2)), py + 62 * Math.cos(rad(sudut / 2)) + 4, cfg.theta || 'θ', 'middle', { italic: true });
+  const lbl = String(cfg.panjang || '').trim();
+  if (lbl) isi += teksFis(b, (px + bx) / 2 + 16, (py + by) / 2 - 2, `l = ${lbl}`, 'start');
+  const m = String(cfg.massa || '').trim();
+  if (m) isi += teksFis(b, bx + 14, by + 4, `m = ${m}`, 'start', { size: GAYA.teksKecil });
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Layar osiloskop sinar katoda: kisi 10x8 dengan jejak gelombang.
+function renderOsiloskopSVG(cfg) {
+  const tipe = String(cfg.tipe || 'sinus').toLowerCase();
+  const ampl = numOrDefault(cfg.ampl, 2), periode = numOrDefault(cfg.periode, 4);
+  const b = kotakBatas();
+  let isi = '';
+  const d = 22, W = 10 * d, H = 8 * d;
+  isi += `<rect x="-6" y="-6" width="${W + 12}" height="${H + 12}" rx="10" fill="#efefef" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+  isi += `<rect x="0" y="0" width="${W}" height="${H}" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+  b.titik(-8, -8); b.titik(W + 8, H + 8);
+  for (let i = 1; i < 10; i++) isi += gFis(i * d, 0, i * d, H, { warna: i === 5 ? GAYA.abu : GAYA.abuMuda, tebal: i === 5 ? 1 : 0.7 });
+  for (let j = 1; j < 8; j++) isi += gFis(0, j * d, W, j * d, { warna: j === 4 ? GAYA.abu : GAYA.abuMuda, tebal: j === 4 ? 1 : 0.7 });
+  for (let i = 0; i <= 50; i++) { const x = i * W / 50; isi += gFis(x, H / 2 - 2, x, H / 2 + 2, { warna: GAYA.abu, tebal: 0.7 }); }
+  if (!tidakFis(cfg.jejak)) {
+    const pts = [];
+    for (let i = 0; i <= 400; i++) {
+      const t = i / 400 * 10, fase = t / periode;
+      let v;
+      if (tipe === 'persegi') v = (fase % 1) < 0.5 ? 1 : -1;
+      else if (tipe === 'dc') v = 1;
+      else if (tipe === 'gigi') v = 2 * (fase % 1) - 1;
+      else v = Math.sin(2 * Math.PI * fase);
+      pts.push(`${(t * d).toFixed(1)},${(H / 2 - v * ampl * d).toFixed(1)}`);
+    }
+    isi += `<polyline points="${pts.join(' ')}" fill="none" stroke="${GAYA.hitam}" stroke-width="2.2" stroke-linejoin="round"/>`;
+  }
+  const ygain = String(cfg.ygain || '').trim(), basis = String(cfg.basiswaktu || '').trim();
+  if (ygain) isi += teksFis(b, 0, H + 26, `Y-gain: ${ygain}`, 'start', { size: GAYA.teksKecil });
+  if (basis) isi += teksFis(b, W, H + 26, `time-base: ${basis}`, 'end', { size: GAYA.teksKecil });
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Posisi bulan mengelilingi bumi (cahaya matahari dari kiri).
+function renderFaseBulanSVG(cfg) {
+  const n = Math.max(4, Math.min(12, Math.round(numOrDefault(cfg.jumlah, 8))));
+  const b = kotakBatas();
+  let isi = '';
+  const cx = 150, cy = 120, R = 74, rb = 14;
+  for (let k = 0; k < 4; k++) isi += arrowSVG(-20, cy - 54 + k * 36, 40, cy - 54 + k * 36, { headLen: 7, strokeWidth: 1.4 });
+  isi += teksFis(b, -20, cy + 76, 'cahaya matahari', 'start', { size: GAYA.teksKecil });
+  b.titik(-24, cy + 82);
+  isi += `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${GAYA.abu}" stroke-width="1" stroke-dasharray="${GAYA.putus}"/>`;
+  isi += `<circle cx="${cx}" cy="${cy}" r="22" fill="#d9d9d9" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+  isi += `<text x="${cx}" y="${cy + 4}" text-anchor="middle" font-size="11" fill="${GAYA.hitam}">bumi</text>`;
+  const huruf = 'PQRSTUVWXYZ';
+  for (let i = 0; i < n; i++) {
+    const a = Math.PI + (i * 2 * Math.PI) / n;           // mulai di kiri (dekat matahari)
+    const x = cx + R * Math.cos(a), y = cy + R * Math.sin(a);
+    // sisi yang menghadap matahari (kiri) terang; sisi lain gelap
+    isi += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${rb}" fill="#555555" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+    isi += `<path d="M${x.toFixed(1)} ${(y - rb).toFixed(1)} A${rb} ${rb} 0 0 0 ${x.toFixed(1)} ${(y + rb).toFixed(1)} Z" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1"/>`;
+    isi += teksFis(b, cx + (R + 30) * Math.cos(a), cy + (R + 30) * Math.sin(a) + 4, huruf[i], 'middle', { bold: true });
+  }
+  b.titik(cx - R - 40, cy - R - 20); b.titik(cx + R + 40, cy + R + 20);
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Lintasan proyektil dengan kecepatan awal dan komponennya.
+function renderProyektilSVG(cfg) {
+  const sudut = Math.max(10, Math.min(80, numOrDefault(cfg.sudut, 45)));
+  const b = kotakBatas();
+  let isi = '';
+  const rad = (d) => (d * Math.PI) / 180;
+  const R = 230, H = (R * Math.tan(rad(sudut))) / 4;
+  isi += gFis(-20, 0, R + 30, 0, { tebal: 2 }) + arsirTumpuanSVG(-20, 0, R + 30, 0, 0, 1);
+  b.titik(-20, 0); b.titik(R + 30, 12);
+  const pts = [];
+  for (let i = 0; i <= 80; i++) { const t = i / 80; pts.push(`${(t * R).toFixed(1)},${(-4 * H * t * (1 - t)).toFixed(1)}`); }
+  isi += `<polyline points="${pts.join(' ')}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.8" stroke-dasharray="${GAYA.putus}"/>`;
+  b.titik(R / 2, -H - 6);
+  const u = 62;
+  isi += arrowSVG(0, 0, u * Math.cos(rad(sudut)), -u * Math.sin(rad(sudut)), { headLen: 8, strokeWidth: 1.9 });
+  isi += teksFis(b, u * Math.cos(rad(sudut)) + 6, -u * Math.sin(rad(sudut)) - 4, cfg.u || 'u', 'start', { italic: true });
+  isi += busurFis(0, 0, 30, 0, sudut);
+  isi += teksFis(b, 40, -10, `${sudut}°`, 'start', { size: GAYA.teksKecil });
+  if (yaFis(cfg.komponen)) {
+    const ux = u * Math.cos(rad(sudut)), uy = u * Math.sin(rad(sudut));
+    isi += arrowSVG(0, 0, ux, 0, { headLen: 6, strokeWidth: 1.2, dash: '4 3' }) + arrowSVG(0, 0, 0, -uy, { headLen: 6, strokeWidth: 1.2, dash: '4 3' });
+    isi += teksFis(b, ux / 2 + 4, 26, 'u cos θ', 'middle', { size: GAYA.teksKecil, italic: true }) + teksFis(b, -6, -uy / 2, 'u sin θ', 'end', { size: GAYA.teksKecil, italic: true });
+  }
+  if (yaFis(cfg.puncak)) {
+    isi += gFis(R / 2, 0, R / 2, -H, { putus: true, warna: GAYA.abu, tebal: 1 });
+    isi += teksFis(b, R / 2 + 6, -H / 2, cfg.tinggi || 'H', 'start', { italic: true });
+  }
+  if (yaFis(cfg.jangkauan)) {
+    isi += arrowSVG(R / 2, 36, 0, 36, { headLen: 6, strokeWidth: 1.2 }) + arrowSVG(R / 2, 36, R, 36, { headLen: 6, strokeWidth: 1.2 });
+    isi += teksFis(b, R / 2, 52, cfg.jarak || 'R', 'middle', { italic: true });
+    b.titik(R / 2, 56);
+  }
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Tanur tiup (ekstraksi besi).
+function renderTanurTiupSVG(cfg) {
+  const b = kotakBatas();
+  let isi = '';
+  isi += `<path d="M70 10 L150 10 L160 80 L180 150 L150 190 L70 190 L40 150 L60 80 Z" fill="#f2f2f2" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis + 0.4}" stroke-linejoin="round"/>`;
+  for (let k = 0; k < 7; k++) isi += gFis(52 + k * 2, 100 + k * 12, 168 - k * 2, 100 + k * 12, { warna: '#c4c4c4', tebal: 0.8 });
+  b.titik(40, 0); b.titik(180, 200);
+  isi += arrowSVG(110, -22, 110, 14, { headLen: 8, strokeWidth: 1.8 });
+  isi += arrowSVG(160, 20, 200, 0, { headLen: 7, strokeWidth: 1.6 });
+  isi += arrowSVG(-6, 150, 48, 156, { headLen: 7, strokeWidth: 1.8 }) + arrowSVG(226, 150, 172, 156, { headLen: 7, strokeWidth: 1.8 });
+  isi += arrowSVG(60, 186, 20, 214, { headLen: 7, strokeWidth: 1.6 }) + arrowSVG(160, 186, 200, 214, { headLen: 7, strokeWidth: 1.6 });
+  b.titik(16, 218); b.titik(204, 218);
+  const bagian = [
+    { n: 'bijih besi, kokas, batu kapur', a: [110, -18], t: [-8, -26], anchor: 'end' },
+    { n: 'gas buang', a: [194, 4], t: [214, -2] },
+    { n: 'udara panas', a: [20, 153], t: [-12, 144], anchor: 'end' },
+    { n: 'besi cair', a: [28, 210], t: [-2, 232], anchor: 'end' },
+    { n: 'terak (slag)', a: [196, 210], t: [214, 232] },
+  ];
+  isi += labelBagianBio(b, bagian, himpunanKosong(cfg, bagian.length), 10.5);
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Difusi gas: tabung kaca dengan kapas amonia (kiri) dan HCl (kanan), cincin NH4Cl.
+function renderDifusiGasSVG(cfg) {
+  const b = kotakBatas();
+  let isi = '';
+  const x0 = 20, x1 = 290, y = 40, h = 30;
+  isi += `<rect x="${x0}" y="${y}" width="${x1 - x0}" height="${h}" rx="4" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+  b.titik(x0 - 30, y - 30); b.titik(x1 + 30, y + h + 40);
+  isi += `<rect x="${x0 - 14}" y="${y + 4}" width="14" height="${h - 8}" rx="3" fill="#cfcfcf" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+  isi += `<rect x="${x1}" y="${y + 4}" width="14" height="${h - 8}" rx="3" fill="#cfcfcf" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+  isi += `<rect x="${x0 + 3}" y="${y + 3}" width="26" height="${h - 6}" fill="#ececec" stroke="${GAYA.hitam}" stroke-width="1" stroke-dasharray="${GAYA.putusHalus}"/>`;
+  isi += `<rect x="${x1 - 29}" y="${y + 3}" width="26" height="${h - 6}" fill="#ececec" stroke="${GAYA.hitam}" stroke-width="1" stroke-dasharray="${GAYA.putusHalus}"/>`;
+  const f = Math.max(0.2, Math.min(0.8, numOrDefault(cfg.cincin, 0.6)));
+  if (!tidakFis(cfg.cincin) || cfg.cincin == null) {
+    const xr = x0 + 29 + f * (x1 - x0 - 58);
+    isi += `<rect x="${(xr - 4).toFixed(1)}" y="${y + 1}" width="8" height="${h - 2}" fill="#bdbdbd"/>`;
+    isi += gFis(xr, y + h + 6, xr, y + h + 22, { tebal: 0.9 });
+    isi += teksFis(b, xr, y + h + 34, 'cincin putih', 'middle', { size: GAYA.teksKecil });
+  }
+  const bagian = [
+    { n: 'kapas + larutan amonia', a: [x0 + 16, y + 6], t: [x0 - 8, y - 22], anchor: 'start' },
+    { n: 'kapas + asam klorida pekat', a: [x1 - 16, y + 6], t: [x1 + 10, y - 22], anchor: 'end' },
+  ];
+  isi += labelBagianBio(b, bagian, himpunanKosong(cfg, 2), 10.5);
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Pengumpulan gas: labu reaksi + pipa + wadah (ke atas, ke bawah, atas air, spuit).
+function renderPengumpulanGasSVG(cfg) {
+  const jenis = String(cfg.jenis || 'air').toLowerCase();
+  const b = kotakBatas();
+  let isi = '';
+  const kaca = `fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"`;
+  // labu reaksi
+  isi += `<path d="M30 40 L30 62 L8 98 Q4 112 20 118 L72 118 Q88 112 84 98 L62 62 L62 40 Z" ${kaca}/>`;
+  isi += `<path d="M10 100 Q20 106 82 100 L84 100 Q88 112 72 118 L20 118 Q4 112 10 100 Z" fill="#e3e3e3" stroke="none"/>`;
+  isi += `<rect x="26" y="34" width="40" height="8" rx="2" fill="#cfcfcf" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+  isi += `<circle cx="38" cy="104" r="2.4" fill="${GAYA.putih}" stroke="${GAYA.hitam}"/><circle cx="52" cy="98" r="2" fill="${GAYA.putih}" stroke="${GAYA.hitam}"/>`;
+  b.titik(0, 34); b.titik(92, 124);
+  const pipa = (d) => `<path d="${d}" fill="none" stroke="${GAYA.hitam}" stroke-width="2.4"/>`;
+  b.titik(0, 2);
+  if (jenis === 'air') {
+    isi += `<rect x="120" y="102" width="150" height="46" fill="#e8e8e8" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    isi += `<rect x="169" y="31" width="32" height="71" fill="#ffffff" stroke="none"/><rect x="169" y="31" width="32" height="40" fill="#f0f0f0"/>`;
+    isi += `<path d="M168 128 L168 30 L202 30 L202 128" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    isi += `<line x1="119" y1="104" x2="271" y2="104" stroke="${GAYA.hitam}" stroke-width="1"/>`;
+    isi += pipa('M46 38 L46 8 L150 8 L150 134 L185 134 L185 84');
+    b.titik(120, 30); b.titik(272, 150);
+    isi += labelBagianBio(b, [{ n: 'air', a: [140, 128], t: [128, 168], anchor: 'start' }, { n: 'gas', a: [185, 50], t: [226, 36], anchor: 'start' }], himpunanKosong(cfg, 2), 10.5);
+  } else if (jenis === 'spuit') {
+    isi += pipa('M46 38 L46 8 L130 8 L130 56 L150 56');
+    b.titik(46, 8);
+    isi += `<rect x="150" y="44" width="120" height="24" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    isi += `<rect x="150" y="48" width="64" height="16" fill="#f0f0f0"/><line x1="214" y1="44" x2="214" y2="68" stroke="${GAYA.hitam}" stroke-width="2"/><line x1="214" y1="56" x2="290" y2="56" stroke="${GAYA.hitam}" stroke-width="3"/><line x1="290" y1="46" x2="290" y2="66" stroke="${GAYA.hitam}" stroke-width="3"/>`;
+    for (let k = 0; k < 6; k++) isi += gFis(160 + k * 10, 44, 160 + k * 10, 49, { tebal: 0.8 });
+    b.titik(150, 40); b.titik(294, 72);
+    isi += labelBagianBio(b, [{ n: 'semprit gas', a: [180, 46], t: [180, 22], anchor: 'middle' }], himpunanKosong(cfg, 1), 10.5);
+  } else {
+    const ke = jenis.startsWith('atas') || jenis === 'ke-atas';      // udara terdesak ke atas oleh gas yang lebih berat? -> wadah tegak
+    isi += pipa(ke ? 'M46 38 L46 8 L130 8 L130 118' : 'M46 38 L46 8 L130 8 L130 40 L150 40 L150 160');
+    b.titik(130, 118);
+    if (ke) {
+      isi += `<path d="M104 72 L104 126 L156 126 L156 72" ${kaca}/>`;
+      b.titik(100, 70); b.titik(160, 130);
+      isi += labelBagianBio(b, [{ n: 'gas lebih padat dari udara', a: [140, 110], t: [180, 96], anchor: 'start' }], himpunanKosong(cfg, 1), 10.5);
+    } else {
+      isi += `<path d="M120 46 L120 160 L180 160 L180 46 Z" ${kaca}/>`;
+      b.titik(116, 40); b.titik(184, 166);
+      isi += labelBagianBio(b, [{ n: 'gas lebih ringan dari udara', a: [164, 66], t: [196, 56], anchor: 'start' }], himpunanKosong(cfg, 1), 10.5);
+    }
+  }
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// DNA: heliks ganda (bawaan) atau tangga basa (bentuk=tangga) dengan urutan basa.
+function renderDnaSVG(cfg) {
+  const b = kotakBatas();
+  let isi = '';
+  const komp = { A: 'T', T: 'A', C: 'G', G: 'C' };
+  if (/tangga|ladder/i.test(String(cfg.bentuk || ''))) {
+    const urutan = String(cfg.urutan || 'ATGCCA').toUpperCase().replace(/[^ATCG]/g, '').slice(0, 10) || 'ATGC';
+    const tampilkanPasangan = !tidakFis(cfg.pasangan);
+    const dy = 28, x1 = 40, x2 = 130;
+    isi += gFis(x1, 0, x1, dy * urutan.length, { tebal: 3 }) + gFis(x2, 0, x2, dy * urutan.length, { tebal: 3 });
+    [...urutan].forEach((c, i) => {
+      const y = dy / 2 + i * dy;
+      isi += gFis(x1, y, x2, y, { tebal: 1.4, warna: GAYA.abu });
+      isi += `<rect x="${x1 + 6}" y="${y - 10}" width="22" height="20" rx="3" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.3"/><text x="${x1 + 17}" y="${y + 5}" text-anchor="middle" font-size="13" font-weight="700" fill="${GAYA.hitam}">${c}</text>`;
+      if (tampilkanPasangan) isi += `<rect x="${x2 - 28}" y="${y - 10}" width="22" height="20" rx="3" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.3"/><text x="${x2 - 17}" y="${y + 5}" text-anchor="middle" font-size="13" font-weight="700" fill="${GAYA.hitam}">${komp[c]}</text>`;
+      else isi += `<rect x="${x2 - 28}" y="${y - 10}" width="22" height="20" rx="3" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.3" stroke-dasharray="${GAYA.putus}"/>`;
+    });
+    b.titik(x1 - 6, -4); b.titik(x2 + 6, dy * urutan.length + 4);
+    return bungkusGambarSVG(isi, b, false);
+  }
+  const H = 190, A = 34, cx = 80;
+  const a = [], c = [];
+  for (let i = 0; i <= 90; i++) { const y = (i / 90) * H, ph = (i / 90) * 4 * Math.PI; a.push(`${(cx + A * Math.sin(ph)).toFixed(1)},${y.toFixed(1)}`); c.push(`${(cx - A * Math.sin(ph)).toFixed(1)},${y.toFixed(1)}`); }
+  for (let k = 0; k < 17; k++) {
+    const y = 6 + k * 11.2, ph = (y / H) * 4 * Math.PI;
+    isi += gFis(cx + A * Math.sin(ph), y, cx - A * Math.sin(ph), y, { tebal: 1.6, warna: Math.abs(Math.sin(ph)) < 0.25 ? GAYA.abuMuda : GAYA.hitam });
+  }
+  isi += `<polyline points="${a.join(' ')}" fill="none" stroke="${GAYA.hitam}" stroke-width="3.2"/><polyline points="${c.join(' ')}" fill="none" stroke="#7a7a7a" stroke-width="3.2"/>`;
+  b.titik(cx - A - 6, -4); b.titik(cx + A + 6, H + 4);
+  const bagian = [
+    { n: 'gula-fosfat (kerangka)', a: [cx + A, 24.5], t: [cx + A + 40, 6] },
+    { n: 'pasangan basa', a: [cx, 104], t: [cx + A + 40, 104] },
+    { n: 'ikatan hidrogen', a: [cx + 8, 128], t: [cx + A + 40, 148] },
+  ];
+  isi += labelBagianBio(b, bagian, himpunanKosong(cfg, bagian.length), 10.5);
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Silsilah (pedigree): orang=1:L:ya,2:P:tidak,3:L:pembawa ; pasangan=1-2,5-6 ; anak=1-2>3,4,5|5-6>7,8 (keluarga dipisah |)
+function renderSilsilahSVG(cfg) {
+  const orang = String(cfg.orang || '1:L:tidak,2:P:tidak,3:L:ya,4:P:tidak,5:L:tidak,6:P:ya').split(',').map((s) => s.trim()).filter(Boolean).map((t) => {
+    const x = t.split(':').map((q) => q.trim()); return { id: x[0], jk: /^p/i.test(x[1] || '') ? 'P' : 'L', st: (x[2] || 'tidak').toLowerCase() };
+  });
+  const pasangan = String(cfg.pasangan || '1-2,5-6').split(',').map((s) => s.trim()).filter(Boolean).map((s) => s.split('-').map((q) => q.trim()));
+  const keluarga = [];
+  String(cfg.anak || '1-2>3,4').split('|').forEach((blok) => {
+    const [ortu, ank] = blok.split('>');
+    if (!ortu) return;
+    keluarga.push({ ortu: ortu.trim().split('-').map((q) => q.trim()), anak: String(ank || '').split(',').map((q) => q.trim()).filter(Boolean) });
+  });
+  const per = {}; orang.forEach((o) => { per[o.id] = o; });
+  const gen = {};
+  orang.forEach((o) => { gen[o.id] = 0; });
+  for (let it = 0; it < 6; it++) {
+    keluarga.forEach((k) => {
+      const g = Math.max(...k.ortu.map((id) => gen[id] || 0));
+      k.ortu.forEach((id) => { gen[id] = g; });
+      k.anak.forEach((id) => { if (gen[id] != null) gen[id] = Math.max(gen[id], g + 1); });
+    });
+    pasangan.forEach(([a1, a2]) => { const g = Math.max(gen[a1] || 0, gen[a2] || 0); gen[a1] = g; gen[a2] = g; });
+  }
+  const tingkat = Math.max(...Object.values(gen)) + 1;
+  const b = kotakBatas();
+  let isi = '';
+  const dx = 64, dyGen = 90, s = 24;
+  const baris = Array.from({ length: tingkat }, () => []);
+  // urutkan: pasangan berdampingan, anak mengikuti urutan keluarga
+  const sudah = new Set();
+  const letak = [];
+  keluarga.forEach((k) => { k.ortu.concat(k.anak).forEach((id) => { if (per[id] && !sudah.has(id)) { sudah.add(id); baris[gen[id]].push(id); } }); });
+  orang.forEach((o) => { if (!sudah.has(o.id)) { sudah.add(o.id); baris[gen[o.id]].push(o.id); } });
+  const pos = {};
+  baris.forEach((arr, g) => { arr.forEach((id, i) => { pos[id] = [i * dx + (g > 0 ? 0 : 0), g * dyGen]; }); });
+  // pusatkan tiap baris terhadap baris terlebar
+  const lebarMaks = Math.max(...baris.map((a2) => a2.length)) * dx;
+  baris.forEach((arr, g) => { const off = (lebarMaks - arr.length * dx) / 2; arr.forEach((id) => { pos[id][0] += off; }); });
+  const nomorRomawi = ['I', 'II', 'III', 'IV', 'V', 'VI'];
+  pasangan.forEach(([a1, a2]) => { if (pos[a1] && pos[a2]) isi += gFis(pos[a1][0] + s / 2, pos[a1][1], pos[a2][0] - s / 2, pos[a2][1], { tebal: 1.6 }); });
+  keluarga.forEach((k) => {
+    const [p1, p2] = k.ortu.map((id) => pos[id]);
+    if (!p1 || !p2 || !k.anak.length) return;
+    const mx = (p1[0] + p2[0]) / 2, my = p1[1];
+    const anakPos = k.anak.map((id) => pos[id]).filter(Boolean);
+    const yBar = my + dyGen / 2 - 4;
+    isi += gFis(mx, my, mx, yBar, { tebal: 1.6 });
+    const xs2 = anakPos.map((q) => q[0]).concat(mx);
+    isi += gFis(Math.min(...xs2), yBar, Math.max(...xs2), yBar, { tebal: 1.6 });
+    anakPos.forEach((q) => { isi += gFis(q[0], yBar, q[0], q[1] - s / 2, { tebal: 1.6 }); });
+  });
+  orang.forEach((o) => {
+    const [x, y] = pos[o.id];
+    const isiWarna = o.st === 'ya' ? GAYA.hitam : GAYA.putih;
+    if (o.jk === 'L') isi += `<rect x="${x - s / 2}" y="${y - s / 2}" width="${s}" height="${s}" fill="${isiWarna}" stroke="${GAYA.hitam}" stroke-width="1.8"/>`;
+    else isi += `<circle cx="${x}" cy="${y}" r="${s / 2}" fill="${isiWarna}" stroke="${GAYA.hitam}" stroke-width="1.8"/>`;
+    if (o.st === 'pembawa') isi += o.jk === 'L'
+      ? `<path d="M${x - s / 2} ${y - s / 2} h${s / 2} v${s} h${-s / 2} z" fill="${GAYA.hitam}"/>`
+      : `<path d="M${x} ${y - s / 2} a${s / 2} ${s / 2} 0 0 0 0 ${s} z" fill="${GAYA.hitam}"/>`;
+    b.titik(x - s / 2 - 2, y - s / 2 - 2); b.titik(x + s / 2 + 2, y + s / 2 + 16);
+  });
+  baris.forEach((arr, g) => { arr.forEach((id, i) => { const [x, y] = pos[id]; isi += teksFis(b, x, y + s / 2 + 14, `${nomorRomawi[g]}-${i + 1}`, 'middle', { size: GAYA.teksKecil }); }); });
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Siklus nitrogen: kotak reservoir/organisme dan panah proses.
+function renderSiklusNitrogenSVG(cfg) {
+  const inggris = /^(inggris|english|en)$/i.test(String(cfg.bahasa || ''));
+  // urutan kotak: 1 udara, 2 nitrat, 3 tumbuhan, 4 hewan, 5 pengurai, 6 amonium
+  const kotak = inggris
+    ? ['nitrogen in the air', 'nitrates in the soil', 'plants', 'animals', 'decomposers', 'ammonium compounds']
+    : ['nitrogen di udara', 'nitrat di tanah', 'tumbuhan', 'hewan', 'pengurai', 'senyawa amonium'];
+  const T = inggris
+    ? { ikat: 'nitrogen fixation', deni: 'denitrification', serap: 'absorption', makan: 'feeding', mati: 'death', limbah: 'death / waste', urai: 'decay', nitri: 'nitrification' }
+    : { ikat: 'pengikatan N₂', deni: 'denitrifikasi', serap: 'penyerapan', makan: 'makan', mati: 'kematian', limbah: 'kematian / limbah', urai: 'pembusukan', nitri: 'nitrifikasi' };
+  const kosong = himpunanKosong(cfg, 6);
+  const huruf = /huruf|tidak/i.test(String(cfg.proses || ''));
+  const b = kotakBatas();
+  let isi = '';
+  const pos = [[236, 20], [74, 20], [74, 110], [236, 110], [236, 200], [74, 200]];
+  const bw = [116, 96, 80, 70, 92, 112], bh = 34;
+  let hi = 0;
+  pos.forEach(([x, y], i) => {
+    isi += `<rect x="${x - bw[i] / 2}" y="${y - bh / 2}" width="${bw[i]}" height="${bh}" rx="6" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    b.titik(x - bw[i] / 2, y - bh / 2); b.titik(x + bw[i] / 2, y + bh / 2);
+    if (kosong.has(i + 1)) { isi += `<text x="${x}" y="${y + 5}" text-anchor="middle" font-size="14" font-weight="700" fill="${GAYA.hitam}">${'PQRSTU'[hi++]}</text>`; return; }
+    const t = kotak[i], sp = t.lastIndexOf(' ', 15);
+    const baris = t.length > 15 && sp > 0 ? [t.slice(0, sp), t.slice(sp + 1)] : [t];
+    baris.forEach((s2, k) => { isi += `<text x="${x}" y="${y + 4 + (k - (baris.length - 1) / 2) * 12}" text-anchor="middle" font-size="10.5" fill="${GAYA.hitam}">${escText(s2)}</text>`; });
+  });
+  let hp = 0;
+  const hurufProses = 'WXYZVUTS';
+  const nama = (t) => (huruf ? hurufProses[hp++] : t);
+  const panah = (x1, y1, x2, y2, teks, lx, ly, anchor) => {
+    isi += arrowSVG(x1, y1, x2, y2, { headLen: 7, strokeWidth: 1.5 });
+    isi += teksFis(b, lx, ly, nama(teks), anchor || 'middle', { size: 9.5, bold: huruf });
+  };
+  panah(178, 14, 122, 14, T.ikat, 150, 6);                     // udara -> nitrat (pengikatan)
+  panah(122, 28, 178, 28, T.deni, 150, 42);                    // nitrat -> udara (denitrifikasi)
+  panah(74, 38, 74, 92, T.serap, 82, 68, 'start');             // nitrat -> tumbuhan
+  panah(114, 110, 201, 110, T.makan, 158, 102);                // tumbuhan -> hewan
+  panah(236, 128, 236, 182, T.limbah, 244, 158, 'start');      // hewan -> pengurai
+  panah(112, 124, 192, 186, T.mati, 124, 168, 'end');          // tumbuhan -> pengurai
+  panah(190, 200, 130, 200, T.urai, 160, 192);                 // pengurai -> amonium
+  // amonium -> nitrat lewat tepi kiri (nitrifikasi)
+  isi += `<path d="M26 200 L8 200 L8 20 L24 20" fill="none" stroke="${GAYA.hitam}" stroke-width="1.5"/><polygon points="26,20 18,16 18,24" fill="${GAYA.hitam}"/>`;
+  isi += `<text transform="translate(2,110) rotate(-90)" text-anchor="middle" font-size="9.5" ${huruf ? 'font-weight="700" ' : ''}fill="${GAYA.hitam}">${escText(nama(T.nitri))}</text>`;
+  b.titik(0, 0); b.titik(300, 222);
+  return bungkusGambarSVG(isi, b, false);
+}
+
 const FIGURE_PANEL_LABELS = 'abcdefgh';
 
 function renderFigureHTML(headRaw, panelsRaw, depth) {
@@ -10485,6 +10860,16 @@ const DIAGRAM_TYPE_ALIASES = {
   kromatografi: 'kromatografi', chromatography: 'kromatografi', kromatogram: 'kromatografi',
   skalaph: 'skalaph', ph: 'skalaph', phscale: 'skalaph',
   selelektro: 'selelektro', selgalvani: 'selelektro', voltaik: 'selelektro', electrochemicalcell: 'selelektro',
+  bandul: 'bandul', pendulum: 'bandul', ayunan: 'bandul',
+  osiloskop: 'osiloskop', cro: 'osiloskop', oscilloscope: 'osiloskop',
+  fasebulan: 'fasebulan', moonphases: 'fasebulan', posisibulan: 'fasebulan',
+  proyektil: 'proyektil', projectile: 'proyektil', parabola: 'proyektil',
+  tanurtiup: 'tanurtiup', blastfurnace: 'tanurtiup', tanur: 'tanurtiup',
+  difusigas: 'difusigas', difusi: 'difusigas', diffusion: 'difusigas',
+  pengumpulangas: 'pengumpulangas', gascollection: 'pengumpulangas', kumpulgas: 'pengumpulangas',
+  dna: 'dna', heliks: 'dna',
+  silsilah: 'silsilah', pedigree: 'silsilah', pohonkeluarga: 'silsilah',
+  siklusnitrogen: 'siklusnitrogen', nitrogencycle: 'siklusnitrogen',
   pola: 'pola', polabilangan: 'pola', pattern: 'pola', korek: 'pola',
   pemetaan: 'pemetaan', diagrampanah: 'pemetaan', mapping: 'pemetaan',
   pecahan: 'pecahan', fraction: 'pecahan', fractions: 'pecahan',
@@ -10886,6 +11271,16 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'skalaph') svg = renderSkalaPhSVG(params);
     else if (type === 'selelektro') svg = renderSelElektroSVG(params);
     else if (type === 'kolomfraksi') svg = renderKolomFraksiSVG(params);
+    else if (type === 'bandul') svg = renderBandulSVG(params);
+    else if (type === 'osiloskop') svg = renderOsiloskopSVG(params);
+    else if (type === 'fasebulan') svg = renderFaseBulanSVG(params);
+    else if (type === 'proyektil') svg = renderProyektilSVG(params);
+    else if (type === 'tanurtiup') svg = renderTanurTiupSVG(params);
+    else if (type === 'difusigas') svg = renderDifusiGasSVG(params);
+    else if (type === 'pengumpulangas') svg = renderPengumpulanGasSVG(params);
+    else if (type === 'dna') svg = renderDnaSVG(params);
+    else if (type === 'silsilah') svg = renderSilsilahSVG(params);
+    else if (type === 'siklusnitrogen') svg = renderSiklusNitrogenSVG(params);
     else if (type === 'pola') svg = renderPolaSVG(params);
     else if (type === 'pemetaan') svg = renderPemetaanSVG(params);
     else if (type === 'pecahan') svg = renderPecahanSVG(params);
