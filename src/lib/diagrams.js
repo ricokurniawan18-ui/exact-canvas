@@ -9129,12 +9129,17 @@ function renderFigureHTML(headRaw, panelsRaw, depth) {
   const nomor = String(head.nomor != null && String(head.nomor).trim() ? head.nomor : figureCounter).trim();
   const multi = panels.length > 1;
   const body = panels.map((panel, i) => {
-    const label = multi ? `<div class="ws-figure-panel-label">(${FIGURE_PANEL_LABELS[i] || i + 1})</div>` : '';
+    // Panel yang sudah punya label sendiri (label=A pada partikel) tidak diberi (a) lagi.
+    const label = multi && !/(^|[;:\s])label\s*=/i.test(panel) ? `<div class="ws-figure-panel-label">(${FIGURE_PANEL_LABELS[i] || i + 1})</div>` : '';
     return `<div class="ws-figure-panel">${renderDiagramTag(panel, depth + 1)}${label}</div>`;
   }).join('');
   const judul = head.judul ? ' — ' + escText(head.judul) : '';
+  // Banyak panel berbagi lebar: 2 -> 2 lajur, 3 -> 3, 4 -> 2x2, 5+ -> 3 lajur.
+  // Tanpa ini tiap panel selebar gambar penuh dan menumpuk satu per satu ke bawah.
+  const lajur = panels.length <= 1 ? 1 : panels.length === 4 ? 2 : Math.min(3, panels.length);
+  const gayaPanel = multi ? ` style="--ws-fig-cols:${lajur}"` : '';
   return `<figure class="ws-figure">`
-    + `<div class="ws-figure-panels">${body}</div>`
+    + `<div class="ws-figure-panels"${gayaPanel}>${body}</div>`
     + `<figcaption class="ws-figure-caption">Gambar ${escText(nomor)}${judul}</figcaption>`
     + `</figure>`;
 }
