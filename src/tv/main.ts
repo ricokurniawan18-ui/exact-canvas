@@ -131,7 +131,8 @@ let arah: string | null = null
 let tanyaSaya: { id: string; status: string; urutan?: number } | null = null
 /**
  * Menjelajah sendiri: murid boleh menggeser dan memperbesar kanvas grupnya
- * dengan jari. Begitu guru mulai mencoret, layar kembali mengikuti guru.
+ * dengan jari. Layar baru kembali mengikuti guru setelah murid menekan
+ * tombol "Follow the teacher" (guru mencoret tidak lagi menariknya kembali).
  */
 let bebas = false
 /** ?mode=fit: selalu satu halaman penuh, apa pun zoom guru. */
@@ -539,10 +540,10 @@ function terima(p: PesanLangsung) {
   else if (sumber === null) gantiSumber(p)
   if (p.src !== sumber) return
 
-  if (bebas && !modeCoret && !izinCoret.boleh && (p.t === 'goresan' || p.t === 'instrumen' || p.t === 'objek') && p.src === sumber) {
-    // Guru sedang menjelaskan: penjelajahan sendiri berakhir, ikut ke area guru.
-    kembaliIkuti()
-  }
+  // Murid yang sudah menggeser/memperbesar layarnya sendiri (bebas) TETAP bebas, sekalipun
+  // guru mencoret atau menggeser kameranya: ia kembali mengikuti hanya bila menekan tombol
+  // "Follow the teacher" (kembaliIkuti). Pandangan guru tetap dicatat di bawah, jadi saat
+  // tombol ditekan layar langsung pindah ke tempat guru sekarang.
   // Berizin menulis (mencoret atau baru diizinkan): pandangan guru tidak
   // menggeser layar ini — layarnya penuh miliknya sendiri.
   if ((modeCoret || izinCoret.boleh) && p.t === 'pandangan') return
