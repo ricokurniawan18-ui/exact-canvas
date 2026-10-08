@@ -9630,6 +9630,176 @@ function renderTransformatorSVG(cfg) {
 }
 function inggris(cfg) { return /^(inggris|english|en)$/i.test(String(cfg.bahasa || '')); }
 
+
+// ---------------------------------------------------------------------
+// Kimia gaya Cambridge/IB: kromatografi kertas, skala pH, sel elektrokimia,
+// kolom distilasi fraksinasi
+// ---------------------------------------------------------------------
+
+// Kromatogram kertas: garis dasar, bercak tiap sampel, garis depan pelarut.
+function renderKromatografiSVG(cfg) {
+  const sampel = String(cfg.sampel || 'A,B,C,X').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 7);
+  // bercak=A:0.30|0.60,B:0.45 -> posisi 0..1 dari garis dasar ke garis depan
+  const bercak = {};
+  pasangNamaNilai(cfg.bercak || '').forEach((p) => { bercak[p.n] = p.t.split('|').map((x) => parseFloat(x.replace(',', '.'))).filter(Number.isFinite); });
+  const tampilBercak = !tidakFis(cfg.tampil) && Object.keys(bercak).length > 0;
+  const inggris = /^(inggris|english|en)$/i.test(String(cfg.bahasa || ''));
+  const bejana = !tidakFis(cfg.bejana);
+  const b = kotakBatas();
+  let isi = '';
+  const lebar = Math.max(150, sampel.length * 34 + 30), tinggi = 190;
+  const yDasar = tinggi - 38, yDepan = 24, ruas = yDasar - yDepan;
+  if (bejana) {
+    isi += `<path d="M-10 ${tinggi - 22} L-10 ${tinggi + 6} Q-10 ${tinggi + 14} -2 ${tinggi + 14} L${lebar - 2} ${tinggi + 14} Q${lebar + 6} ${tinggi + 14} ${lebar + 6} ${tinggi + 6} L${lebar + 6} ${tinggi - 22}" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    isi += `<path d="M-9.5 ${tinggi - 4} H${lebar + 5.5}" stroke="${GAYA.abu}" stroke-width="1" stroke-dasharray="${GAYA.putusHalus}"/>`;
+    b.titik(-10, tinggi - 22); b.titik(lebar + 6, tinggi + 14);
+  }
+  isi += `<rect x="6" y="0" width="${lebar - 12}" height="${tinggi - 6}" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+  b.titik(6, 0); b.titik(lebar - 6, tinggi - 6);
+  isi += gFis(6, yDasar, lebar - 6, yDasar, { warna: GAYA.hitam, tebal: 1 });
+  isi += gFis(6, yDepan, lebar - 6, yDepan, { putus: true, warna: GAYA.abu, tebal: 1 });
+  isi += teksFis(b, lebar + 12, yDepan + 4, inggris ? 'solvent front' : 'garis depan pelarut', 'start', { size: GAYA.teksKecil });
+  isi += teksFis(b, lebar + 12, yDasar + 4, inggris ? 'baseline' : 'garis dasar', 'start', { size: GAYA.teksKecil });
+  const dx = (lebar - 12) / sampel.length;
+  sampel.forEach((n, i) => {
+    const x = 6 + dx * (i + 0.5);
+    isi += `<circle cx="${x.toFixed(1)}" cy="${yDasar}" r="1.8" fill="${GAYA.hitam}"/>`;
+    isi += teksFis(b, x, tinggi + 8, n, 'middle', { size: GAYA.teksKecil });
+    (tampilBercak ? (bercak[n] || []) : []).forEach((rf) => {
+      const y = yDasar - rf * ruas;
+      isi += `<ellipse cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" rx="7" ry="5.5" fill="#777777" fill-opacity="0.8" stroke="${GAYA.hitam}" stroke-width="1"/>`;
+    });
+  });
+  const ukur = String(cfg.ukur || '').trim();
+  if (ukur && tampilBercak && bercak[ukur] && bercak[ukur].length) {
+    const i = sampel.indexOf(ukur), x = 6 + dx * (i + 0.5) - 14;
+    const yb = yDasar - bercak[ukur][0] * ruas;
+    isi += arrowSVG(x, (yDasar + yb) / 2, x, yb, { headLen: 5, strokeWidth: 1 }) + arrowSVG(x, (yDasar + yb) / 2, x, yDasar, { headLen: 5, strokeWidth: 1 });
+    isi += teksFis(b, x - 4, (yDasar + yb) / 2 + 4, 'x', 'end', { italic: true });
+    const x2 = 6 + 8;
+    isi += arrowSVG(x2, (yDasar + yDepan) / 2, x2, yDepan, { headLen: 5, strokeWidth: 1 }) + arrowSVG(x2, (yDasar + yDepan) / 2, x2, yDasar, { headLen: 5, strokeWidth: 1 });
+    isi += teksFis(b, x2 + 4, (yDasar + yDepan) / 2 + 4, 'y', 'start', { italic: true });
+  }
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Skala pH: pita 0-14, penanda zat (huruf) pada nilai pH-nya.
+function renderSkalaPhSVG(cfg) {
+  const inggris = /^(inggris|english|en)$/i.test(String(cfg.bahasa || ''));
+  const tanda = pasangNamaNilai(cfg.tanda || '');
+  const b = kotakBatas();
+  let isi = '';
+  const w = 24, y = 44, h = 30;
+  for (let ph = 0; ph <= 14; ph++) {
+    const gelap = Math.round(238 - Math.abs(ph - 7) * 22);          // netral terang, ujung gelap
+    const g = Math.max(70, gelap).toString(16).padStart(2, '0');
+    isi += `<rect x="${ph * w}" y="${y}" width="${w}" height="${h}" fill="#${g}${g}${g}" stroke="${GAYA.hitam}" stroke-width="1"/>`;
+    isi += `<text x="${ph * w + w / 2}" y="${y + h + 14}" text-anchor="middle" font-size="11" fill="${GAYA.hitam}">${ph}</text>`;
+  }
+  b.titik(0, y - 40); b.titik(15 * w, y + h + 20);
+  if (!tidakFis(cfg.label)) {
+    isi += teksFis(b, 3.5 * w, y + h + 34, inggris ? 'acidic' : 'asam', 'middle', { size: GAYA.teksKecil, italic: true });
+    isi += teksFis(b, 7.5 * w, y + h + 34, inggris ? 'neutral' : 'netral', 'middle', { size: GAYA.teksKecil, italic: true });
+    isi += teksFis(b, 11.5 * w, y + h + 34, inggris ? 'alkaline' : 'basa', 'middle', { size: GAYA.teksKecil, italic: true });
+  }
+  tanda.forEach((t) => {
+    const v = parseFloat(t.t.replace(',', '.'));
+    if (!isFinite(v)) return;
+    const x = (v + 0.5) * w;
+    isi += arrowSVG(x, y - 32, x, y - 3, { headLen: 7, strokeWidth: 1.6 });
+    isi += teksFis(b, x, y - 38, t.n, 'middle', { bold: true });
+  });
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Sel elektrokimia: dua setengah sel + jembatan garam + voltmeter, atau sel sederhana (satu gelas).
+function renderSelElektroSVG(cfg) {
+  const e1 = String(cfg.elektroda1 || 'X').trim(), e2 = String(cfg.elektroda2 || 'Y').trim();
+  const l1 = String(cfg.larutan1 || '').trim(), l2 = String(cfg.larutan2 || '').trim();
+  const volt = String(cfg.voltmeter || '').trim();
+  const sederhana = /sederhana|simple/i.test(String(cfg.jenis || ''));
+  const arus = yaFis(cfg.arus);
+  const b = kotakBatas();
+  let isi = '';
+  const gelas = (x0, x1, yT, yB, cair) => {
+    let s = `<path d="M${x0} ${yT} L${x0} ${yB} L${x1} ${yB} L${x1} ${yT}" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    s += `<rect x="${x0 + 1}" y="${cair}" width="${x1 - x0 - 2}" height="${yB - cair - 1}" fill="#e6e6e6"/>`;
+    s += `<path d="M${x0} ${yT} L${x0} ${yB} L${x1} ${yB} L${x1} ${yT}" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    b.titik(x0, yT); b.titik(x1, yB);
+    return s;
+  };
+  const elektroda = (x, yAtas, yBawah, nama) => `<rect x="${x - 4}" y="${yAtas}" width="8" height="${yBawah - yAtas}" fill="#b5b5b5" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+  const yT = 70, yB = 170, cair = 100;
+  const yKawat = 14;
+  const meter = (cx, cy) => {
+    let s = `<circle cx="${cx}" cy="${cy}" r="16" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/><text x="${cx}" y="${cy + 5}" text-anchor="middle" font-size="14" font-weight="700" fill="${GAYA.hitam}">V</text>`;
+    b.titik(cx - 17, cy - 17); b.titik(cx + 17, cy + 17);
+    return s;
+  };
+  if (sederhana) {
+    isi += gelas(40, 190, yT, yB, cair);
+    isi += elektroda(80, yKawat + 6, 150, e1) + elektroda(150, yKawat + 6, 150, e2);
+    isi += gFis(80, yKawat + 6, 80, yKawat, { tebal: 1.4 }) + gFis(150, yKawat + 6, 150, yKawat, { tebal: 1.4 });
+    isi += gFis(80, yKawat, 105, yKawat, { tebal: 1.4 }) + gFis(125, yKawat, 150, yKawat, { tebal: 1.4 });
+    isi += meter(115, yKawat);
+    isi += teksFis(b, 80, 186 + 8, e1, 'middle', { bold: true }) + teksFis(b, 150, 186 + 8, e2, 'middle', { bold: true });
+    if (l1) isi += teksFis(b, 115, 188 + 24, l1, 'middle', { size: GAYA.teksKecil, italic: true });
+    if (volt) isi += teksFis(b, 115, yKawat - 24, volt, 'middle');
+    if (arus) isi += arrowSVG(88, yKawat - 7, 100, yKawat - 7, { headLen: 6, strokeWidth: 1.3 });
+    return bungkusGambarSVG(isi, b, false);
+  }
+  isi += gelas(20, 110, yT, yB, cair) + gelas(150, 240, yT, yB, cair);
+  isi += elektroda(65, yKawat + 6, 150, e1) + elektroda(195, yKawat + 6, 150, e2);
+  isi += gFis(65, yKawat + 6, 65, yKawat, { tebal: 1.4 }) + gFis(195, yKawat + 6, 195, yKawat, { tebal: 1.4 });
+  isi += gFis(65, yKawat, 112, yKawat, { tebal: 1.4 }) + gFis(148, yKawat, 195, yKawat, { tebal: 1.4 });
+  isi += meter(130, yKawat);
+  // jembatan garam: huruf U terbalik dari gelas kiri ke kanan
+  isi += `<path d="M92 ${cair + 22} L92 ${yT - 8} Q92 ${yT - 20} 104 ${yT - 20} L156 ${yT - 20} Q168 ${yT - 20} 168 ${yT - 8} L168 ${cair + 22}" fill="none" stroke="${GAYA.hitam}" stroke-width="5"/>`;
+  isi += `<path d="M92 ${cair + 22} L92 ${yT - 8} Q92 ${yT - 20} 104 ${yT - 20} L156 ${yT - 20} Q168 ${yT - 20} 168 ${yT - 8} L168 ${cair + 22}" fill="none" stroke="${GAYA.putih}" stroke-width="2.5"/>`;
+  b.titik(88, yT - 24);
+  if (!tidakFis(cfg.jembatan)) isi += teksFis(b, 130, yT - 28, (/^(inggris|english|en)$/i.test(String(cfg.bahasa || '')) ? 'salt bridge' : 'jembatan garam'), 'middle', { size: GAYA.teksKecil, italic: true });
+  isi += teksFis(b, 65, 186 + 8, e1, 'middle', { bold: true }) + teksFis(b, 195, 186 + 8, e2, 'middle', { bold: true });
+  if (l1) isi += teksFis(b, 65, 188 + 24, l1, 'middle', { size: GAYA.teksKecil, italic: true });
+  if (l2) isi += teksFis(b, 195, 188 + 24, l2, 'middle', { size: GAYA.teksKecil, italic: true });
+  if (volt) isi += teksFis(b, 130, yKawat - 24, volt, 'middle');
+  if (arus) isi += arrowSVG(72, yKawat - 7, 100, yKawat - 7, { headLen: 6, strokeWidth: 1.3 });
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Menara distilasi fraksinasi minyak mentah: pecahan keluar di samping menurut suhu didihnya.
+function renderKolomFraksiSVG(cfg) {
+  const inggris = /^(inggris|english|en)$/i.test(String(cfg.bahasa || ''));
+  const nama = inggris
+    ? ['refinery gas', 'petrol (gasoline)', 'naphtha', 'kerosene', 'diesel oil', 'fuel oil', 'bitumen']
+    : ['gas kilang', 'bensin', 'nafta', 'kerosin', 'solar (diesel)', 'minyak bakar', 'aspal'];
+  const semuaKosong = tidakFis(cfg.label);
+  const kosong = new Set(semuaKosong ? [1, 2, 3, 4, 5, 6, 7] : String(cfg.kosong || '').split(/[,\s]+/).map((x) => parseInt(x, 10)).filter(Number.isFinite));
+  const b = kotakBatas();
+  let isi = '';
+  const x0 = 110, w = 56, top = 10, bot = 220;
+  isi += `<rect x="${x0}" y="${top}" width="${w}" height="${bot - top}" rx="10" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+  b.titik(x0, top); b.titik(x0 + w, bot);
+  const ys = nama.map((_, i) => top + 22 + i * ((bot - top - 40) / 6));
+  ys.forEach((y, i) => {
+    if (i < 6) isi += gFis(x0, y + 14, x0 + w, y + 14, { tebal: 1, warna: GAYA.abu });
+    isi += arrowSVG(x0 + w, y, x0 + w + 44, y, { headLen: 6, strokeWidth: 1.4 });
+    const t = kosong.has(i + 1) ? 'PQRSTUV'[[...kosong].sort((a, c) => a - c).indexOf(i + 1)] || '?' : nama[i];
+    isi += teksFis(b, x0 + w + 50, y + 4, t, 'start', { bold: kosong.has(i + 1) });
+  });
+  // minyak mentah masuk dari kiri melalui tungku
+  const yMasuk = ys[4] - 4;
+  isi += `<rect x="20" y="${yMasuk - 16}" width="40" height="32" fill="#e3e3e3" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+  isi += teksFis(b, 40, yMasuk + 4, inggris ? 'furnace' : 'tungku', 'middle', { size: 9.5 });
+  isi += arrowSVG(60, yMasuk, x0, yMasuk, { headLen: 6, strokeWidth: 1.4 });
+  isi += teksFis(b, 40, yMasuk + 32, inggris ? 'crude oil' : 'minyak mentah', 'middle', { size: GAYA.teksKecil, italic: true });
+  b.titik(20, yMasuk + 38);
+  // gradien suhu di sebelah kiri
+  isi += arrowSVG(88, bot - 6, 88, top + 24, { headLen: 6, strokeWidth: 1.2 });
+  isi += teksFis(b, 84, top + 18, inggris ? 'cooler' : 'lebih dingin', 'end', { size: 9.5 });
+  isi += teksFis(b, 84, bot + 6, inggris ? 'hotter' : 'lebih panas', 'end', { size: 9.5 });
+  return bungkusGambarSVG(isi, b, false);
+}
+
 const FIGURE_PANEL_LABELS = 'abcdefgh';
 
 function renderFigureHTML(headRaw, panelsRaw, depth) {
@@ -9827,6 +9997,10 @@ const DIAGRAM_TYPE_ALIASES = {
   kurvapemanasan: 'kurvapemanasan', pemanasan: 'kurvapemanasan', heatingcurve: 'kurvapemanasan',
   spektrumem: 'spektrumem', spektrum: 'spektrumem', emspectrum: 'spektrumem',
   dayatembus: 'dayatembus', radiasi: 'dayatembus', radioaktif: 'dayatembus',
+  kromatografi: 'kromatografi', chromatography: 'kromatografi', kromatogram: 'kromatografi',
+  skalaph: 'skalaph', ph: 'skalaph', phscale: 'skalaph',
+  selelektro: 'selelektro', selgalvani: 'selelektro', voltaik: 'selelektro', electrochemicalcell: 'selelektro',
+  kolomfraksi: 'kolomfraksi', fraksinasi: 'kolomfraksi', distilasifraksi: 'kolomfraksi', fractionaldistillation: 'kolomfraksi',
   transformator: 'transformator', trafo: 'transformator', transformer: 'transformator',
   lift: 'lift', elevator: 'lift',
   balokberurutan: 'balokberurutan', bendaberurutan: 'balokberurutan',
@@ -10211,6 +10385,10 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'spektrumem') svg = renderSpektrumEMSVG(params);
     else if (type === 'dayatembus') svg = renderDayaTembusSVG(params);
     else if (type === 'transformator') svg = renderTransformatorSVG(params);
+    else if (type === 'kromatografi') svg = renderKromatografiSVG(params);
+    else if (type === 'skalaph') svg = renderSkalaPhSVG(params);
+    else if (type === 'selelektro') svg = renderSelElektroSVG(params);
+    else if (type === 'kolomfraksi') svg = renderKolomFraksiSVG(params);
     else if (type === 'lift') svg = renderLiftSVG(params);
     else if (type === 'balokberurutan') svg = renderBeratBerurutanSVG(params);
     else if (type === 'katroldua') svg = renderDoubleInclineSVG(params);
