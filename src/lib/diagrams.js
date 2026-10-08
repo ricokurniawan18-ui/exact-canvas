@@ -5142,139 +5142,149 @@ function resistorSVG(x1, y, x2, label) {
   return s;
 }
 
-// Sel (baterai) tegak lurus untuk cabang vertikal rangkaian multiloop: pelat
-// panjang+tipis (+) di atas, pelat pendek+tebal (-) di bawah — konvensi yang
-// sama dengan sel mendatar di renderCircuitSVG, cuma diputar 90°. balik=true
-// menukar pelatnya (kutub - di atas) — baterai yang kutubnya dibalik-balik
-// antar cabang itu lazim di soal hukum Kirchhoff, arah arusnya justru bagian
-// dari yang harus dicari siswa.
-function selVertikalSVG(cx, y1, y2, volt, balik) {
+// Sel (baterai) tegak untuk cabang vertikal rangkaian multiloop: pelat panjang
+// tipis (+) di atas, pelat pendek tebal (-) di bawah, tanda + di samping pelat
+// panjang. balik=true menukar pelatnya. label = tulisan di sisi kanan sel.
+function selVertikalSVG(cx, y1, y2, label, balik) {
   const mid = (y1 + y2) / 2;
-  const yPelat1 = mid - 6, yPelat2 = mid + 2;
-  const pelatPanjang = (x, y) => `<line x1="${(x - 12).toFixed(1)}" y1="${y.toFixed(1)}" x2="${(x + 12).toFixed(1)}" y2="${y.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
-  const pelatPendek = (x, y) => `<line x1="${(x - 6).toFixed(1)}" y1="${y.toFixed(1)}" x2="${(x + 6).toFixed(1)}" y2="${y.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="4"/>`;
-  let s = `<line x1="${cx.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${cx.toFixed(1)}" y2="${yPelat1.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
-  s += balik ? pelatPendek(cx, yPelat1) : pelatPanjang(cx, yPelat1);
-  s += balik ? pelatPanjang(cx, yPelat2) : pelatPendek(cx, yPelat2);
-  s += `<line x1="${cx.toFixed(1)}" y1="${(yPelat2 + 2).toFixed(1)}" x2="${cx.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
-  if (volt != null && isFinite(volt)) {
-    s += `<text x="${(cx + 15).toFixed(1)}" y="${(mid + 4).toFixed(1)}" font-size="10.5" text-anchor="start" fill="${GAYA.hitam}">${volt} V</text>`;
-  }
+  const yA = mid - 5, yB = mid + 5;
+  const panjang = (y) => `<line x1="${(cx - 14).toFixed(1)}" y1="${y.toFixed(1)}" x2="${(cx + 14).toFixed(1)}" y2="${y.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.8"/>`;
+  const pendek = (y) => `<line x1="${(cx - 7).toFixed(1)}" y1="${y.toFixed(1)}" x2="${(cx + 7).toFixed(1)}" y2="${y.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="5"/>`;
+  let s = `<line x1="${cx.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${cx.toFixed(1)}" y2="${(yA - 1).toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
+  s += balik ? pendek(yA) : panjang(yA);
+  s += balik ? panjang(yB) : pendek(yB);
+  s += `<line x1="${cx.toFixed(1)}" y1="${(yB + 1).toFixed(1)}" x2="${cx.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
+  const yPlus = balik ? yB : yA;
+  s += `<text x="${(cx - 19).toFixed(1)}" y="${(yPlus + 4).toFixed(1)}" font-size="12" font-weight="700" text-anchor="middle" fill="${GAYA.hitam}">+</text>`;
+  if (label) s += `<text x="${(cx + 19).toFixed(1)}" y="${(mid + 4).toFixed(1)}" font-size="11.5" text-anchor="start" fill="${GAYA.hitam}">${escText(label)}</text>`;
   return s;
 }
 
-// Resistor IEC tegak (sama seperti resistorSVG tapi arah vertikal), untuk
-// cabang rangkaian multiloop — label di sisi kanan.
+// Resistor IEC tegak, label di sisi kanan.
 function resistorVertikalSVG(x, y1, y2, label) {
-  const w = 14, h = 34;
+  const w = 16, h = 40;
   const by = (y1 + y2) / 2 - h / 2;
-  let s = `<line x1="${x.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x.toFixed(1)}" y2="${by.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
-  s += `<rect x="${(x - w / 2).toFixed(1)}" y="${by.toFixed(1)}" width="${w}" height="${h}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.6"/>`;
-  s += `<line x1="${x.toFixed(1)}" y1="${(by + h).toFixed(1)}" x2="${x.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
-  if (label) s += `<text x="${(x + 12).toFixed(1)}" y="${((y1 + y2) / 2 + 4).toFixed(1)}" font-size="10.5" text-anchor="start" fill="${GAYA.hitam}">${escText(label)}</text>`;
+  let s = `<line x1="${x.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x.toFixed(1)}" y2="${by.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
+  s += `<rect x="${(x - w / 2).toFixed(1)}" y="${by.toFixed(1)}" width="${w}" height="${h}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.8"/>`;
+  s += `<line x1="${x.toFixed(1)}" y1="${(by + h).toFixed(1)}" x2="${x.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
+  if (label) s += `<text x="${(x + 14).toFixed(1)}" y="${((y1 + y2) / 2 + 4).toFixed(1)}" font-size="11.5" text-anchor="start" fill="${GAYA.hitam}">${escText(label)}</text>`;
   return s;
 }
 
 function parseCabangMultiloop(raw) {
   return String(raw || '').split(',').map((s) => s.trim()).filter(Boolean).map((tok, i) => {
     const bits = tok.split(':').map((s) => s.trim());
+    const nama = bits[0] || ('R' + (i + 1));
+    const ohmAda = bits[1] != null && bits[1] !== '' && isFinite(parseFloat(String(bits[1]).replace(',', '.')));
+    const voltAda = bits[2] != null && bits[2] !== '' && isFinite(parseFloat(String(bits[2]).replace(',', '.')));
+    const voltTanya = bits[2] != null && /^[?εEe]$/.test(bits[2]);
     return {
-      name: bits[0] || ('R' + (i + 1)),
+      name: nama,
       ohm: numOrDefault(bits[1], 10),
+      // hambatan yang dicari ("R2:?") tampil sebagai namanya saja, bukan angka tebakan
+      ohmTeks: ohmAda ? `${numOrDefault(bits[1], 10)} Ω` : (bits[1] === '?' ? nama : `${numOrDefault(bits[1], 10)} Ω`),
       volt: numOrDefault(bits[2], 0),
-      // rdalam (hambatan dalam baterai) & arah (balik = kutub ditukar) sama-sama
-      // opsional — kosongkan rdalam tapi isi arah dengan "Nama:ohm:volt::balik".
+      adaSel: voltTanya || (voltAda && numOrDefault(bits[2], 0) !== 0),
+      voltTeks: voltTanya ? 'ε' : `${numOrDefault(bits[2], 0)} V`,
       rdalam: numOrDefault(bits[3], 0),
       balik: (bits[4] || '').trim().toLowerCase() === 'balik',
     };
   });
 }
 
-// Rangkaian 1-loop/multiloop (Kirchhoff): N cabang VERTIKAL (resistor lalu
-// sel, masing-masing sel BEBAS bedanya tegangannya) berjajar antara rel atas
-// (simpul A) dan rel bawah (simpul B) — beda dari tipe seri/paralel/campuran
-// di bawah yang cuma punya SATU sel keseluruhan. Rel atas/bawah sendiri
-// boleh diselingi resistor di antara cabang-cabang (relAtas/relBawah),
-// persis pola naskah ujian 2-loop yang resistornya ada di kawat penghubung,
-// bukan cuma di cabang.
+// Rangkaian 1-loop/multiloop (Kirchhoff): N cabang vertikal (resistor di atas,
+// sel di bawahnya) antara rel atas dan rel bawah. Cabang tanpa sel (tegangan 0)
+// cukup resistor. Tambahan opsional: arus=ya (panah arus I1, I2, ... searah
+// gaya gerak sel), loop=ya (panah putaran tiap loop), relAtas/relBawah
+// (resistor di rel), simpulAtas/simpulBawah (nama simpul).
 function renderMultiloopSVG(cfg) {
   const cabang = parseCabangMultiloop(cfg.cabang);
-  if (!cabang.length) cabang.push({ name: 'R1', ohm: 5, volt: 4 }, { name: 'R2', ohm: 2, volt: 3 });
+  if (!cabang.length) cabang.push({ name: 'R1', ohm: 5, ohmTeks: '5 Ω', volt: 4, adaSel: true, voltTeks: '4 V', rdalam: 0, balik: false }, { name: 'R2', ohm: 2, ohmTeks: '2 Ω', volt: 3, adaSel: true, voltTeks: '3 V', rdalam: 0, balik: false });
   const relBawah = String(cfg.relBawah || '').split(',').map((s) => s.trim());
   const relAtas = String(cfg.relAtas || '').split(',').map((s) => s.trim());
-  const simpulAtas = String(cfg.simpulAtas || 'A').trim();
-  const simpulBawah = String(cfg.simpulBawah || 'B').trim();
-
   const n = cabang.length;
+  // Nama simpul hanya bila diminta, atau pada rangkaian 3 cabang ke atas (di sana A dan B perlu dirujuk).
+  const adaSimpul = cfg.simpulAtas != null || cfg.simpulBawah != null || n >= 3;
+  const simpulAtas = String(cfg.simpulAtas != null ? cfg.simpulAtas : 'A').trim();
+  const simpulBawah = String(cfg.simpulBawah != null ? cfg.simpulBawah : 'B').trim();
+  const arus = yaFis(cfg.arus), loop = yaFis(cfg.loop);
+  // dua cabang dengan satu sel saja = satu loop seri: arusnya satu, bernama I
+  const loopTunggal = n === 2 && cabang.filter((c) => c.adaSel).length === 1;
   const adaRdalam = cabang.some((c) => c.rdalam > 0);
-  const branchGap = 110, leftX = 60;
-  const topY = 42, resBottom = topY + 36, battTop = resBottom + 16, battBottom = battTop + 50;
-  // Zona hambatan dalam cuma disediakan kalau ADA cabang yang memakainya —
-  // reservasinya sama untuk semua cabang (biar rel bawah tetap lurus),
-  // cabang yang tidak punya hambatan dalam cuma diberi kawat lurus di situ.
-  const rdalamTop = battBottom + 16, rdalamBottom = rdalamTop + 34;
-  const bottomY = (adaRdalam ? rdalamBottom : battBottom) + 16;
+  const branchGap = 128, leftX = 64;
+  const topY = 40, resBottom = topY + 78, battTop = resBottom + 8, battBottom = battTop + 54;
+  const rdalamTop = battBottom + 10, rdalamBottom = rdalamTop + 40;
+  const bottomY = (adaRdalam ? rdalamBottom : battBottom) + 24;
   const xs = cabang.map((_, i) => leftX + i * branchGap);
   const rightX = xs[n - 1];
-  const atasStartX = leftX - 28, bawahEndX = rightX + 28;
-  const width = bawahEndX + 36;
-  const height = bottomY + 24;
+  const atasStartX = leftX - 26, bawahEndX = rightX + 26;
+  const b = kotakBatas();
+  let isi = '';
+  const W = (x1, y1, x2, y2) => `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
+  const resistorMendatar = (xa, y, xb, teks) => {
+    const w = 40, h = 16, bx = (xa + xb) / 2 - w / 2;
+    return W(xa, y, bx, y) + `<rect x="${bx.toFixed(1)}" y="${(y - h / 2).toFixed(1)}" width="${w}" height="${h}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.8"/>` + W(bx + w, y, xb, y)
+      + `<text x="${((xa + xb) / 2).toFixed(1)}" y="${(y - h / 2 - 5).toFixed(1)}" font-size="11.5" text-anchor="middle" fill="${GAYA.hitam}">${escText(teks)}</text>`;
+  };
+  b.titik(atasStartX - 6, topY - 18); b.titik(bawahEndX + 6, bottomY + 22);
 
-  let svg = `<svg class="ws-diagram-svg" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">`;
-  svg += `<rect x="0.5" y="0.5" width="${width - 1}" height="${height - 1}" fill="#ffffff" stroke="#d8dce1"/>`;
-  const W = (x1, y1, x2, y2) => `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
-
-  // Rel atas: simpul A -> cabang pertama -> ... -> cabang terakhir.
-  svg += W(atasStartX, topY, xs[0], topY);
+  if (adaSimpul) isi += W(atasStartX, topY, xs[0], topY);
   for (let i = 0; i < n - 1; i++) {
-    const val = parseFloat(relAtas[i]);
-    svg += (relAtas[i] && isFinite(val) && val > 0)
-      ? resistorSVG(xs[i], topY, xs[i + 1], `${val} Ω`)
-      : W(xs[i], topY, xs[i + 1], topY);
+    const v = parseFloat(relAtas[i]);
+    isi += (relAtas[i] && isFinite(v) && v > 0) ? resistorMendatar(xs[i], topY, xs[i + 1], `${v} Ω`) : W(xs[i], topY, xs[i + 1], topY);
   }
-  svg += `<circle cx="${atasStartX.toFixed(1)}" cy="${topY.toFixed(1)}" r="2.6" fill="${GAYA.hitam}"/>`;
-  svg += `<text x="${atasStartX.toFixed(1)}" y="${(topY - 11).toFixed(1)}" font-size="12.5" font-weight="700" text-anchor="middle" fill="${GAYA.hitam}">${escText(simpulAtas)}</text>`;
-
-  // Tiap cabang: resistor di atas, sel di bawahnya, lalu hambatan dalam
-  // (kalau ada cabang lain yang memakainya, zona ini tetap disediakan supaya
-  // rel bawah tetap lurus — cabang yang tidak punya cukup kawat lurus).
   cabang.forEach((c, i) => {
     const x = xs[i];
-    svg += resistorVertikalSVG(x, topY, resBottom, `${c.ohm} Ω`);
-    svg += W(x, resBottom, x, battTop);
-    svg += selVertikalSVG(x, battTop, battBottom, c.volt, c.balik);
-    if (adaRdalam) {
-      svg += W(x, battBottom, x, rdalamTop);
-      svg += c.rdalam > 0
-        ? resistorVertikalSVG(x, rdalamTop, rdalamBottom, `r = ${c.rdalam} Ω`)
-        : W(x, rdalamTop, x, rdalamBottom);
-      svg += W(x, rdalamBottom, x, bottomY);
+    isi += resistorVertikalSVG(x, topY, resBottom, c.ohmTeks);
+    if (c.adaSel) {
+      isi += W(x, resBottom, x, battTop);
+      isi += selVertikalSVG(x, battTop, battBottom, c.voltTeks, c.balik);
     } else {
-      svg += W(x, battBottom, x, bottomY);
+      isi += W(x, resBottom, x, battBottom);
+    }
+    if (adaRdalam) {
+      isi += W(x, battBottom, x, rdalamTop);
+      isi += c.rdalam > 0 ? resistorVertikalSVG(x, rdalamTop, rdalamBottom, `r = ${c.rdalam} Ω`) : W(x, rdalamTop, x, rdalamBottom);
+      isi += W(x, rdalamBottom, x, bottomY);
+    } else {
+      isi += W(x, battBottom, x, bottomY);
+    }
+    if (arus) {
+      // searah gaya gerak sel: ke atas bila kutub + di atas; cabang tanpa sel ke bawah.
+      const naik = c.adaSel && !c.balik;
+      const ya = topY + 26;
+      isi += arrowSVG(x - 18, naik ? ya + 12 : ya - 12, x - 18, naik ? ya - 12 : ya + 12, { headLen: 7, strokeWidth: 1.5 });
+      isi += `<text x="${(x - 24).toFixed(1)}" y="${(ya + 4).toFixed(1)}" font-size="12" font-style="italic" text-anchor="end" fill="${GAYA.hitam}">I${loopTunggal ? '' : `<tspan font-size="9" dy="3">${i + 1}</tspan>`}</text>`;
     }
   });
-
-  // Rel bawah: cabang pertama -> ... -> cabang terakhir -> simpul B.
   for (let i = 0; i < n - 1; i++) {
-    const val = parseFloat(relBawah[i]);
-    svg += (relBawah[i] && isFinite(val) && val > 0)
-      ? resistorSVG(xs[i], bottomY, xs[i + 1], `${val} Ω`)
-      : W(xs[i], bottomY, xs[i + 1], bottomY);
+    const v = parseFloat(relBawah[i]);
+    isi += (relBawah[i] && isFinite(v) && v > 0) ? resistorMendatar(xs[i], bottomY, xs[i + 1], `${v} Ω`) : W(xs[i], bottomY, xs[i + 1], bottomY);
   }
-  svg += W(rightX, bottomY, bawahEndX, bottomY);
-  svg += `<circle cx="${bawahEndX.toFixed(1)}" cy="${bottomY.toFixed(1)}" r="2.6" fill="${GAYA.hitam}"/>`;
-  svg += `<text x="${bawahEndX.toFixed(1)}" y="${(bottomY + 17).toFixed(1)}" font-size="12.5" font-weight="700" text-anchor="middle" fill="${GAYA.hitam}">${escText(simpulBawah)}</text>`;
-
-  // Titik sambungan (junction dot) di tiap percabangan 3 kawat — konvensi
-  // standar IEC, menandai rel dan cabang memang tersambung (bukan cuma
-  // kawat lewat). Digambar PALING AKHIR supaya tidak tertimpa garis rel
-  // yang baru selesai digambar di atas.
-  xs.forEach((x) => {
-    svg += `<circle cx="${x.toFixed(1)}" cy="${topY.toFixed(1)}" r="2.6" fill="${GAYA.hitam}"/>`;
-    svg += `<circle cx="${x.toFixed(1)}" cy="${bottomY.toFixed(1)}" r="2.6" fill="${GAYA.hitam}"/>`;
+  if (adaSimpul) isi += W(rightX, bottomY, bawahEndX, bottomY);
+  if (loop) {
+    for (let i = 0; i < n - 1; i++) {
+      const cx = (xs[i] + xs[i + 1]) / 2, cy = (topY + bottomY) / 2 + 4, r = 17;
+      const a0 = 30, a1 = 110;                         // busur 280°, berlawanan arah jarum jam (sudut layar)
+      const rad = (d) => (d * Math.PI) / 180;
+      const P = (d) => [cx + r * Math.cos(rad(d)), cy + r * Math.sin(rad(d))];
+      const [xa, ya] = P(a0), [xb, yb] = P(a1);
+      isi += `<path d="M${xa.toFixed(1)} ${ya.toFixed(1)} A${r} ${r} 0 1 0 ${xb.toFixed(1)} ${yb.toFixed(1)}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
+      const dx = Math.sin(rad(a1)), dy = -Math.cos(rad(a1)), nx = Math.cos(rad(a1)), ny = Math.sin(rad(a1));
+      isi += `<polygon points="${(xb + dx * 6).toFixed(1)},${(yb + dy * 6).toFixed(1)} ${(xb - dx * 3 + nx * 4.5).toFixed(1)},${(yb - dy * 3 + ny * 4.5).toFixed(1)} ${(xb - dx * 3 - nx * 4.5).toFixed(1)},${(yb - dy * 3 - ny * 4.5).toFixed(1)}" fill="${GAYA.hitam}"/>`;
+      isi += `<text x="${cx.toFixed(1)}" y="${(cy + 4).toFixed(1)}" font-size="12" text-anchor="middle" fill="${GAYA.hitam}">${i + 1}</text>`;
+    }
+  }
+  if (adaSimpul) {
+    isi += `<text x="${atasStartX.toFixed(1)}" y="${(topY - 10).toFixed(1)}" font-size="13" font-weight="700" text-anchor="middle" fill="${GAYA.hitam}">${escText(simpulAtas)}</text>`;
+    isi += `<text x="${bawahEndX.toFixed(1)}" y="${(bottomY + 20).toFixed(1)}" font-size="13" font-weight="700" text-anchor="middle" fill="${GAYA.hitam}">${escText(simpulBawah)}</text>`;
+    isi += `<circle cx="${atasStartX.toFixed(1)}" cy="${topY.toFixed(1)}" r="3" fill="${GAYA.hitam}"/><circle cx="${bawahEndX.toFixed(1)}" cy="${bottomY.toFixed(1)}" r="3" fill="${GAYA.hitam}"/>`;
+  }
+  // titik sambungan di tiap percabangan: digambar paling akhir
+  xs.forEach((x, i) => {
+    if (n > 1 && (i > 0 || n > 1)) isi += `<circle cx="${x.toFixed(1)}" cy="${topY.toFixed(1)}" r="3.2" fill="${GAYA.hitam}"/><circle cx="${x.toFixed(1)}" cy="${bottomY.toFixed(1)}" r="3.2" fill="${GAYA.hitam}"/>`;
   });
-
-  return svg + '</svg>';
+  return bungkusGambarSVG(isi, b, false);
 }
 
 function renderCircuitSVG(cfg) {
