@@ -2059,6 +2059,59 @@ const SOLID_PRESETS = {
   'prisma-layang-layang': (p) => buatPrisma('layang-layang', p),
   'prisma-trapesium': (p) => buatPrisma('trapesium', p),
   'prisma-trapesium-siku': (p) => buatPrisma('trapesium-siku', p),
+  // Prisma dengan penampang bebas dan bentuk gabungan (soal mensurasi Cambridge/IB).
+  'prisma': (p) => buatPrismaBebas(p, null),
+  'prisma-segitiga-siku': (p) => {
+    const a = numOrDefault(p.alas, 3), t = numOrDefault(p.tinggi, 4);
+    return buatPrismaBebas(Object.assign({ label: `1-2:${String(p.alas != null ? p.alas : a)}|3-1:${String(p.tinggi != null ? p.tinggi : t)}` }, p), [[0, 0], [a, 0], [0, t]]);
+  },
+  'prisma-segienam': (p) => {
+    const a = numOrDefault(p.sisi, 4), pts = [];
+    for (let k = 0; k < 6; k++) pts.push([a * Math.cos((k * Math.PI) / 3 + Math.PI / 6 * 0), a * Math.sin((k * Math.PI) / 3)]);
+    return buatPrismaBebas(Object.assign({ siku: 'tidak' }, p), pts);
+  },
+  'kerucut-tabung': (p) => {
+    const r = numOrDefault(p.jari, 3), th = Math.min(numOrDefault(p.tinggi, 1.7 * r), 2.4 * r), kh = Math.min(numOrDefault(p.tinggiKerucut, 1.4 * r), 2.4 * r);
+    const xk = 2 * r + 0.45 * r;
+    return {
+      ellipses: [{ cx: r, cy: th, rx: r, ry: 0.32 * r }, { cx: r, cy: 0, rx: r, ry: 0.32 * r, putus: true }],
+      edges: [{ a: [0, 0], b: [0, th] }, { a: [2 * r, 0], b: [2 * r, th] }, { a: [0, 0], b: [r, -kh] }, { a: [2 * r, 0], b: [r, -kh] }],
+      dots: [[r, th]],
+      ukur: [
+        { a: [r, th], b: [2 * r, th], text: String(p.jari || ''), n: [0, 1] },
+        { a: [xk, 0], b: [xk, th], text: String(p.tinggi || 'h'), n: [1, 0] },
+        { a: [xk, 0], b: [xk, -kh], text: String(p.tinggiKerucut || ''), n: [1, 0] },
+      ],
+    };
+  },
+  'kerucut-belahan': (p) => {
+    const r = numOrDefault(p.jari, 3), kh = Math.min(numOrDefault(p.tinggiKerucut, 2.2 * r), 3 * r);
+    const xk = 2 * r + 0.45 * r;
+    return {
+      ellipses: [{ cx: r, cy: 0, rx: r, ry: 0.32 * r, belah: true }],
+      arcs: [{ cx: r, cy: 0, rx: r, ry: r, a0: 180, a1: 360 }],
+      edges: [{ a: [0, 0], b: [r, kh] }, { a: [2 * r, 0], b: [r, kh] }],
+      ukur: [{ a: [xk, 0], b: [xk, kh], text: String(p.tinggiKerucut || ''), n: [1, 0] }].concat(p.jari ? [{ a: [r, 0], b: [2 * r, 0], text: String(p.jari), n: [0, 1] }] : []),
+    };
+  },
+  'dua-bola-tabung': (p) => {
+    const r = numOrDefault(p.jari, 3);
+    return {
+      ellipses: [{ cx: r, cy: 4 * r, rx: r, ry: 0.3 * r }, { cx: r, cy: 0, rx: r, ry: 0.3 * r, belah: true }, { cx: r, cy: r, rx: r, ry: 0.3 * r, putus: true }, { cx: r, cy: 3 * r, rx: r, ry: 0.3 * r, putus: true }],
+      arcs: [{ cx: r, cy: r, rx: r, ry: r, a0: 0, a1: 360 }, { cx: r, cy: 3 * r, rx: r, ry: r, a0: 0, a1: 360 }],
+      edges: [{ a: [0, 0], b: [0, 4 * r] }, { a: [2 * r, 0], b: [2 * r, 4 * r] }],
+      ukur: [{ a: [r, 4 * r], b: [2 * r, 4 * r], text: String(p.jari || 'r'), n: [0, 1] }],
+    };
+  },
+  'belahan-bola': (p) => {
+    const r = numOrDefault(p.jari, 4);
+    return {
+      ellipses: [{ cx: r, cy: 0, rx: r, ry: 0.28 * r }],
+      arcs: [{ cx: r, cy: 0, rx: r, ry: r, a0: 180, a1: 360 }],
+      edges: [],
+      ukur: [{ a: [0, 0], b: [2 * r, 0], text: String(p.diameter || p.jari || 'd'), n: [0, 1] }],
+    };
+  },
 };
 
 // Prisma tegak umum: alas (poligon cembung berlawanan arah jarum jam) di depan,
@@ -2145,6 +2198,68 @@ function buatPrisma(jenis, p) {
   return { edges, siku, labels, vertices };
 }
 
+// Prisma tegak dengan penampang bebas: penampang=0:0,9:0,9:2,4:2,4:7,0:7 (titik berurutan), panjang=10.
+// label=1-2:9 cm|3-4:5 cm menamai sisi penampang antara titik ke-1 dan ke-2, dst. (nomor titik sesuai urutan
+// penulisan). siku=tidak mematikan tanda siku otomatis; arsir=ya mengarsir penampang depan; teks=30 cm²
+// menulis di dalam penampang; huruf=ya menambah huruf titik sudut.
+function buatPrismaBebas(p, polaDefault) {
+  let pola = polaDefault;
+  if (!pola) {
+    pola = String(p.penampang || '0:0,6:0,6:3,3:3,3:5,0:5').split(',').map((t) => t.trim().split(':').map((v) => parseFloat(v.replace(',', '.')))).filter((q) => q.length === 2 && isFinite(q[0]) && isFinite(q[1]));
+    if (pola.length < 3) pola = [[0, 0], [6, 0], [6, 3], [3, 3], [3, 5], [0, 5]];
+  }
+  const n = pola.length;
+  let luas = 0;
+  for (let i = 0; i < n; i++) { const q = pola[i], r = pola[(i + 1) % n]; luas += q[0] * r[1] - r[0] * q[1]; }
+  const balik = luas < 0;
+  const poly = balik ? pola.slice().reverse() : pola.slice();
+  const idx = (k) => (balik ? n - 1 - k : k);                      // indeks asli -> indeks poly
+  const panjang = numOrDefault(p.panjang, Math.max(...poly.map((q) => q[0])) * 1.2);
+  const back = poly.map(([x, y]) => obliquePt(x, y, panjang));
+  const d = obliquePt(0, 0, 1);
+  const tampak = poly.map((q, i) => { const r = poly[(i + 1) % n], nx = r[1] - q[1], ny = -(r[0] - q[0]); return nx * d[0] + ny * d[1] > 1e-9; });
+  const edges = [];
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    edges.push({ a: poly[i], b: poly[j] });
+    edges.push({ a: back[i], b: back[j], dashed: !tampak[i] });
+    edges.push({ a: poly[i], b: back[i], dashed: !tampak[i] && !tampak[(i + n - 1) % n] });
+  }
+  const labels = [];
+  const cx = poly.reduce((s2, q) => s2 + q[0], 0) / n, cy = poly.reduce((s2, q) => s2 + q[1], 0) / n;
+  String(p.label || '').split('|').map((t) => t.trim()).filter(Boolean).forEach((t) => {
+    const m = t.match(/^(\d+)\s*-\s*(\d+)\s*:(.*)$/);
+    if (!m) return;
+    const ia = idx(parseInt(m[1], 10) - 1), ib = idx(parseInt(m[2], 10) - 1);
+    if (!(ia >= 0 && ia < n && ib >= 0 && ib < n)) return;
+    const q = poly[ia], r = poly[ib];
+    const dx = r[0] - q[0], dy = r[1] - q[1], len = Math.hypot(dx, dy) || 1;
+    let nx = dy / len, ny = -dx / len;                              // normal luar (poly berlawanan jarum jam)
+    if (Math.abs(ia - ib) !== 1 && Math.abs(ia - ib) !== n - 1) return;   // hanya sisi bertetangga
+    if (ib === (ia + n - 1) % n) { nx = -nx; ny = -ny; }
+    labels.push({ pos: [(q[0] + r[0]) / 2, (q[1] + r[1]) / 2], text: m[3].trim(), n: [nx, ny] });
+  });
+  const tk = poly.reduce((best, q, i) => (q[0] > poly[best][0] ? i : best), 0);
+  const lp = p.panjang != null && String(p.panjang).trim() !== '' ? String(p.panjang).trim() + (/^[\d.,]+$/.test(String(p.panjang).trim()) && p.satuan ? ' ' + p.satuan : '') : '';
+  if (lp) labels.push({ pos: [(poly[tk][0] + back[tk][0]) / 2, (poly[tk][1] + back[tk][1]) / 2], text: lp, n: [0.7, -0.7] });
+  const siku = [];
+  if (!/^(tidak|no|false|0)$/i.test(String(p.siku || ''))) {
+    for (let i = 0; i < n; i++) {
+      const a = poly[(i + n - 1) % n], v = poly[i], c = poly[(i + 1) % n];
+      const u1 = [a[0] - v[0], a[1] - v[1]], u2 = [c[0] - v[0], c[1] - v[1]];
+      const l1 = Math.hypot(u1[0], u1[1]), l2 = Math.hypot(u2[0], u2[1]);
+      if (l1 > 1e-9 && l2 > 1e-9 && Math.abs(u1[0] * u2[0] + u1[1] * u2[1]) / (l1 * l2) < 1e-6) siku.push({ v, a, b: c });
+    }
+  }
+  const fills = /^(ya|yes|true|1)$/i.test(String(p.arsir || '')) ? [{ poly }] : [];
+  const teks = p.teks ? [{ pos: [cx, cy], text: String(p.teks) }] : [];
+  const vertices = /^(ya|yes|true|1)$/i.test(String(p.huruf || '')) ? poly.concat(back).map((q, i) => {
+    const vx = q[0] - cx, vy = q[1] - cy, m2 = Math.hypot(vx, vy) || 1;
+    return { pos: q, name: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[i] || '', n: [vx / m2, vy / m2] };
+  }) : [];
+  return { edges, siku, labels, vertices, fills, teks, tanpaHurufBawaan: true };
+}
+
 // PATCH EXACTSEARCH (hilang bila wsm/ disinkronkan ulang lewat perbarui-mesin.sh):
 // Kolom tabel dipisah koma, tapi koma juga sah muncul DI DALAM rumus — misalnya
 // "header=$x$,$y$,$(x\text{, }y)$" yang seharusnya 3 kolom. Memecah mentah
@@ -2172,8 +2287,11 @@ function renderSolidSVG(cfg) {
   const areaW = 250, areaH = 200;
 
   const xs = [], ys = [];
+  const arcs = shape.arcs || [];
   edges.forEach((e) => { xs.push(e.a[0], e.b[0]); ys.push(e.a[1], e.b[1]); });
   ellipses.forEach((el) => { xs.push(el.cx - el.rx, el.cx + el.rx); ys.push(el.cy - el.ry, el.cy + el.ry); });
+  arcs.forEach((ar) => { for (let k = 0; k <= 12; k++) { const a = ((ar.a0 + ((ar.a1 - ar.a0) * k) / 12) * Math.PI) / 180; xs.push(ar.cx + ar.rx * Math.cos(a)); ys.push(ar.cy + ar.ry * Math.sin(a)); } });
+  (shape.fills || []).forEach((f) => f.poly.forEach((q) => { xs.push(q[0]); ys.push(q[1]); }));
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   const minY = Math.min(...ys), maxY = Math.max(...ys);
   const spanX = Math.max(maxX - minX, 1e-6), spanY = Math.max(maxY - minY, 1e-6);
@@ -2191,9 +2309,24 @@ function renderSolidSVG(cfg) {
     return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${warna}" stroke-width="${tebal}"${dashed ? ` stroke-dasharray="${GAYA.putus}"` : ''}/>`;
   };
 
+  // bidang berarsir (mis. penampang prisma) digambar paling dulu
+  (shape.fills || []).forEach((f) => {
+    isi += `<path d="${f.poly.map((q, i) => { const [x, y] = toPx(q[0], q[1]); return (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1); }).join(' ')} Z" fill="#d8d8d8" stroke="none"/>`;
+  });
+  arcs.forEach((ar) => {
+    const pts = [];
+    const n = Math.max(24, Math.ceil(Math.abs(ar.a1 - ar.a0) / 4));
+    for (let k = 0; k <= n; k++) { const a = ((ar.a0 + ((ar.a1 - ar.a0) * k) / n) * Math.PI) / 180; const [x, y] = toPx(ar.cx + ar.rx * Math.cos(a), ar.cy + ar.ry * Math.sin(a)); pts.push(x.toFixed(1) + ',' + y.toFixed(1)); b.titik(x, y, 1); }
+    isi += `<polyline points="${pts.join(' ')}" fill="none" stroke="${ar.dashed ? GAYA.abu : GAYA.hitam}" stroke-width="${ar.dashed ? GAYA.garisBantu + 0.2 : GAYA.garis}"${ar.dashed ? ` stroke-dasharray="${GAYA.putus}"` : ''} stroke-linejoin="round"/>`;
+  });
   ellipses.forEach((el) => {
     const [cx, cy] = toPx(el.cx, el.cy);
     const rx = el.rx * scale, ry = el.ry * scale;
+    if (el.putus) {
+      b.titik(cx - rx - 1, cy - ry - 1); b.titik(cx + rx + 1, cy + ry + 1);
+      isi += `<ellipse cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" rx="${rx.toFixed(1)}" ry="${ry.toFixed(1)}" fill="none" stroke="${GAYA.abu}" stroke-width="${GAYA.garisBantu + 0.2}" stroke-dasharray="${GAYA.putus}"/>`;
+      return;
+    }
     // Kotak batas elips yang sebenarnya; lingkaran berjari-jari max(rx,ry) membuat
     // elips pipih (alas tabung) memberi ruang kosong besar di atas dan bawah gambar.
     b.titik(cx - rx - 1, cy - ry - 1); b.titik(cx + rx + 1, cy + ry + 1);
@@ -2212,6 +2345,24 @@ function renderSolidSVG(cfg) {
     b.titik(x1, y1, 1); b.titik(x2, y2, 1);
     isi += garisRusuk(x1, y1, x2, y2, e.dashed, e.tipis);
   });
+  // garis ukuran berpanah dua ujung dengan tulisan (ukur: [{a,b,text,n}])
+  (shape.ukur || []).forEach((u) => {
+    const [x1, y1] = toPx(u.a[0], u.a[1]), [x2, y2] = toPx(u.b[0], u.b[1]);
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    isi += arrowSVG(mx, my, x1, y1, { headLen: 6, strokeWidth: 1.1 }) + arrowSVG(mx, my, x2, y2, { headLen: 6, strokeWidth: 1.1 });
+    b.titik(x1, y1, 1); b.titik(x2, y2, 1);
+    if (u.text) {
+      const n = u.n || [0, -1];
+      const pos = letakTeksLuar(mx, my, n[0], -n[1], 9);
+      isi += teksGeoSVG(pos, u.text, GAYA.teks, false, true);
+      b.teks(pos.x, pos.y, u.text, GAYA.teks, pos.anchor);
+    }
+  });
+  (shape.teks || []).forEach((t2) => {
+    const [x, y] = toPx(t2.pos[0], t2.pos[1]);
+    isi += teksGeoSVG({ x, y: y + 4, anchor: 'middle' }, t2.text, GAYA.teks, false, false);
+    b.teks(x, y + 4, t2.text, GAYA.teks, 'middle');
+  });
   (shape.siku || []).forEach((s) => {
     const v = toPx(s.v[0], s.v[1]), a = toPx(s.a[0], s.a[1]), c = toPx(s.b[0], s.b[1]);
     isi += rightAngleSVG(v[0], v[1], a[0], a[1], c[0], c[1], 8);
@@ -2229,7 +2380,7 @@ function renderSolidSVG(cfg) {
   });
   // huruf=tidak: tanpa nama titik sudut, seperti gambar limas/prisma di
   // naskah Checkpoint yang hanya memberi ukuran.
-  const tanpaHuruf = /^(tidak|no|false|0)$/i.test(String(cfg.huruf || '').trim());
+  const tanpaHuruf = /^(tidak|no|false|0)$/i.test(String(cfg.huruf || '').trim()) || (shape.tanpaHurufBawaan && !shape.vertices.length);
   (tanpaHuruf ? [] : shape.vertices || []).forEach((v) => {
     const [x, y] = toPx(v.pos[0], v.pos[1]);
     const pos = letakTeksLuar(x, y, v.n[0], -v.n[1], 7, 12.5);
