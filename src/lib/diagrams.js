@@ -3253,6 +3253,55 @@ function sketsaSikuTinggi(cfg) {
   };
 }
 
+// ---- Sketsa: daerah berbatas garis lurus dan busur (soal radian A-Level) -------------
+// Jalur: "B^(A)D^(C)B" — titik berurutan; antar titik "-" garis lurus, "~(P)" busur berlawanan arah
+// jarum jam (tampak di layar) berpusat di P, "^(P)" busur searah jarum jam. Jalur ditutup otomatis.
+function parseJalurSketsa(str) {
+  const t = String(str || '').replace(/\s+/g, '');
+  const nama = [], seg = [];
+  let i = 0;
+  const baca = () => { const m = t.slice(i).match(/^[.A-Za-z_][A-Za-z0-9_.']*/); if (!m) return null; i += m[0].length; return m[0]; };
+  const n0 = baca(); if (!n0) return null;
+  nama.push(n0);
+  while (i < t.length) {
+    const sep = t[i];
+    if (sep !== '-' && sep !== '~' && sep !== '^') return null;
+    i++;
+    let pusat = null;
+    if (sep !== '-') {
+      if (t[i] !== '(') return null;
+      const j = t.indexOf(')', i); if (j < 0) return null;
+      pusat = t.slice(i + 1, j); i = j + 1;
+    }
+    const n = baca(); if (!n) return null;
+    nama.push(n); seg.push({ sep, pusat });
+  }
+  return { nama, seg };
+}
+
+// Satu segmen busur P1 -> P2 mengelilingi C (koordinat layar). Mengembalikan perintah path SVG "A ..." dan titik contoh untuk batas.
+function busurSegmenSVG(p1, p2, c, ccw) {
+  const r = Math.hypot(p1[0] - c[0], p1[1] - c[1]);
+  const a1 = Math.atan2(p1[1] - c[1], p1[0] - c[0]), a2 = Math.atan2(p2[1] - c[1], p2[0] - c[0]);
+  const TP = 2 * Math.PI;
+  const delta = ccw ? (((a1 - a2) % TP) + TP) % TP : (((a2 - a1) % TP) + TP) % TP;
+  const contoh = [];
+  for (let k = 0; k <= 12; k++) { const a = a1 + (ccw ? -1 : 1) * delta * (k / 12); contoh.push([c[0] + r * Math.cos(a), c[1] + r * Math.sin(a)]); }
+  return { d: `A${r.toFixed(1)} ${r.toFixed(1)} 0 ${delta > Math.PI ? 1 : 0} ${ccw ? 0 : 1} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`, contoh };
+}
+
+function jalurKePath(jalur, px, b, tutup) {
+  if (!jalur || jalur.nama.some((n) => px[n] === undefined) || jalur.seg.some((g) => g.pusat && px[g.pusat] === undefined)) return '';
+  let d = `M${px[jalur.nama[0]][0].toFixed(1)} ${px[jalur.nama[0]][1].toFixed(1)}`;
+  jalur.seg.forEach((g, k) => {
+    const p1 = px[jalur.nama[k]], p2 = px[jalur.nama[k + 1]];
+    if (g.sep === '-') { d += ` L${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`; b.titik(p2[0], p2[1]); }
+    else { const a = busurSegmenSVG(p1, p2, px[g.pusat], g.sep === '~'); d += ' ' + a.d; a.contoh.forEach((q) => b.titik(q[0], q[1])); }
+  });
+  b.titik(px[jalur.nama[0]][0], px[jalur.nama[0]][1]);
+  return d + (tutup ? ' Z' : '');
+}
+
 function renderSketsaSVG(cfg) {
   if (/siku-?tinggi/i.test(String(cfg.bentuk || ''))) cfg = Object.assign({}, cfg, sketsaSikuTinggi(cfg));
   const semua = parseVertexList(cfg.titik);
@@ -3271,7 +3320,43 @@ function renderSketsaSVG(cfg) {
   const b = kotakBatas();
   let isi = '';
   const garisSVG = (p, q, dash) => `<line x1="${p[0].toFixed(1)}" y1="${p[1].toFixed(1)}" x2="${q[0].toFixed(1)}" y2="${q[1].toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}" stroke-linecap="round"${dash ? ` stroke-dasharray="${GAYA.putus}"` : ''}/>`;
+  // daerah=C~(M)D^(O)C|B-C-D : daerah tertutup berbatas garis dan busur, diarsir abu-abu (daerah dipisah |)
+  String(cfg.daerah || '').split('|').map((t) => t.trim()).filter(Boolean).forEach((t) => {
+    const d = jalurKePath(parseJalurSketsa(t), px, b, true);
+    if (d) isi += `<path d="${d}" fill="${BAGIAN_FILL}" stroke="none"/>`;
+  });
   garis.forEach((s) => { isi += garisSVG(px[s[0]], px[s[1]], false); });
+  // lengkung=B^(A)D|C~(M)D menggambar busur (garis penuh); lengkungputus= putus-putus; rel= busur bergaris rel
+  [['lengkung', false, ''], ['lengkungputus', true, ''], ['rel', false, 'rel']].forEach(([kunci, dash, gaya]) => {
+    String(cfg[kunci] || '').split('|').map((t) => t.trim()).filter(Boolean).forEach((t) => {
+      const d = jalurKePath(parseJalurSketsa(t), px, b, false);
+      if (!d) return;
+      if (gaya === 'rel') isi += `<path d="${d}" fill="none" stroke="${GAYA.hitam}" stroke-width="7" stroke-dasharray="1.4 2.6"/><path d="${d}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+      else isi += `<path d="${d}" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}" stroke-linecap="round"${dash ? ` stroke-dasharray="${GAYA.putus}"` : ''}/>`;
+    });
+  });
+  // ukur=A-B:3 cm menggambar garis ukuran berpanah dua ujung dengan tulisan; ukur=A-B:6 cm:1 hanya satu panah (di B)
+  parseEntriSketsa(cfg.ukur).forEach((e) => {
+    const [a, c] = e.kunci;
+    if (!ada(a) || !ada(c)) return;
+    const [x1, y1] = px[a], [x2, y2] = px[c];
+    isi += arrowSVG((x1 + x2) / 2, (y1 + y2) / 2, x1, y1, { headLen: 7, strokeWidth: 1.1 }) + arrowSVG((x1 + x2) / 2, (y1 + y2) / 2, x2, y2, { headLen: 7, strokeWidth: 1.1 });
+    if (e.teks) {
+      const mx = (x1 + x2) / 2, my = (y1 + y2) / 2, len = Math.hypot(x2 - x1, y2 - y1) || 1;
+      isi += teksGeoSVG({ x: mx - (y2 - y1) / len * 10, y: my + (x2 - x1) / len * 10 + 4, anchor: 'middle' }, e.teks, 11, false, true);
+      b.teks(mx - (y2 - y1) / len * 10, my + (x2 - x1) / len * 10 + 4, e.teks, 11, 'middle');
+    }
+  });
+  // teks=R@.p|R2@.q menulis tulisan (huruf miring) di titik bantu — untuk menamai daerah
+  String(cfg.teks || '').split('|').map((t) => t.trim()).filter(Boolean).forEach((t) => {
+    const at = t.lastIndexOf('@');
+    if (at < 1) return;
+    const nama = t.slice(at + 1).trim(), isiTeks = t.slice(0, at).trim();
+    if (!ada(nama)) return;
+    const [tx, ty] = px[nama];
+    isi += teksGeoSVG({ x: tx, y: ty + 4, anchor: 'middle' }, isiTeks, 12.5, true, false);
+    b.teks(tx, ty + 4, isiTeks, 12.5, 'middle');
+  });
   putus.forEach((s) => { isi += garisSVG(px[s[0]], px[s[1]], true); });
   sinar.forEach((s) => { isi += arrowSVG(px[s[0]][0], px[s[0]][1], px[s[1]][0], px[s[1]][1], { headLen: 8, strokeWidth: GAYA.garis }); });
   // busur=A:5|B:6 — busur jangka berpusat di titik A berjari-jari 5 (satuan
@@ -3292,7 +3377,7 @@ function renderSketsaSVG(cfg) {
     }
     const [cx, cy] = px[nm], rp = r * skala;
     const titikBusur = (deg) => [cx + rp * Math.cos((deg * Math.PI) / 180), cy - rp * Math.sin((deg * Math.PI) / 180)];
-    const langkah = 24;
+    const langkah = Math.max(24, Math.ceil(Math.abs(a1 - a0) / 4));
     let d = '';
     for (let i = 0; i <= langkah; i++) {
       const [x, y] = titikBusur(a0 + ((a1 - a0) * i) / langkah);
