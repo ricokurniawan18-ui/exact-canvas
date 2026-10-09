@@ -10660,6 +10660,111 @@ function renderSiklusNitrogenSVG(cfg) {
   return bungkusGambarSVG(isi, b, false);
 }
 
+
+// ---------------------------------------------------------------------
+// Alat ukur massa dan volume: neraca tiga lengan, gelas ukur
+// ---------------------------------------------------------------------
+
+// Satu gelas ukur bersekala dengan cairan setinggi `vol` (mL). Mengembalikan {svg, lebar}.
+function gelasUkurSatu(x0, vol, kap, benda) {
+  const tbl = { 10: [0.2, 1], 25: [0.5, 5], 50: [1, 10], 100: [2, 10], 250: [5, 50], 500: [10, 100] };
+  const [minor, major] = tbl[kap] || [kap / 50, kap / 5];
+  const W = 46, yAtas = 22, yBawah = 196;                 // dinding tabung (tinggi sekala 0..kap)
+  const y0 = yBawah - 6, yK = yAtas + 8;                  // y untuk 0 mL dan kap mL
+  const yOf = (v) => y0 - (y0 - yK) * (v / kap);
+  let s = '';
+  const yc = yOf(Math.max(0, Math.min(kap, vol)));
+  // cairan dengan meniskus cekung
+  s += `<path d="M${x0 + 1.5} ${(yc - 3).toFixed(1)} Q${x0 + W / 2} ${(yc + 5).toFixed(1)} ${x0 + W - 1.5} ${(yc - 3).toFixed(1)} L${x0 + W - 1.5} ${yBawah - 2} L${x0 + 1.5} ${yBawah - 2} Z" fill="#dcdcdc" stroke="none"/>`;
+  s += `<path d="M${x0 + 1.5} ${(yc - 3).toFixed(1)} Q${x0 + W / 2} ${(yc + 5).toFixed(1)} ${x0 + W - 1.5} ${(yc - 3).toFixed(1)}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+  if (benda) {
+    const bx = x0 + W / 2, by = yBawah - 18;
+    s += `<path d="M${bx - 10} ${by + 6} Q${bx - 14} ${by - 8} ${bx - 2} ${by - 10} Q${bx + 12} ${by - 12} ${bx + 12} ${by} Q${bx + 14} ${by + 10} ${bx} ${by + 12} Q${bx - 8} ${by + 14} ${bx - 10} ${by + 6} Z" fill="#8d8d8d" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+  }
+  // dinding, dasar, dan bibir bertuang
+  s += `<path d="M${x0 - 3} ${yAtas - 4} L${x0} ${yAtas} L${x0} ${yBawah} L${x0 + W} ${yBawah} L${x0 + W} ${yAtas} L${x0 + W + 3} ${yAtas - 4}" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}" stroke-linejoin="round"/>`;
+  s += `<path d="M${x0 - 10} ${yBawah + 10} L${x0 - 6} ${yBawah + 4} L${x0 + W + 6} ${yBawah + 4} L${x0 + W + 10} ${yBawah + 10} Z" fill="#cfcfcf" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+  s += `<line x1="${x0 + W}" y1="${yBawah}" x2="${x0 + W}" y2="${yBawah + 4}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+  // sekala di sisi kanan dinding (ke dalam), angka di kanan
+  const jml = Math.round(kap / minor);
+  for (let i = 0; i <= jml; i++) {
+    const v = i * minor, y = yOf(v), besar = Math.abs(v / major - Math.round(v / major)) < 1e-6;
+    s += `<line x1="${x0 + W}" y1="${y.toFixed(1)}" x2="${x0 + W - (besar ? 14 : 7)}" y2="${y.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="${besar ? 1.3 : 0.8}"/>`;
+    if (besar) s += `<text x="${x0 + W + 7}" y="${(y + 3.6).toFixed(1)}" font-size="10" fill="${GAYA.hitam}">${Math.round(v * 10) / 10}</text>`;
+  }
+  return { svg: s, lebar: W + 30 };
+}
+
+function renderGelasUkurSVG(cfg) {
+  const volTunggal = cfg.volume != null && String(cfg.volume).trim() !== '' ? numOrDefault(cfg.volume, 30) : null;
+  const awal = numOrDefault(cfg.awal, NaN), akhir = numOrDefault(cfg.akhir, NaN);
+  const dua = isFinite(awal) && isFinite(akhir);
+  const maxVol = dua ? Math.max(awal, akhir) : (volTunggal != null ? volTunggal : 30);
+  const piliham = [10, 25, 50, 100, 250, 500];
+  const kap = numOrDefault(cfg.kapasitas, NaN) || (piliham.find((k) => k >= maxVol * 1.15) || 500);
+  const b = kotakBatas();
+  let isi = '';
+  const unit = String(cfg.satuan || 'mL').trim();
+  if (dua) {
+    const a = gelasUkurSatu(0, awal, kap, false), c = gelasUkurSatu(a.lebar + 48, akhir, kap, !tidakFis(cfg.benda));
+    isi += a.svg + c.svg;
+    isi += arrowSVG(a.lebar + 4, 110, a.lebar + 38, 110, { headLen: 7, strokeWidth: 1.5 });
+    b.titik(-12, 8); b.titik(a.lebar + 48 + c.lebar + 6, 214);
+    isi += teksFis(b, 20, 12, unit, 'middle', { size: GAYA.teksKecil, italic: true }) + teksFis(b, a.lebar + 48 + 20, 12, unit, 'middle', { size: GAYA.teksKecil, italic: true });
+  } else {
+    const a = gelasUkurSatu(0, maxVol, kap, false);
+    isi += a.svg;
+    b.titik(-12, 8); b.titik(a.lebar + 6, 214);
+    isi += teksFis(b, 20, 12, unit, 'middle', { size: GAYA.teksKecil, italic: true });
+  }
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Neraca tiga lengan: tiga lengan berskala dengan beban geser; bacaan = jumlah ketiganya.
+function renderNeracaSVG(cfg) {
+  const massa = Math.max(0, Math.min(610, numOrDefault(cfg.massa, 235.4)));
+  const ratus = Math.min(500, Math.floor(massa / 100 + 1e-9) * 100);
+  const puluh = Math.floor((massa - ratus) / 10 + 1e-9) * 10;
+  const satuan = Math.round((massa - ratus - puluh) * 10) / 10;
+  const b = kotakBatas();
+  let isi = '';
+  const x0 = 96, W = 190;
+  // piring dan tiang
+  isi += `<path d="M10 176 Q40 196 70 176" fill="#e3e3e3" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+  isi += gFis(40, 188, 40, 226, { tebal: 3 });
+  isi += `<path d="M18 230 L62 230 L58 222 L22 222 Z" fill="#cfcfcf" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+  isi += gFis(40, 176, 40, 160, { tebal: 1.6 }) + gFis(40, 160, x0 - 6, 156, { tebal: 1.6 });
+  if (!tidakFis(cfg.benda)) isi += `<ellipse cx="40" cy="167" rx="11" ry="9" fill="#9a9a9a" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+  b.titik(8, 150); b.titik(70, 234);
+  const lengan = [
+    { y: 34, max: 500, notch: 100, kecil: 0, label: 100, nilai: ratus },
+    { y: 92, max: 100, notch: 10, kecil: 0, label: 10, nilai: puluh },
+    { y: 150, max: 10, notch: 1, kecil: 0.1, label: 1, nilai: satuan },
+  ];
+  lengan.forEach((L) => {
+    const xOf = (v) => x0 + (W - 20) * (v / L.max) + 6;
+    isi += `<rect x="${x0 - 6}" y="${L.y}" width="${W}" height="11" fill="#f2f2f2" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    const n = Math.round(L.max / (L.kecil || L.notch));
+    for (let i = 0; i <= n; i++) {
+      const v = i * (L.kecil || L.notch), x = xOf(v);
+      const besar = Math.abs(v / L.label - Math.round(v / L.label)) < 1e-6;
+      const sedang = L.kecil && Math.abs(v / 0.5 - Math.round(v / 0.5)) < 1e-6;
+      isi += gFis(x, L.y, x, L.y - (besar ? 9 : sedang ? 6 : 3.5), { tebal: besar ? 1.3 : 0.8 });
+      if (besar) isi += `<text x="${x.toFixed(1)}" y="${L.y - 11}" text-anchor="middle" font-size="9.5" fill="${GAYA.hitam}">${Math.round(v * 10) / 10}</text>`;
+    }
+    const xr = xOf(L.nilai);
+    isi += `<path d="M${(xr - 7).toFixed(1)} ${L.y + 24} L${(xr - 3).toFixed(1)} ${L.y + 11} L${(xr + 3).toFixed(1)} ${L.y + 11} L${(xr + 7).toFixed(1)} ${L.y + 24} Z" fill="#8d8d8d" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    b.titik(x0 - 6, L.y - 14); b.titik(x0 + W, L.y + 26);
+  });
+  // penunjuk keseimbangan di ujung kanan lengan paling bawah: dua garis acuan dan jarum di tengah
+  const xp = x0 + W + 16, yp = 156;
+  isi += gFis(xp - 9, yp - 14, xp + 9, yp - 14, { tebal: 1.2 }) + gFis(xp - 9, yp + 14, xp + 9, yp + 14, { tebal: 1.2 });
+  isi += `<line x1="${xp - 15}" y1="${yp}" x2="${xp - 1}" y2="${yp}" stroke="${GAYA.hitam}" stroke-width="2.4"/>`;
+  isi += gFis(xp, yp - 20, xp, yp + 20, { tebal: 1, warna: GAYA.abu });
+  b.titik(xp + 12, yp + 22);
+  return bungkusGambarSVG(isi, b, false);
+}
+
 const FIGURE_PANEL_LABELS = 'abcdefgh';
 
 function renderFigureHTML(headRaw, panelsRaw, depth) {
@@ -10860,6 +10965,8 @@ const DIAGRAM_TYPE_ALIASES = {
   kromatografi: 'kromatografi', chromatography: 'kromatografi', kromatogram: 'kromatografi',
   skalaph: 'skalaph', ph: 'skalaph', phscale: 'skalaph',
   selelektro: 'selelektro', selgalvani: 'selelektro', voltaik: 'selelektro', electrochemicalcell: 'selelektro',
+  gelasukur: 'gelasukur', silinderukur: 'gelasukur', measuringcylinder: 'gelasukur',
+  neraca: 'neraca', neracatigalengan: 'neraca', triplebeam: 'neraca', balance: 'neraca',
   bandul: 'bandul', pendulum: 'bandul', ayunan: 'bandul',
   osiloskop: 'osiloskop', cro: 'osiloskop', oscilloscope: 'osiloskop',
   fasebulan: 'fasebulan', moonphases: 'fasebulan', posisibulan: 'fasebulan',
@@ -11271,6 +11378,8 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'skalaph') svg = renderSkalaPhSVG(params);
     else if (type === 'selelektro') svg = renderSelElektroSVG(params);
     else if (type === 'kolomfraksi') svg = renderKolomFraksiSVG(params);
+    else if (type === 'gelasukur') svg = renderGelasUkurSVG(params);
+    else if (type === 'neraca') svg = renderNeracaSVG(params);
     else if (type === 'bandul') svg = renderBandulSVG(params);
     else if (type === 'osiloskop') svg = renderOsiloskopSVG(params);
     else if (type === 'fasebulan') svg = renderFaseBulanSVG(params);
