@@ -12012,6 +12012,7 @@ const DIAGRAM_TYPE_ALIASES = {
   sektor: 'sektor', juring: 'sektor',
   garisbilangan: 'garisbilangan',
   tumbuhan: 'tumbuhan', tanaman: 'tumbuhan', plant: 'tumbuhan',
+  gantung: 'gantung', muatangantung: 'gantung', bandulmuatan: 'gantung', bolagantung: 'gantung',
   keping: 'keping', kapasitorkeping: 'keping', kepingsejajar: 'keping',
   muatan: 'muatan', muatantitik: 'muatan', coulomb: 'muatan', listrikstatis: 'muatan',
   lorentz: 'lorentz', gayalorentz: 'lorentz', tangankanan: 'lorentz', kaidahtangankanan: 'lorentz', sumbu3d: 'lorentz',
@@ -12440,6 +12441,142 @@ function renderKepingSVG(cfg) {
     const t = String(cfg.tegangan);
     isi += `<text x="${mx}" y="${yb + 28}" font-size="12" text-anchor="middle" fill="${GAYA.hitam}">${escText(t)}</text>`;
     b.teks(mx, yb + 28, t, 12, 'middle'); b.titik(x1, yb + 14);
+  }
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// ---------------------------------------------------------------------
+// Muatan digantung tali: dua bola bermuatan dari satu titik gantung (saling
+// tolak) atau dua penggantung (tarik-menarik), atau satu bola dalam medan
+// listrik seragam. Gaya T, mg, F seimbang: F = mg tan θ.
+//   jumlah=2; muatan=+q,+q; sudut=30 (atau θ); panjang=L; jarak=r; gaya=ya
+//   jumlah=1; muatan=+q; medan=kanan; keping=ya
+// ---------------------------------------------------------------------
+function renderGantungSVG(cfg) {
+  const b = kotakBatas();
+  let isi = '';
+  const ya = (v) => /^(ya|iya|true|1)$/i.test(String(v || '').trim());
+  const jumlah = String(cfg.jumlah || '2').trim() === '1' ? 1 : 2;
+  const daftar = String(cfg.muatan || (jumlah === 1 ? '+q' : '+q,+q')).split(',').map((t) => t.trim()).filter(Boolean);
+  const tanda = (t) => (/^[-−]/.test(t) ? -1 : 1);
+  const sudutRaw = String(cfg.sudut == null ? '' : cfg.sudut).trim();
+  const sudutAngka = /^[\d.]+$/.test(sudutRaw) ? parseFloat(sudutRaw) : 25;
+  const th = (Math.max(5, Math.min(60, sudutAngka)) * Math.PI) / 180;
+  const labelSudut = sudutRaw === '' ? 'θ' : (/^[\d.]+$/.test(sudutRaw) ? sudutRaw + '°' : sudutRaw);
+  const L = 150, R = 11;
+  const labelGaya = String(cfg.labelgaya || 'T,mg,F').split(',').map((t) => t.trim());
+
+  // Langit-langit berarsir di atas titik gantung.
+  const langit = (x0, x1) => {
+    let s = `<line x1="${x0}" y1="0" x2="${x1}" y2="0" stroke="${GAYA.hitam}" stroke-width="1.6"/>`;
+    for (let x = x0 + 4; x < x1; x += 9) s += `<line x1="${x}" y1="0" x2="${x - 7}" y2="-7" stroke="${GAYA.hitam}" stroke-width="0.9"/>`;
+    b.titik(x0, -8); b.titik(x1, 0);
+    return s;
+  };
+  // arah: +1 bola menyimpang ke kanan, -1 ke kiri. Mengembalikan pusat bola.
+  const bola = (px, arah, teks) => {
+    const bx = px + arah * L * Math.sin(th), by = L * Math.cos(th);
+    isi += `<line x1="${px}" y1="0" x2="${bx.toFixed(1)}" y2="${by.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+    // Garis tegak acuan + busur sudut θ.
+    isi += `<line x1="${px}" y1="0" x2="${px}" y2="${(L * Math.cos(th) + 4).toFixed(1)}" stroke="${GAYA.abu}" stroke-width="0.9" stroke-dasharray="${GAYA.putus}"/>`;
+    const r = 34;
+    const ax = px + arah * r * Math.sin(th), ay = r * Math.cos(th);
+    isi += `<path d="M${px} ${r} A${r} ${r} 0 0 ${arah > 0 ? 0 : 1} ${ax.toFixed(1)} ${ay.toFixed(1)}" fill="none" stroke="${GAYA.hitam}" stroke-width="0.9"/>`;
+    const lx = px + arah * (r + 10) * Math.sin(th / 2), ly = (r + 10) * Math.cos(th / 2) + 4;
+    isi += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="12" font-style="italic" text-anchor="middle" fill="${GAYA.hitam}">${escText(labelSudut)}</text>`;
+    const tnd = tanda(teks);
+    isi += `<circle cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="${R}" fill="${tnd < 0 ? '#d9d9d9' : GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+    isi += `<text x="${bx.toFixed(1)}" y="${(by + 5).toFixed(1)}" font-size="14" font-weight="700" text-anchor="middle" fill="${GAYA.hitam}">${tnd < 0 ? '−' : '+'}</text>`;
+    const nama = teks.replace(/^[+\-−]\s*/, '');
+    if (nama) {
+      const pos = letakTeksLuar(bx, by, arah * 0.6, 0.8, R + 4, 12);
+      isi += `<text x="${pos.x.toFixed(1)}" y="${pos.y.toFixed(1)}" font-size="12" font-style="italic" text-anchor="${pos.anchor}" fill="${GAYA.hitam}">${escText(teks.replace('-', '−'))}</text>`;
+      b.teks(pos.x, pos.y, teks, 12, pos.anchor);
+    }
+    b.titik(bx, by, R + 2);
+    if (cfg.panjang) {
+      // Di sepertiga atas tali, di sisi luar (menjauhi garis tegak): bagian
+      // bawah tali dipakai panah T.
+      const mx = px + (bx - px) * 0.3, my = by * 0.3;
+      const pos = letakTeksLuar(mx, my, arah * Math.cos(th), -Math.sin(th), 8, 12);
+      isi += `<text x="${pos.x.toFixed(1)}" y="${pos.y.toFixed(1)}" font-size="12" font-style="italic" text-anchor="${pos.anchor}" fill="${GAYA.hitam}">${escText(String(cfg.panjang))}</text>`;
+      b.teks(pos.x, pos.y, String(cfg.panjang), 12, pos.anchor);
+    }
+    return [bx, by];
+  };
+  // Panah gaya seimbang pada bola: T sepanjang tali, mg ke bawah, F mendatar.
+  const gayaPada = (bx, by, px, arahF) => {
+    if (!ya(cfg.gaya)) return;
+    const w = 58, F = w * Math.tan(th), T = w / Math.cos(th);
+    const panah = (dx, dy, len, teks) => {
+      const x2 = bx + dx * (len + R), y2 = by + dy * (len + R);
+      isi += arrowSVG(bx + dx * R, by + dy * R, x2, y2, { headLen: 8, strokeWidth: 1.5 });
+      const pos = letakTeksLuar(x2, y2, dx, dy, 8, 12.5);
+      isi += `<text x="${pos.x.toFixed(1)}" y="${pos.y.toFixed(1)}" font-size="12.5" font-style="italic" text-anchor="${pos.anchor}" fill="${GAYA.hitam}" stroke="${GAYA.putih}" stroke-width="3" paint-order="stroke">${escText(teks)}</text>`;
+      b.teks(pos.x, pos.y, teks, 12.5, pos.anchor); b.titik(x2, y2, 4);
+    };
+    const ux = px - bx, uy = -by, m = Math.hypot(ux, uy);
+    panah(ux / m, uy / m, T * 0.75, labelGaya[0] || 'T');
+    panah(0, 1, w, labelGaya[1] || 'mg');
+    panah(arahF, 0, Math.max(F, 22), labelGaya[2] || 'F');
+  };
+
+  if (jumlah === 2) {
+    const q1 = daftar[0] || '+q', q2 = daftar[1] || q1;
+    const tolak = tanda(q1) === tanda(q2);
+    let pusat;
+    if (tolak) {
+      isi += langit(-60, 60);
+      const p1 = bola(0, -1, q1), p2 = bola(0, 1, q2);
+      gayaPada(p1[0], p1[1], 0, -1); gayaPada(p2[0], p2[1], 0, 1);
+      pusat = [p1, p2];
+    } else {
+      // Tarik-menarik: dua penggantung, bola condong saling mendekat.
+      // Celah antarbola cukup untuk dua panah F berlabel yang saling menghadap.
+      const Fpx = Math.max(58 * Math.tan(th), 22);
+      const jarakGantung = 2 * L * Math.sin(th) + (ya(cfg.gaya) ? 2 * (Fpx + R) + 46 : 70);
+      isi += langit(-jarakGantung / 2 - 40, jarakGantung / 2 + 40);
+      const p1 = bola(-jarakGantung / 2, 1, q1), p2 = bola(jarakGantung / 2, -1, q2);
+      gayaPada(p1[0], p1[1], -jarakGantung / 2, 1); gayaPada(p2[0], p2[1], jarakGantung / 2, -1);
+      pusat = [p1, p2];
+    }
+    if (cfg.jarak) {
+      const [a, c] = pusat, yU = a[1] + R + 22;
+      isi += `<line x1="${a[0].toFixed(1)}" y1="${(a[1] + R + 2).toFixed(1)}" x2="${a[0].toFixed(1)}" y2="${(yU + 5).toFixed(1)}" stroke="${GAYA.abu}" stroke-width="0.8"/>`;
+      isi += `<line x1="${c[0].toFixed(1)}" y1="${(c[1] + R + 2).toFixed(1)}" x2="${c[0].toFixed(1)}" y2="${(yU + 5).toFixed(1)}" stroke="${GAYA.abu}" stroke-width="0.8"/>`;
+      isi += garisDimensiDuaPanahSVG(a[0], yU, c[0], yU);
+      const t = String(cfg.jarak);
+      isi += `<text x="${((a[0] + c[0]) / 2).toFixed(1)}" y="${(yU + 15).toFixed(1)}" font-size="12" font-style="italic" text-anchor="middle" fill="${GAYA.hitam}">${escText(t)}</text>`;
+      b.teks((a[0] + c[0]) / 2, yU + 15, t, 12, 'middle');
+    }
+  } else {
+    // Satu bola dalam medan seragam: menyimpang searah qE.
+    const q = daftar[0] || '+q';
+    const arahMedan = /kiri/i.test(String(cfg.medan || 'kanan')) ? -1 : 1;
+    const arah = arahMedan * tanda(q);
+    isi += langit(-50, 50);
+    const p = bola(0, arah, q);
+    gayaPada(p[0], p[1], 0, arah);
+    if (ya(cfg.keping)) {
+      const xk = L * Math.sin(th) + 74;
+      [-xk, xk].forEach((x, i) => {
+        isi += `<rect x="${(x - 3).toFixed(1)}" y="-4" width="6" height="${L + 30}" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+        const kiriPlus = arahMedan > 0;
+        const tnd = (i === 0) === kiriPlus ? '+' : '−';
+        for (let y = 14; y < L + 20; y += 26) isi += `<text x="${(x + (i === 0 ? -10 : 10)).toFixed(1)}" y="${y}" font-size="12" font-weight="700" text-anchor="middle" fill="${GAYA.hitam}">${tnd}</text>`;
+        b.titik(x + (i === 0 ? -16 : 16), L + 28);
+      });
+    }
+    // Panah medan di bawah panah mg (keping sudah menyatakan arah medan).
+    const yMedan = L * Math.cos(th) + (ya(cfg.gaya) ? R + 96 : 40);
+    if (!ya(cfg.keping)) for (let k = 0; k < 2; k++) {
+      const y = yMedan + k * 20, x0 = -70, x1 = 70;
+      isi += arrowSVG(arahMedan > 0 ? x0 : x1, y, arahMedan > 0 ? x1 : x0, y, { headLen: 7, strokeWidth: 1, color: GAYA.abu });
+      b.titik(x0, y); b.titik(x1, y);
+    }
+    const yE = yMedan;
+    if (!ya(cfg.keping)) isi += `<text x="${(arahMedan > 0 ? 82 : -82)}" y="${yE + 14}" font-size="12.5" font-style="italic" text-anchor="${arahMedan > 0 ? 'start' : 'end'}" fill="${GAYA.hitam}">${escText(String(cfg.namamedan || 'E'))}</text>`;
+    if (!ya(cfg.keping)) b.teks(arahMedan > 0 ? 82 : -82, yE + 14, 'E', 12.5, arahMedan > 0 ? 'start' : 'end');
   }
   return bungkusGambarSVG(isi, b, false);
 }
@@ -12886,6 +13023,7 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'lorentz') svg = renderLorentzSVG(params);
     else if (type === 'muatan') svg = renderMuatanSVG(params);
     else if (type === 'keping') svg = renderKepingSVG(params);
+    else if (type === 'gantung') svg = renderGantungSVG(params);
     else if (type === 'aliranenergi') svg = renderEnergyFlowSVG(params);
     else if (type === 'jodohkan') svg = renderMatchingSVG(params);
     else if (type === 'statistik') svg = renderStatSVG(params);
@@ -13088,7 +13226,7 @@ if (typeof module !== 'undefined') {
     componentSVG, parseCircuitComponent, CIRCUIT_KINDS,
     renderLabApparatusSVG, LAB_APPARATUS,
     renderCircleTheoremSVG, renderNetSVG, renderViewsSVG, CIRCLE_THEOREMS, SOLID_NETS, SOLID_VIEWS,
-    renderPunnettSVG, renderDichotomousKeySVG, renderPlantSVG, renderLorentzSVG, renderMuatanSVG, renderKepingSVG, renderEnergyFlowSVG, renderMatchingSVG, renderFoodWebSVG, splitGenotype, gametesOf, combineGametes, phenotypeOf,
+    renderPunnettSVG, renderDichotomousKeySVG, renderPlantSVG, renderLorentzSVG, renderMuatanSVG, renderKepingSVG, renderGantungSVG, renderEnergyFlowSVG, renderMatchingSVG, renderFoodWebSVG, splitGenotype, gametesOf, combineGametes, phenotypeOf,
     renderFigureHTML, renderImageHTML, setImageResolver, resetFigureCounter, applyAnnotations,
     extractDiagramTags, substituteDiagramTokens, setModeSiswaDiagram, GEOMETRY_PRESETS, SOLID_PRESETS, LEWIS_PRESETS, VSEPR_PRESETS,
   };
