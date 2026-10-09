@@ -12197,6 +12197,7 @@ const DIAGRAM_TYPE_ALIASES = {
   sektor: 'sektor', juring: 'sektor',
   garisbilangan: 'garisbilangan',
   tumbuhan: 'tumbuhan', tanaman: 'tumbuhan', plant: 'tumbuhan',
+  ruanggabungan: 'ruanggabungan', bangungabungan: 'ruanggabungan', gabungan: 'ruanggabungan', sisilengkung: 'ruanggabungan',
   benzena: 'benzena', benzene: 'benzena', aromatik: 'benzena', turunanbenzena: 'benzena',
   roda: 'roda', hubunganroda: 'roda', rodaroda: 'roda',
   pv: 'pv', diagrampv: 'pv', termodinamika: 'pv', grafikpv: 'pv',
@@ -12640,6 +12641,117 @@ function renderKepingSVG(cfg) {
     const t = String(cfg.tegangan);
     isi += `<text x="${mx}" y="${yb + 28}" font-size="12" text-anchor="middle" fill="${GAYA.hitam}">${escText(t)}</text>`;
     b.teks(mx, yb + 28, t, 12, 'middle'); b.titik(x1, yb + 14);
+  }
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// ---------------------------------------------------------------------
+// Bangun ruang gabungan sisi lengkung (SMP): bagian disusun dari atas ke
+// bawah pada satu sumbu tegak.
+//   bagian=belahan:7|tabung:7:10   (jenis:jari[:tinggi]; terpancung:ratas:rbawah:tinggi)
+//   jenis: tabung, kerucut (puncak ke luar), belahan (setengah bola), terpancung
+//   isi=bola:4 (bola-bola di dalam tabung); satuan=cm; ukur=tidak
+// ---------------------------------------------------------------------
+function renderRuangGabunganSVG(cfg) {
+  const satuan = String(cfg.satuan == null ? 'cm' : cfg.satuan).trim();
+  const bagian = String(cfg.bagian || 'tabung:7:10').split('|').map((t) => t.trim()).filter(Boolean).map((t) => {
+    const a = t.split(':').map((x) => x.trim());
+    const n = (i, d) => { const v = parseFloat(String(a[i] == null ? '' : a[i]).replace(',', '.')); return isFinite(v) && v > 0 ? v : d; };
+    const jenis = a[0].toLowerCase();
+    if (jenis === 'terpancung') return { jenis, rA: n(1, 4), rB: n(2, 7), t: n(3, 8), teksT: a[3] };
+    if (jenis === 'belahan' || jenis === 'setengahbola') return { jenis: 'belahan', r: n(1, 7), t: n(1, 7) };
+    return { jenis, r: n(1, 7), t: n(2, jenis === 'kerucut' ? 8 : 10), teksT: a[2] };
+  });
+  if (!bagian.length) throw new Error('ruanggabungan perlu bagian=..., mis. belahan:7|tabung:7:10');
+  const rMaks = Math.max(...bagian.map((p) => p.r || Math.max(p.rA, p.rB)));
+  const tTotal = bagian.reduce((a, p) => a + p.t, 0);
+  const sk = Math.min(80 / rMaks, 230 / tTotal);
+  const K = 0.3; // rasio elips
+  const b = kotakBatas();
+  let isi = '';
+  const garis = (x1, y1, x2, y2, putus, w) => `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${putus ? GAYA.abu : GAYA.hitam}" stroke-width="${w || 1.5}"${putus ? ` stroke-dasharray="${GAYA.putus}"` : ''}/>`;
+  // Elips: separuh depan (bawah) penuh, separuh belakang (atas) putus-putus bila tersembunyi.
+  const elips = (cy, r, belakangTampak) => {
+    const rx = r * sk, ry = r * sk * K;
+    if (rx < 0.5) return '';
+    b.titik(-rx, cy - ry); b.titik(rx, cy + ry);
+    return `<path d="M${-rx} ${cy} A${rx} ${ry} 0 0 0 ${rx} ${cy}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.5"/>`
+      + `<path d="M${-rx} ${cy} A${rx} ${ry} 0 0 1 ${rx} ${cy}" fill="none" stroke="${belakangTampak ? GAYA.hitam : GAYA.abu}" stroke-width="${belakangTampak ? 1.5 : 1.1}"${belakangTampak ? '' : ` stroke-dasharray="${GAYA.putus}"`}/>`;
+  };
+  let y = 0;
+  const batas = []; // [y, r] tiap sambungan
+  bagian.forEach((p, i) => {
+    const atas = i === 0, bawah = i === bagian.length - 1;
+    const h = p.t * sk;
+    if (p.jenis === 'tabung') {
+      const rx = p.r * sk;
+      isi += garis(-rx, y, -rx, y + h) + garis(rx, y, rx, y + h);
+      if (atas) isi += elips(y, p.r, true);
+      batas.push([y + h, p.r, bawah]);
+      b.titik(-rx, y); b.titik(rx, y + h);
+    } else if (p.jenis === 'kerucut') {
+      const rx = p.r * sk;
+      if (atas) { isi += garis(0, y, -rx, y + h) + garis(0, y, rx, y + h); batas.push([y + h, p.r, bawah]); }
+      else { isi += garis(-rx, y, 0, y + h) + garis(rx, y, 0, y + h); }
+      b.titik(-rx, y); b.titik(rx, y + h);
+    } else if (p.jenis === 'belahan') {
+      const rx = p.r * sk;
+      // Setengah bola: busur luar (penuh) — ke atas bila di puncak, ke bawah bila di dasar.
+      if (atas) { isi += `<path d="M${-rx} ${y + h} A${rx} ${h} 0 0 1 ${rx} ${y + h}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.5"/>`; batas.push([y + h, p.r, bawah]); }
+      else { isi += `<path d="M${-rx} ${y} A${rx} ${h} 0 0 0 ${rx} ${y}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.5"/>`; }
+      b.titik(-rx, y); b.titik(rx, y + h);
+    } else if (p.jenis === 'terpancung') {
+      const ra = p.rA * sk, rb = p.rB * sk;
+      isi += garis(-ra, y, -rb, y + h) + garis(ra, y, rb, y + h);
+      if (atas) isi += elips(y, p.rA, true);
+      batas.push([y + h, p.rB, bawah]);
+      b.titik(-Math.max(ra, rb), y); b.titik(Math.max(ra, rb), y + h);
+    } else {
+      throw new Error('ruanggabungan: bagian "' + p.jenis + '" tidak dikenal (tabung, kerucut, belahan, terpancung)');
+    }
+    y += h;
+  });
+  // Sambungan antarbagian dan dasar: elips (belakang putus-putus). Dasar
+  // yang ditutup belahan/kerucut di bawahnya tidak tampak depannya.
+  batas.forEach(([yy, r, dasar], i) => {
+    const berikut = bagian[bagian.findIndex((q, j) => j > 0 && Math.abs(bagian.slice(0, j).reduce((a, q2) => a + q2.t * sk, 0) - yy) < 0.5)];
+    isi += elips(yy, r, false);
+    void berikut; void dasar; void i;
+  });
+  // isi=bola:4 — bola-bola sama besar bertumpuk di dalam tabung (bola tepat menyinggung).
+  const mIsi = String(cfg.isi || '').match(/^bola:(\d+)$/i);
+  if (mIsi) {
+    const tb = bagian.find((p) => p.jenis === 'tabung');
+    if (tb) {
+      const n = parseInt(mIsi[1], 10), y0 = bagian.slice(0, bagian.indexOf(tb)).reduce((a, q) => a + q.t * sk, 0);
+      const rb = Math.min(tb.r * sk, (tb.t * sk) / n / 2);
+      for (let k = 0; k < n; k++) {
+        const cy = y0 + rb + k * 2 * rb;
+        isi += `<circle cx="0" cy="${cy.toFixed(1)}" r="${rb.toFixed(1)}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+        isi += `<path d="M${-rb} ${cy} A${rb} ${rb * K} 0 0 0 ${rb} ${cy}" fill="none" stroke="${GAYA.abu}" stroke-width="0.9" stroke-dasharray="3 3"/>`;
+      }
+    }
+  }
+  // Ukuran: tinggi tiap bagian (kanan) dan diameter terbesar (bawah).
+  if (!/^(tidak|no|false|0)$/i.test(String(cfg.ukur || ''))) {
+    const xU = rMaks * sk + 22;
+    let yy = 0;
+    const tulis = (x, y2, t, anchor) => { isi += `<text x="${x.toFixed(1)}" y="${y2.toFixed(1)}" font-size="12" text-anchor="${anchor}" fill="${GAYA.hitam}">${escText(t)}</text>`; b.teks(x, y2, t, 12, anchor); };
+    const fmt = (v) => (/^[\d.,]+$/.test(String(v)) ? v + (satuan ? ' ' + satuan : '') : String(v));
+    bagian.forEach((p) => {
+      const h = p.t * sk;
+      if (p.jenis !== 'belahan' && p.teksT != null && p.teksT !== '') {
+        isi += garisDimensiDuaPanahSVG(xU, yy, xU, yy + h);
+        tulis(xU + 6, yy + h / 2 + 4, fmt(p.teksT), 'start');
+      }
+      yy += h;
+    });
+    if (cfg.tinggi) { isi += garisDimensiDuaPanahSVG(-rMaks * sk - 22, 0, -rMaks * sk - 22, y); tulis(-rMaks * sk - 28, y / 2 + 4, fmt(cfg.tinggi), 'end'); }
+    const yD = y + rMaks * sk * K + 18;
+    const diam = cfg.diameter != null ? cfg.diameter : 2 * rMaks;
+    isi += garisDimensiDuaPanahSVG(-rMaks * sk, yD, rMaks * sk, yD);
+    tulis(0, yD + 15, fmt(diam), 'middle');
+    b.titik(xU + 50, yD + 18);
   }
   return bungkusGambarSVG(isi, b, false);
 }
@@ -15149,6 +15261,7 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'tegar') svg = renderTegarSVG(params);
     else if (type === 'roda') svg = renderRodaSVG(params);
     else if (type === 'benzena') svg = renderBenzenaSVG(params);
+    else if (type === 'ruanggabungan') svg = renderRuangGabunganSVG(params);
     else if (type === 'pv') svg = renderPVSVG(params);
     else if (type === 'alatoptik') svg = renderAlatOptikSVG(params);
     else if (type === 'aliranenergi') svg = renderEnergyFlowSVG(params);
@@ -15353,7 +15466,7 @@ if (typeof module !== 'undefined') {
     componentSVG, parseCircuitComponent, CIRCUIT_KINDS,
     renderLabApparatusSVG, LAB_APPARATUS,
     renderCircleTheoremSVG, renderNetSVG, renderViewsSVG, CIRCLE_THEOREMS, SOLID_NETS, SOLID_VIEWS,
-    renderPunnettSVG, renderDichotomousKeySVG, renderPlantSVG, renderLorentzSVG, renderMuatanSVG, renderKepingSVG, renderGantungSVG, renderGarisSejajarSVG, formatSudutGS, parsePertidaksamaan, renderLuasArsirSVG, renderDimensiTigaSVG, renderOrbitalSVG, konfigurasiElektron, renderStasionerSVG, renderRiakSVG, renderElektromagnetSVG, renderCerminSVG, renderAlatOptikSVG, renderStrukturOrganikSVG, uraiRumusOrganik, renderTegarSVG, renderRodaSVG, renderPVSVG, renderBenzenaSVG, rumusSubskrip, hitungDiagram, angkaDalamTeks, renderEnergyFlowSVG, renderMatchingSVG, renderFoodWebSVG, splitGenotype, gametesOf, combineGametes, phenotypeOf,
+    renderPunnettSVG, renderDichotomousKeySVG, renderPlantSVG, renderLorentzSVG, renderMuatanSVG, renderKepingSVG, renderGantungSVG, renderGarisSejajarSVG, formatSudutGS, parsePertidaksamaan, renderLuasArsirSVG, renderDimensiTigaSVG, renderOrbitalSVG, konfigurasiElektron, renderStasionerSVG, renderRiakSVG, renderElektromagnetSVG, renderCerminSVG, renderAlatOptikSVG, renderStrukturOrganikSVG, uraiRumusOrganik, renderTegarSVG, renderRodaSVG, renderPVSVG, renderBenzenaSVG, rumusSubskrip, renderRuangGabunganSVG, hitungDiagram, angkaDalamTeks, renderEnergyFlowSVG, renderMatchingSVG, renderFoodWebSVG, splitGenotype, gametesOf, combineGametes, phenotypeOf,
     renderFigureHTML, renderImageHTML, setImageResolver, resetFigureCounter, applyAnnotations,
     extractDiagramTags, substituteDiagramTokens, setModeSiswaDiagram, GEOMETRY_PRESETS, SOLID_PRESETS, LEWIS_PRESETS, VSEPR_PRESETS,
   };
