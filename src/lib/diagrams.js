@@ -12832,9 +12832,11 @@ function renderCerminSVG(cfg) {
   const kiri = X(jangkau), kanan = cembung ? Math.max(40, (Math.abs(sBay) || 0) * k + 30, 2 * fAbs * k + 20) : 30;
   isi += garis(kiri, 0, kanan, 0, false, 0.9);
   // Cermin: busur tipis, arsir di belakang.
-  const tinggiC = 74, lengkung = cembung ? -10 : 10;
+  // Lengkung kuadrat x = L·(y/T)²: cekung (menghadap benda di kiri) ujungnya
+  // melengkung ke arah benda -> L negatif ")"; cembung menonjol ke benda -> "(".
+  const tinggiC = 74, lengkung = cembung ? 10 : -10;
   isi += `<path d="M${lengkung} ${-tinggiC} Q${-lengkung} 0 ${lengkung} ${tinggiC}" fill="none" stroke="${GAYA.hitam}" stroke-width="2.4"/>`;
-  for (let y = -tinggiC + 6; y < tinggiC; y += 10) { const xx = lengkung * (1 - 2 * (1 - (y / tinggiC) ** 2)) * -1 + 0; isi += garis(xx + 2, y, xx + 9, y - 6, false, 0.8); }
+  for (let y = -tinggiC + 6; y < tinggiC; y += 10) { const xx = lengkung * (y / tinggiC) ** 2; isi += garis(xx + 2, y, xx + 9, y - 6, false, 0.8); }
   // Titik F dan M di sisi yang benar.
   const xF = cembung ? fAbs * k : X(fAbs), xM = cembung ? 2 * fAbs * k : X(2 * fAbs);
   [[xF, 'F'], [xM, cfg.namaM || 'M']].forEach(([x, t]) => { isi += `<circle cx="${x.toFixed(1)}" cy="0" r="2.6" fill="${GAYA.hitam}"/>`; isi += teksHaloSVG(x, 15, t, { size: 12, italic: true }); });
