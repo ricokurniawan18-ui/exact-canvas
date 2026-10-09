@@ -12472,7 +12472,7 @@ function pisahAtas(teks, pemisah) {
   return out;
 }
 
-function renderLuasArsirSVG(cfg) {
+function uraiLuasArsir(cfg) {
   const titik = {};
   parseVertexList(cfg.titik).forEach((v) => { titik[v.name] = [v.x, v.y]; });
   const ARAH_SETENGAH = { atas: [0, 180], bawah: [180, 360], kiri: [90, 270], kanan: [-90, 90] };
@@ -12505,6 +12505,11 @@ function renderLuasArsirSVG(cfg) {
     return { positif, negatif };
   });
   const garisU = daftarUnsur(cfg.garis), putusU = daftarUnsur(cfg.putus);
+  return { titik, unsur, suku, garisU, putusU };
+}
+
+function renderLuasArsirSVG(cfg) {
+  const { titik, suku, garisU, putusU } = uraiLuasArsir(cfg);
 
   // Batas data dari semua unsur dan titik.
   const xs = [], ys = [];
@@ -13332,6 +13337,161 @@ function renderMatchingSVG(cfg) {
   return bungkusGambarSVG(isi, b, false);
 }
 
+// ---------------------------------------------------------------------
+// Hitung besaran dari diagram, untuk dicocokkan dengan kunci/pembahasan
+// (validator Worksheet). Mengembalikan { nilai: [{nama, nilai, satuan}],
+// masalah: [teks] } — nilai dicari di pembahasan, masalah = isi diagram yang
+// bertentangan dengan dirinya sendiri.
+// ---------------------------------------------------------------------
+const HITUNG_CACHE = new Map();
+
+function didalamUnsur(u, x, y) {
+  if (u.jenis === 'lingkaran') return (x - u.c[0]) ** 2 + (y - u.c[1]) ** 2 <= u.r * u.r;
+  if (u.jenis === 'juring') {
+    if ((x - u.c[0]) ** 2 + (y - u.c[1]) ** 2 > u.r * u.r) return false;
+    const lebar = u.a1 - u.a0;
+    let a = (Math.atan2(y - u.c[1], x - u.c[0]) * 180) / Math.PI - u.a0;
+    a = ((a % 360) + 360) % 360;
+    return a <= lebar + 1e-9;
+  }
+  if (u.jenis === 'poligon') {
+    if (u.titik.length < 3) return false;
+    let dalam = false;
+    for (let i = 0, j = u.titik.length - 1; i < u.titik.length; j = i++) {
+      const [xi, yi] = u.titik[i], [xj, yj] = u.titik[j];
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) dalam = !dalam;
+    }
+    return dalam;
+  }
+  return false;
+}
+
+function luasArsirNumerik(cfg) {
+  const { suku } = uraiLuasArsir(cfg);
+  if (!suku.length) return null;
+  const xs = [], ys = [];
+  suku.forEach((sk) => sk.positif.forEach((u) => {
+    if (u.jenis === 'poligon') u.titik.forEach(([x, y]) => { xs.push(x); ys.push(y); });
+    else { xs.push(u.c[0] - u.r, u.c[0] + u.r); ys.push(u.c[1] - u.r, u.c[1] + u.r); }
+  }));
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const N = 520, dx = (x1 - x0) / N, dy = (y1 - y0) / N;
+  let hit = 0;
+  for (let i = 0; i < N; i++) {
+    const x = x0 + (i + 0.5) * dx;
+    for (let j = 0; j < N; j++) {
+      const y = y0 + (j + 0.5) * dy;
+      if (suku.some((sk) => sk.positif.every((u) => didalamUnsur(u, x, y)) && !sk.negatif.some((u) => didalamUnsur(u, x, y)))) hit++;
+    }
+  }
+  return hit * dx * dy;
+}
+
+function nilaiPenggantiRangkaian(cfg) {
+  const tipe = String(cfg.tipe || 'seri').toLowerCase();
+  if (tipe === 'multiloop') return null;
+  let blocks;
+  if (cfg.susunan) blocks = parseCircuitSusunan(cfg.susunan);
+  else {
+    const comps = String(cfg.komponen || '').split(',').map((t) => t.trim()).filter(Boolean).map(parseCircuitComponent);
+    blocks = tipe === 'paralel' ? [{ type: 'parallel', comps }] : comps.map((c) => ({ type: 'series', comp: c }));
+  }
+  const semua = blocks.flatMap((bl) => (bl.type === 'parallel' ? bl.comps : [bl.comp]));
+  if (!semua.length || semua.some((c) => !isFinite(c.value) || c.value <= 0)) return null;
+  const jenis = semua.every((c) => c.kind === 'kapasitor') ? 'kapasitor' : semua.every((c) => c.kind === 'resistor') ? 'resistor' : null;
+  if (!jenis) return null;
+  // Kapasitor: seri = kebalikan, paralel = jumlah; resistor kebalikannya.
+  const seri = (v) => (jenis === 'resistor' ? v.reduce((a, c) => a + c, 0) : 1 / v.reduce((a, c) => a + 1 / c, 0));
+  const paralel = (v) => (jenis === 'resistor' ? 1 / v.reduce((a, c) => a + 1 / c, 0) : v.reduce((a, c) => a + c, 0));
+  const tiapBlok = blocks.map((bl) => (bl.type === 'parallel' ? paralel(bl.comps.map((c) => c.value)) : bl.comp.value));
+  const total = tiapBlok.length === 1 ? tiapBlok[0] : seri(tiapBlok);
+  return { nama: jenis === 'kapasitor' ? 'kapasitas pengganti' : 'hambatan pengganti', nilai: total, satuan: jenis === 'kapasitor' ? 'μF' : 'Ω' };
+}
+
+function cekSudutGarisSejajar(cfg) {
+  const masalah = [];
+  const angka = (t) => (/^\s*\d+(?:[.,]\d+)?\s*°?\s*$/.test(t) ? parseFloat(t.replace(',', '.')) : null);
+  const entri = String(cfg.sudut || '').split('|').map((t) => t.trim()).filter(Boolean).map((t) => {
+    const k = t.indexOf(':');
+    return { kunci: (k >= 0 ? t.slice(0, k) : t).trim(), v: k >= 0 ? angka(t.slice(k + 1).split(':')[0]) : null };
+  }).filter((e) => e.v != null);
+  const jenis = String(cfg.jenis || 'potong').toLowerCase();
+  if (jenis === 'potong') {
+    // Satu garis potong: sudut 1 & 3 sama, 2 & 4 = 180 - sudut 1, di SEMUA
+    // titik potong garis itu (sehadap, berseberangan, bertolak belakang).
+    const potong = String(cfg.potong || '62').split(',').map((t) => t.trim()).filter(Boolean);
+    const nS = Math.max(2, Math.min(4, parseInt(cfg.sejajar, 10) || 2));
+    const nama = String(cfg.titik || '').split(',').map((t) => t.trim());
+    const garisKe = {};
+    for (let i = 0; i < potong.length * nS; i++) garisKe[nama[i] || String.fromCharCode(65 + i)] = Math.floor(i / nS);
+    const dasar = {};
+    entri.forEach((e) => {
+      const m = e.kunci.match(/^(.*?)(\d+)$/);
+      if (!m) return;
+      let g, q;
+      if (m[1]) { g = garisKe[m[1]]; q = parseInt(m[2], 10); } else { const n = parseInt(m[2], 10); g = Math.floor((n - 1) / 4 / nS); q = ((n - 1) % 4) + 1; }
+      if (g == null || q < 1 || q > 4) return;
+      const d = q % 2 === 1 ? e.v : 180 - e.v;
+      if (dasar[g] && Math.abs(dasar[g].d - d) > 0.5) {
+        masalah.push(`sudut ${dasar[g].kunci} = ${dasar[g].v}° dan ${e.kunci} = ${e.v}° tidak mungkin pada satu garis potong yang sama (seharusnya sama besar atau berjumlah 180°)`);
+      } else if (!dasar[g]) dasar[g] = { d, kunci: e.kunci, v: e.v };
+    });
+  } else if (jenis === 'segitiga') {
+    const v = {};
+    entri.forEach((e) => { v[e.kunci.toUpperCase()] = e.v; });
+    const A = v.A != null ? v.A : v['C-KIRI'] != null ? v['C-KIRI'] : v['A-LUAR'] != null ? 180 - v['A-LUAR'] : null;
+    const B = v.B != null ? v.B : v['C-KANAN'] != null ? v['C-KANAN'] : v['B-LUAR'] != null ? 180 - v['B-LUAR'] : null;
+    if (v.A != null && v['C-KIRI'] != null && Math.abs(v.A - v['C-KIRI']) > 0.5) masalah.push(`sudut A (${v.A}°) dan sudut C-kiri (${v['C-KIRI']}°) berseberangan dalam, seharusnya sama`);
+    if (v.B != null && v['C-KANAN'] != null && Math.abs(v.B - v['C-KANAN']) > 0.5) masalah.push(`sudut B (${v.B}°) dan sudut C-kanan (${v['C-KANAN']}°) berseberangan dalam, seharusnya sama`);
+    if (A != null && B != null && v.C != null && Math.abs(A + B + v.C - 180) > 0.5) masalah.push(`sudut segitiga ${A}° + ${B}° + ${v.C}° = ${A + B + v.C}°, bukan 180°`);
+  }
+  return masalah;
+}
+
+function hitungDiagram(tag) {
+  const kunci = String(tag);
+  if (HITUNG_CACHE.has(kunci)) return HITUNG_CACHE.get(kunci);
+  const hasil = { nilai: [], masalah: [] };
+  try {
+    const k = kunci.indexOf(':');
+    const type = DIAGRAM_TYPE_ALIASES[(k > -1 ? kunci.slice(0, k) : kunci).trim().toLowerCase()];
+    const cfg = parseTagParams(k > -1 ? kunci.slice(k + 1) : '');
+    if (type === 'luasarsir' && cfg.arsir) {
+      const L = luasArsirNumerik(cfg);
+      if (L != null && L > 0) hasil.nilai.push({ nama: 'luas daerah arsir', nilai: L, satuan: '' });
+    } else if (type === 'rangkaian') {
+      const r = nilaiPenggantiRangkaian(cfg);
+      if (r) hasil.nilai.push(r);
+    } else if (type === 'garissejajar') {
+      hasil.masalah.push(...cekSudutGarisSejajar(cfg));
+    }
+  } catch (e) { /* tag rusak dilaporkan pemeriksa lain */ }
+  if (HITUNG_CACHE.size > 300) HITUNG_CACHE.clear();
+  HITUNG_CACHE.set(kunci, hasil);
+  return hasil;
+}
+
+// Angka-angka yang muncul di teks kunci/pembahasan, termasuk bentuk π
+// ("50π − 100", "12\pi", "(100 - 25\pi)") dan pecahan sederhana (3/2).
+function angkaDalamTeks(teks) {
+  const t = String(teks || '').replace(/\\pi\b/g, 'π').replace(/\\(?:left|right|,|;|!|quad|text\{[^}]*\})/g, ' ')
+    .replace(/\\(?:times|cdot)/g, '×').replace(/−/g, '-').replace(/(\d)\.(\d{3})(?!\d)/g, '$1$2').replace(/(\d),(\d)/g, '$1.$2')
+    .replace(/\\frac\{([\d.]+)\}\{([\d.]+)\}/g, '($1/$2)');
+  const out = [];
+  (t.match(/\d+(?:\.\d+)?/g) || []).forEach((n) => out.push(parseFloat(n)));
+  (t.match(/\((\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)\)|\b(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)\b/g) || []).forEach((f) => {
+    const [a, b] = f.replace(/[()]/g, '').split('/').map(parseFloat); if (b) out.push(a / b);
+  });
+  // a π, a ± bπ, aπ ± b
+  const re = /(\d+(?:\.\d+)?)?\s*π(?:\s*([+-])\s*(\d+(?:\.\d+)?)(?!\s*π))?|(\d+(?:\.\d+)?)\s*([+-])\s*(\d+(?:\.\d+)?)?\s*π/g;
+  let m;
+  while ((m = re.exec(t))) {
+    if (m[4] != null) { const b = m[6] != null ? parseFloat(m[6]) : 1; out.push(parseFloat(m[4]) + (m[5] === '-' ? -1 : 1) * b * Math.PI); }
+    else { const a = m[1] != null ? parseFloat(m[1]) : 1; const v = a * Math.PI; out.push(v); if (m[3] != null) out.push(v + (m[2] === '-' ? -1 : 1) * parseFloat(m[3])); }
+  }
+  return out;
+}
+
 function parseTitikList(raw) {
   if (!raw) return [];
   return String(raw).split(',').map((s) => s.trim()).filter(Boolean).map((pair) => {
@@ -13626,7 +13786,7 @@ if (typeof module !== 'undefined') {
     componentSVG, parseCircuitComponent, CIRCUIT_KINDS,
     renderLabApparatusSVG, LAB_APPARATUS,
     renderCircleTheoremSVG, renderNetSVG, renderViewsSVG, CIRCLE_THEOREMS, SOLID_NETS, SOLID_VIEWS,
-    renderPunnettSVG, renderDichotomousKeySVG, renderPlantSVG, renderLorentzSVG, renderMuatanSVG, renderKepingSVG, renderGantungSVG, renderGarisSejajarSVG, formatSudutGS, renderLuasArsirSVG, renderEnergyFlowSVG, renderMatchingSVG, renderFoodWebSVG, splitGenotype, gametesOf, combineGametes, phenotypeOf,
+    renderPunnettSVG, renderDichotomousKeySVG, renderPlantSVG, renderLorentzSVG, renderMuatanSVG, renderKepingSVG, renderGantungSVG, renderGarisSejajarSVG, formatSudutGS, renderLuasArsirSVG, hitungDiagram, angkaDalamTeks, renderEnergyFlowSVG, renderMatchingSVG, renderFoodWebSVG, splitGenotype, gametesOf, combineGametes, phenotypeOf,
     renderFigureHTML, renderImageHTML, setImageResolver, resetFigureCounter, applyAnnotations,
     extractDiagramTags, substituteDiagramTokens, setModeSiswaDiagram, GEOMETRY_PRESETS, SOLID_PRESETS, LEWIS_PRESETS, VSEPR_PRESETS,
   };
