@@ -500,6 +500,27 @@ function renderFunctionGraphSVG(cfg) {
     d += 'L' + toPx(to, 0).map((n) => n.toFixed(1)).join(' ') + ' Z';
     svg += `<path d="${d}" fill="${GAYA.hitam}" fill-opacity="0.12" stroke="none"/>`;
   });
+  // arsirantara=f1,f2:0,3 — daerah DI ANTARA dua kurva dari x=0 sampai 3
+  // (f2 boleh 0 = sumbu x); beberapa daerah dipisah |. Soal luas daerah
+  // dengan integral: "luas daerah yang dibatasi kurva dan garis".
+  String(cfg.arsirantara || '').split('|').map((t) => t.trim()).filter(Boolean).forEach((t) => {
+    const m = t.match(/^([^,:]+),([^,:]+):\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)$/);
+    if (!m) return;
+    const fnDari = (k) => { const sp = activeFns.find((f) => f.key === k.trim()); if (sp) return compileExpr(sp.expr); const c = parseFloat(k); return isFinite(c) ? () => c : null; };
+    const g1 = fnDari(m[1]), g2 = fnDari(m[2]);
+    if (!g1 || !g2) return;
+    const from = Math.max(xmin, Math.min(+m[3], +m[4])), to = Math.min(xmax, Math.max(+m[3], +m[4]));
+    if (!(to > from)) return;
+    const steps = 160, atas = [], bawah = [];
+    for (let k = 0; k <= steps; k++) {
+      const x = from + ((to - from) * k) / steps, y1 = g1(x), y2 = g2(x);
+      if (!isFinite(y1) || !isFinite(y2)) continue;
+      atas.push(toPx(x, Math.max(ymin, Math.min(ymax, y1)))); bawah.push(toPx(x, Math.max(ymin, Math.min(ymax, y2))));
+    }
+    if (atas.length < 2) return;
+    const d = atas.map((q, i) => (i ? 'L' : 'M') + q[0].toFixed(1) + ' ' + q[1].toFixed(1)).join(' ') + ' ' + bawah.reverse().map((q) => 'L' + q[0].toFixed(1) + ' ' + q[1].toFixed(1)).join(' ') + ' Z';
+    svg += `<path d="${d}" fill="${GAYA.hitam}" fill-opacity="0.14" stroke="none"/>`;
+  });
 
   const asymptotes = parseAsymptotes(cfg.asimtot).filter((a) => (a.axis === 'x' ? a.value >= xmin && a.value <= xmax : a.value >= ymin && a.value <= ymax));
   asymptotes.forEach((a) => {
@@ -12176,6 +12197,7 @@ const DIAGRAM_TYPE_ALIASES = {
   sektor: 'sektor', juring: 'sektor',
   garisbilangan: 'garisbilangan',
   tumbuhan: 'tumbuhan', tanaman: 'tumbuhan', plant: 'tumbuhan',
+  benzena: 'benzena', benzene: 'benzena', aromatik: 'benzena', turunanbenzena: 'benzena',
   roda: 'roda', hubunganroda: 'roda', rodaroda: 'roda',
   pv: 'pv', diagrampv: 'pv', termodinamika: 'pv', grafikpv: 'pv',
   tegar: 'tegar', bendategar: 'tegar', kesetimbangan: 'tegar', keseimbangan: 'tegar', momengaya: 'tegar',
@@ -12619,6 +12641,54 @@ function renderKepingSVG(cfg) {
     isi += `<text x="${mx}" y="${yb + 28}" font-size="12" text-anchor="middle" fill="${GAYA.hitam}">${escText(t)}</text>`;
     b.teks(mx, yb + 28, t, 12, 'middle'); b.titik(x1, yb + 14);
   }
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// ---------------------------------------------------------------------
+// Turunan benzena: cincin heksagon (lingkaran di dalam atau Kekulé) dengan
+// gugus di posisi 1-6 (posisi 1 di atas, bernomor searah jarum jam).
+//   gugus=1:CH3,2:Cl,4:Cl; cincin=lingkaran|kekule; nomor=ya; nama=...
+// ---------------------------------------------------------------------
+function rumusSubskrip(t) {
+  // CH3 -> CH₃, NO2 -> NO₂ (angka sesudah huruf/kurung jadi subskrip).
+  return String(t).replace(/([A-Za-z)])(\d+)/g, (m, a, n) => a + n.split('').map((c) => '₀₁₂₃₄₅₆₇₈₉'[+c]).join(''));
+}
+
+function renderBenzenaSVG(cfg) {
+  const R = 40, b = kotakBatas();
+  let isi = '';
+  const sudut = (k) => ((-90 + 60 * (k - 1)) * Math.PI) / 180;
+  const v = [1, 2, 3, 4, 5, 6].map((k) => [R * Math.cos(sudut(k)), R * Math.sin(sudut(k))]);
+  const kekule = /kekul/i.test(String(cfg.cincin || ''));
+  v.forEach((p, i) => {
+    const q = v[(i + 1) % 6];
+    isi += `<line x1="${p[0].toFixed(1)}" y1="${p[1].toFixed(1)}" x2="${q[0].toFixed(1)}" y2="${q[1].toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.6"/>`;
+    if (kekule && i % 2 === 0) {
+      // Ikatan rangkap di sisi dalam.
+      const mx = (p[0] + q[0]) / 2, my = (p[1] + q[1]) / 2, k = 0.8;
+      isi += `<line x1="${(p[0] * k + mx * (1 - k) * 0 + p[0] * 0).toFixed(1)}" y1="${(p[1] * k).toFixed(1)}" x2="${(q[0] * k).toFixed(1)}" y2="${(q[1] * k).toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+    }
+    b.titik(p[0], p[1]);
+  });
+  if (!kekule) isi += `<circle cx="0" cy="0" r="${(R * 0.6).toFixed(1)}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+  const gugus = String(cfg.gugus || '').split(',').map((t) => t.trim()).filter(Boolean).map((t) => { const k = t.indexOf(':'); return [parseInt(t.slice(0, k), 10), t.slice(k + 1).trim()]; }).filter(([k, g]) => k >= 1 && k <= 6 && g);
+  gugus.forEach(([k, g]) => {
+    const a = sudut(k), ux = Math.cos(a), uy = Math.sin(a);
+    const x1 = R * ux, y1 = R * uy, x2 = (R + 20) * ux, y2 = (R + 20) * uy;
+    isi += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.6"/>`;
+    const t = rumusSubskrip(g);
+    const pos = letakTeksLuar(x2, y2, ux, uy, 3, 14);
+    isi += `<text x="${pos.x.toFixed(1)}" y="${pos.y.toFixed(1)}" font-size="14" text-anchor="${pos.anchor}" fill="${GAYA.hitam}">${escText(t)}</text>`;
+    b.teks(pos.x, pos.y, t, 14, pos.anchor);
+  });
+  if (/^(ya|iya|true|1)$/i.test(String(cfg.nomor || ''))) {
+    [1, 2, 3, 4, 5, 6].forEach((k) => {
+      const a = sudut(k), r = kekule ? R * 0.62 : R * 0.78;
+      isi += `<text x="${(r * Math.cos(a)).toFixed(1)}" y="${(r * Math.sin(a) + 3.5).toFixed(1)}" font-size="9.5" text-anchor="middle" fill="${GAYA.abu}">${k}</text>`;
+    });
+  }
+  if (cfg.nama) { isi += `<text x="0" y="${R + 46}" font-size="12.5" text-anchor="middle" fill="${GAYA.hitam}">${escText(String(cfg.nama))}</text>`; b.teks(0, R + 46, String(cfg.nama), 12.5, 'middle'); }
+  b.titik(-R - 6, -R - 6); b.titik(R + 6, R + 6);
   return bungkusGambarSVG(isi, b, false);
 }
 
@@ -14936,6 +15006,19 @@ function hitungDiagram(tag) {
       if (r) hasil.nilai.push(r);
     } else if (type === 'garissejajar') {
       hasil.masalah.push(...cekSudutGarisSejajar(cfg));
+    } else if (type === 'grafik' && (cfg.arsir || cfg.arsirantara)) {
+      // Luas daerah arsir grafik: ∫|f| atau ∫|f1 − f2| (Simpson, 400 pias).
+      const fungsi = (k) => { if (cfg[k]) return compileExpr(cfg[k]); const c = parseFloat(k); return isFinite(c) ? () => c : null; };
+      const integral = (h, a, c) => { const n = 400, dx = (c - a) / n; let t = 0; for (let i = 0; i <= n; i++) { const w = i === 0 || i === n ? 1 : i % 2 ? 4 : 2; t += w * Math.abs(h(a + i * dx)); } return (t * dx) / 3; };
+      let total = 0, ada = false;
+      Object.entries(parseCurveRange(cfg.arsir)).forEach(([k, [lo, hi]]) => { const f = fungsi(k); if (f) { total += integral(f, Math.min(lo, hi), Math.max(lo, hi)); ada = true; } });
+      String(cfg.arsirantara || '').split('|').map((t) => t.trim()).filter(Boolean).forEach((t) => {
+        const m = t.match(/^([^,:]+),([^,:]+):\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)$/);
+        if (!m) return;
+        const f1 = fungsi(m[1].trim()), f2 = fungsi(m[2].trim());
+        if (f1 && f2) { total += integral((x) => f1(x) - f2(x), Math.min(+m[3], +m[4]), Math.max(+m[3], +m[4])); ada = true; }
+      });
+      if (ada && isFinite(total) && total > 0) hasil.nilai.push({ nama: 'luas daerah arsir', nilai: total, satuan: '' });
     }
   } catch (e) { /* tag rusak dilaporkan pemeriksa lain */ }
   if (HITUNG_CACHE.size > 300) HITUNG_CACHE.clear();
@@ -15065,6 +15148,7 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'struktur') svg = renderStrukturOrganikSVG(params);
     else if (type === 'tegar') svg = renderTegarSVG(params);
     else if (type === 'roda') svg = renderRodaSVG(params);
+    else if (type === 'benzena') svg = renderBenzenaSVG(params);
     else if (type === 'pv') svg = renderPVSVG(params);
     else if (type === 'alatoptik') svg = renderAlatOptikSVG(params);
     else if (type === 'aliranenergi') svg = renderEnergyFlowSVG(params);
@@ -15269,7 +15353,7 @@ if (typeof module !== 'undefined') {
     componentSVG, parseCircuitComponent, CIRCUIT_KINDS,
     renderLabApparatusSVG, LAB_APPARATUS,
     renderCircleTheoremSVG, renderNetSVG, renderViewsSVG, CIRCLE_THEOREMS, SOLID_NETS, SOLID_VIEWS,
-    renderPunnettSVG, renderDichotomousKeySVG, renderPlantSVG, renderLorentzSVG, renderMuatanSVG, renderKepingSVG, renderGantungSVG, renderGarisSejajarSVG, formatSudutGS, parsePertidaksamaan, renderLuasArsirSVG, renderDimensiTigaSVG, renderOrbitalSVG, konfigurasiElektron, renderStasionerSVG, renderRiakSVG, renderElektromagnetSVG, renderCerminSVG, renderAlatOptikSVG, renderStrukturOrganikSVG, uraiRumusOrganik, renderTegarSVG, renderRodaSVG, renderPVSVG, hitungDiagram, angkaDalamTeks, renderEnergyFlowSVG, renderMatchingSVG, renderFoodWebSVG, splitGenotype, gametesOf, combineGametes, phenotypeOf,
+    renderPunnettSVG, renderDichotomousKeySVG, renderPlantSVG, renderLorentzSVG, renderMuatanSVG, renderKepingSVG, renderGantungSVG, renderGarisSejajarSVG, formatSudutGS, parsePertidaksamaan, renderLuasArsirSVG, renderDimensiTigaSVG, renderOrbitalSVG, konfigurasiElektron, renderStasionerSVG, renderRiakSVG, renderElektromagnetSVG, renderCerminSVG, renderAlatOptikSVG, renderStrukturOrganikSVG, uraiRumusOrganik, renderTegarSVG, renderRodaSVG, renderPVSVG, renderBenzenaSVG, rumusSubskrip, hitungDiagram, angkaDalamTeks, renderEnergyFlowSVG, renderMatchingSVG, renderFoodWebSVG, splitGenotype, gametesOf, combineGametes, phenotypeOf,
     renderFigureHTML, renderImageHTML, setImageResolver, resetFigureCounter, applyAnnotations,
     extractDiagramTags, substituteDiagramTokens, setModeSiswaDiagram, GEOMETRY_PRESETS, SOLID_PRESETS, LEWIS_PRESETS, VSEPR_PRESETS,
   };
