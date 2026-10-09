@@ -10829,6 +10829,112 @@ function renderProyektilSVG(cfg) {
   return bungkusGambarSVG(isi, b, false);
 }
 
+// Lintasan gerak dari ketinggian tertentu: jatuh bebas / lemparan vertikal, gerak horizontal dari tebing,
+// dan parabola dengan sudut dari ketinggian h. Angka pada h, u, sudut hanya mengatur bentuk gambar (g = 10);
+// yang ditulis di gambar hanya label yang diberikan (huruf bila tidak diberikan), jadi jawaban tidak bocor.
+function renderLintasanSVG(cfg) {
+  const mode = String(cfg.mode || 'vertikal').toLowerCase();
+  const g = 10, rad = (d) => (d * Math.PI) / 180;
+  const angka = (v, def) => { const m = String(v == null ? '' : v).replace(',', '.').match(/-?\d*\.?\d+/); return m ? parseFloat(m[0]) : def; };
+  const label = (v, def) => (v == null || String(v).trim() === '' ? def : String(v).trim());
+  const b = kotakBatas();
+  let isi = '';
+  const bola = (x, y) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4.6" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
+  const ukur = (x1, y1, x2, y2) => arrowSVG((x1 + x2) / 2, (y1 + y2) / 2, x1, y1, { headLen: 6, strokeWidth: 1.1 }) + arrowSVG((x1 + x2) / 2, (y1 + y2) / 2, x2, y2, { headLen: 6, strokeWidth: 1.1 });
+  const tanah = (x1, x2) => { b.titik(x1, 0); b.titik(x2, 12); return gFis(x1, 0, x2, 0, { tebal: 2 }) + arsirTumpuanSVG(x1, 0, x2, 0, 0, 1); };
+
+  if (mode === 'vertikal') {
+    const h = Math.max(1, angka(cfg.h, 40));
+    const turun = /bawah/i.test(String(cfg.arah || ''));
+    const v0 = cfg.v0 != null || cfg.u != null ? (turun ? -1 : 1) * Math.abs(angka(cfg.v0 != null ? cfg.v0 : cfg.u, 10)) : 0;
+    const yOf = (t) => h + v0 * t - (g / 2) * t * t;
+    const tPuncak = v0 > 0 ? v0 / g : 0, yp = yOf(tPuncak);
+    const tTiba = (v0 + Math.sqrt(v0 * v0 + 2 * g * h)) / g;
+    const sk = 180 / Math.max(yp, h);
+    const xKe = (t) => (v0 > 0 && t > tPuncak + 1e-9 ? 44 : 0);
+    isi += tanah(-70, 120);
+    isi += ukur(-34, 0, -34, -h * sk) + gFis(-38, -h * sk, 0, -h * sk, { putus: true, warna: GAYA.abu, tebal: 1 });
+    if (!tidakFis(cfg.h)) isi += teksFis(b, -40, -h * sk / 2 + 4, label(cfg.h, 'h'), 'end', { italic: true });
+    b.titik(-70, -yp * sk - 20);
+    isi += bola(0, -h * sk);
+    if (v0 !== 0) {
+      const dir = v0 > 0 ? -1 : 1;
+      isi += arrowSVG(0, -h * sk + dir * 7, 0, -h * sk + dir * 30, { headLen: 8, strokeWidth: 1.9 });
+      isi += teksFis(b, 8, -h * sk + dir * 22 + 4, label(cfg.v0 != null ? cfg.v0 : cfg.u, 'v₀'), 'start', { italic: true });
+    }
+    if (yaFis(cfg.puncak) && v0 > 0) {
+      isi += gFis(-4, -yp * sk, 52, -yp * sk, { putus: true, warna: GAYA.abu, tebal: 1 }) + bola(0, -yp * sk);
+      isi += teksFis(b, 56, -yp * sk + 4, label(cfg.hmaks, 'h maks'), 'start', { italic: true });
+    }
+    String(cfg.waktu || '').split(',').map((x) => parseFloat(x.trim())).filter((t) => isFinite(t) && t > 0 && t < tTiba - 1e-6).forEach((t) => {
+      const x = xKe(t), y = -yOf(t) * sk;
+      isi += bola(x, y) + teksFis(b, x + (x ? 9 : -9), y + 4, `t = ${t} s`, x ? 'start' : 'end', { size: GAYA.teksKecil });
+    });
+    if (yaFis(cfg.mendarat)) isi += bola(v0 > 0 ? 44 : 0, -5);
+    const arahPlus = /bawah/i.test(String(cfg.sumbu || '')) ? 1 : (cfg.sumbu ? -1 : 0);
+    if (arahPlus) { isi += arrowSVG(100, -40, 100, arahPlus < 0 ? -84 : 4, { headLen: 7, strokeWidth: 1.4 }); isi += teksFis(b, 108, arahPlus < 0 ? -80 : 0, '+', 'start', { bold: true }); b.titik(112, -90); }
+    return bungkusGambarSVG(isi, b, true);
+  }
+
+  // horizontal (sudut 0, dari tebing) dan parabola (sudut, dari ketinggian h)
+  const horizontal = mode === 'horizontal';
+  const th = horizontal ? 0 : Math.max(5, Math.min(85, angka(cfg.sudut, 40)));
+  const h0 = Math.max(horizontal ? 1 : 0, angka(cfg.h, horizontal ? 25 : 0));
+  const u = Math.max(1, angka(cfg.u != null ? cfg.u : cfg.v0, horizontal ? 12 : 20));
+  const hAkhir = Math.max(0, angka(cfg.hakhir, 0));
+  const ux = u * Math.cos(rad(th)), uy = u * Math.sin(rad(th));
+  const T = (uy + Math.sqrt(uy * uy + 2 * g * (h0 - hAkhir))) / g;
+  const X = ux * T, tApex = uy > 0 ? uy / g : 0, yApex = h0 + uy * tApex - (g / 2) * tApex * tApex;
+  const sk = Math.min(290 / Math.max(X, 1), 165 / Math.max(yApex, h0, 1));
+  const px = (t) => ux * t * sk, py = (t) => -(h0 + uy * t - (g / 2) * t * t) * sk;
+  isi += tanah(horizontal || h0 > 0 ? -58 : -20, X * sk + 40);
+  if (h0 > 0) {
+    isi += `<path d="M-52 0 L-52 ${(-h0 * sk).toFixed(1)} L0 ${(-h0 * sk).toFixed(1)} L0 0" fill="#ececec" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    b.titik(-58, -h0 * sk - 10);
+  }
+  if (hAkhir > 0) isi += `<path d="M${(X * sk).toFixed(1)} 0 L${(X * sk).toFixed(1)} ${(-hAkhir * sk).toFixed(1)} L${(X * sk + 40).toFixed(1)} ${(-hAkhir * sk).toFixed(1)} L${(X * sk + 40).toFixed(1)} 0" fill="#ececec" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+  const titik = [];
+  for (let i = 0; i <= 90; i++) { const t = (T * i) / 90; titik.push(`${px(t).toFixed(1)},${py(t).toFixed(1)}`); b.titik(px(t), py(t)); }
+  isi += `<polyline points="${titik.join(' ')}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.8" stroke-dasharray="${GAYA.putus}"/>`;
+  isi += bola(0, py(0));
+  const u0 = 52;
+  if (!tidakFis(cfg.u) && !tidakFis(cfg.v0)) {
+    isi += arrowSVG(0, py(0), u0 * Math.cos(rad(th)), py(0) - u0 * Math.sin(rad(th)), { headLen: 8, strokeWidth: 1.9 });
+    isi += teksFis(b, u0 * Math.cos(rad(th)) + 6, py(0) - u0 * Math.sin(rad(th)) - 4, label(cfg.u != null ? cfg.u : cfg.v0, horizontal ? 'v₀' : 'u'), 'start', { italic: true });
+  }
+  if (!horizontal) { isi += busurFis(0, py(0), 26, 0, th) + teksFis(b, 34, py(0) - 5, label(cfg.sudutlabel, `${th}°`), 'start', { size: GAYA.teksKecil }); }
+  if (h0 > 0 && !tidakFis(cfg.h)) isi += ukur(-30, 0, -30, py(0)) + teksFis(b, -36, py(0) / 2 + 4, label(cfg.h, 'h'), 'end', { italic: true });
+  if (hAkhir > 0) isi += ukur(X * sk + 24, 0, X * sk + 24, -hAkhir * sk) + teksFis(b, X * sk + 30, -hAkhir * sk / 2 + 4, label(cfg.hakhirlabel, 'h₂'), 'start', { italic: true });
+  if (yaFis(cfg.puncak) && uy > 0) {
+    isi += gFis(px(tApex), 0, px(tApex), py(tApex), { putus: true, warna: GAYA.abu, tebal: 1 });
+    isi += teksFis(b, px(tApex) + 6, py(tApex) / 2 + 4, label(cfg.hmaks, 'H'), 'start', { italic: true });
+  }
+  if (yaFis(cfg.jangkauan) || (horizontal && !tidakFis(cfg.x))) {
+    const yy = 30;
+    isi += ukur(0, yy, X * sk, yy) + teksFis(b, X * sk / 2, yy + 16, label(horizontal ? cfg.x : cfg.jarak, horizontal ? 'x' : 'R'), 'middle', { italic: true });
+    isi += gFis(0, 4, 0, yy + 4, { putus: true, warna: GAYA.abu, tebal: 1 }) + gFis(X * sk, 4, X * sk, yy + 4, { putus: true, warna: GAYA.abu, tebal: 1 });
+    b.titik(0, yy + 22);
+  }
+  if (yaFis(cfg.vektor)) {
+    const ts = uy > 0 ? [0, tApex, T * 0.8] : [0, T * 0.4, T * 0.8];
+    const vmaks = Math.hypot(ux, uy + g * T), kv = 40 / Math.max(vmaks, 1);
+    ts.forEach((t, k) => {
+      const x = px(t), y = py(t), vx = ux, vy = uy - g * t;
+      const ex = x + vx * kv, ey = y - vy * kv;
+      if (Math.abs(vy) > 0.4) isi += arrowSVG(x, y, x, ey, { headLen: 6, strokeWidth: 1.1, dash: '4 3' });
+      if (Math.abs(vy) > 0.4) isi += arrowSVG(x, y, ex, y, { headLen: 6, strokeWidth: 1.1, dash: '4 3' });
+      isi += arrowSVG(x, y, ex, ey, { headLen: 7, strokeWidth: 1.7 });
+      if (k === ts.length - 1) {
+        isi += teksFis(b, ex + 5, y + 2, 'vₓ', 'start', { size: GAYA.teksKecil, italic: true });
+        if (Math.abs(vy) > 0.4) isi += teksFis(b, x - 5, ey - (vy < 0 ? -10 : 4), 'v_y', 'end', { size: GAYA.teksKecil, italic: true });
+        isi += teksFis(b, ex + 5, ey + (vy < 0 ? 10 : -4), 'v', 'start', { size: GAYA.teksKecil, italic: true });
+      }
+      b.titik(ex + 14, ey + 10);
+    });
+  }
+  return bungkusGambarSVG(isi, b, true);
+}
+
 // Tanur tiup (ekstraksi besi).
 function renderTanurTiupSVG(cfg) {
   const b = kotakBatas();
@@ -11823,6 +11929,7 @@ const DIAGRAM_TYPE_ALIASES = {
   osiloskop: 'osiloskop', cro: 'osiloskop', oscilloscope: 'osiloskop',
   fasebulan: 'fasebulan', moonphases: 'fasebulan', posisibulan: 'fasebulan',
   proyektil: 'proyektil', projectile: 'proyektil', parabola: 'proyektil',
+  lintasan: 'lintasan', jatuhbebas: 'lintasan', gerakvertikal: 'lintasan', parabolaketinggian: 'lintasan',
   tanurtiup: 'tanurtiup', blastfurnace: 'tanurtiup', tanur: 'tanurtiup',
   difusigas: 'difusigas', difusi: 'difusigas', diffusion: 'difusigas',
   pengumpulangas: 'pengumpulangas', gascollection: 'pengumpulangas', kumpulgas: 'pengumpulangas',
@@ -12240,6 +12347,7 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'osiloskop') svg = renderOsiloskopSVG(params);
     else if (type === 'fasebulan') svg = renderFaseBulanSVG(params);
     else if (type === 'proyektil') svg = renderProyektilSVG(params);
+    else if (type === 'lintasan') svg = renderLintasanSVG(params);
     else if (type === 'tanurtiup') svg = renderTanurTiupSVG(params);
     else if (type === 'difusigas') svg = renderDifusiGasSVG(params);
     else if (type === 'pengumpulangas') svg = renderPengumpulanGasSVG(params);
