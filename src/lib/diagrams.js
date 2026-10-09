@@ -1596,8 +1596,11 @@ function renderSebangunSVG(cfg) {
 function renderSectorSVG(cfg) {
   const rGambar = numOrDefault(cfg.jari, 6);
   const labelJari = String(cfg.jari ?? rGambar).trim();
-  const sudutGambar = Math.min(300, Math.max(20, numOrDefault(cfg.sudut, 90)));
-  const labelSudut = String(cfg.sudut ?? sudutGambar).trim();
+  // Sudut dalam derajat; sudut=1.2 rad, sudut=pi/3 atau satuan=radian dibaca sebagai radian.
+  const dalamRadian = /rad|π|pi/i.test(String(cfg.sudut || '')) || /^rad/i.test(String(cfg.satuan || ''));
+  const sb = dalamRadian ? sudutBagian(cfg.sudut, 'radian', 1.2) : null;
+  const sudutGambar = Math.min(300, Math.max(20, sb ? (sb.rad * 180) / Math.PI : numOrDefault(cfg.sudut, 90)));
+  const labelSudut = sb ? sb.teks : String(cfg.sudut ?? sudutGambar).trim();
   const labelBusur = cfg.busur != null ? String(cfg.busur).trim() : '';
 
   const R = 95;
