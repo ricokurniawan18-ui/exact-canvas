@@ -12012,6 +12012,7 @@ const DIAGRAM_TYPE_ALIASES = {
   sektor: 'sektor', juring: 'sektor',
   garisbilangan: 'garisbilangan',
   tumbuhan: 'tumbuhan', tanaman: 'tumbuhan', plant: 'tumbuhan',
+  luasarsir: 'luasarsir', daeraharsir: 'luasarsir', arsirlingkaran: 'luasarsir', gabunganlingkaran: 'luasarsir',
   garissejajar: 'garissejajar', sejajar: 'garissejajar', transversal: 'garissejajar', garispotong: 'garissejajar',
   gantung: 'gantung', muatangantung: 'gantung', bandulmuatan: 'gantung', bolagantung: 'gantung',
   keping: 'keping', kapasitorkeping: 'keping', kepingsejajar: 'keping',
@@ -12444,6 +12445,170 @@ function renderKepingSVG(cfg) {
     b.teks(mx, yb + 28, t, 12, 'middle'); b.titik(x1, yb + 14);
   }
   return bungkusGambarSVG(isi, b, false);
+}
+
+// ---------------------------------------------------------------------
+// Luas daerah arsir (lingkaran SMP): bangun disusun dari unsur sederhana,
+// daerah arsir = rumus gabungan/irisan/selisih unsur.
+//   unsur: kotak(x,y,w,h) lingkaran(cx,cy,r) setengah(cx,cy,r,atas|bawah|kiri|kanan)
+//          seperempat(cx,cy,r,1..4) juring(cx,cy,r,a0,a1) busur(cx,cy,r,a0,a1)
+//          poligon(x1,y1,x2,y2,...) — argumen boleh nama titik (O = dua koordinat)
+//   arsir=kotak(0,0,14,14) - seperempat(0,0,7,1) - ... (+ gabung, & iris, - kurang)
+//   garis=unsur,unsur (tepi penuh)  putus=unsur (tepi putus-putus)
+//   titik=O:7:7,.p:0:-1  noktah=O  ukur=A-B:14 cm  tulis=7 cm@3,8
+// ---------------------------------------------------------------------
+let LUAS_ARSIR_ID = 0;
+
+function pisahAtas(teks, pemisah) {
+  // Pisah di level atas (di luar kurung): pemisah berupa array karakter.
+  const out = []; let kini = '', dalam = 0;
+  for (const c of String(teks)) {
+    if (c === '(') dalam++;
+    if (c === ')') dalam--;
+    if (dalam === 0 && pemisah.indexOf(c) >= 0) { out.push({ isi: kini, op: c }); kini = ''; continue; }
+    kini += c;
+  }
+  out.push({ isi: kini, op: null });
+  return out;
+}
+
+function renderLuasArsirSVG(cfg) {
+  const titik = {};
+  parseVertexList(cfg.titik).forEach((v) => { titik[v.name] = [v.x, v.y]; });
+  const ARAH_SETENGAH = { atas: [0, 180], bawah: [180, 360], kiri: [90, 270], kanan: [-90, 90] };
+  const unsur = (teks) => {
+    const m = String(teks).trim().match(/^([a-z]+)\s*\((.*)\)$/i);
+    if (!m) throw new Error('luasarsir: unsur "' + String(teks).trim() + '" tidak dikenal — tulis mis. lingkaran(7,7,7)');
+    const jenis = m[1].toLowerCase();
+    const arg = [];
+    m[2].split(',').map((t) => t.trim()).filter((t) => t !== '').forEach((t) => {
+      if (titik[t]) arg.push(titik[t][0], titik[t][1]);
+      else if (/^-?[\d.]+$/.test(t)) arg.push(parseFloat(t));
+      else arg.push(t.toLowerCase());
+    });
+    if (jenis === 'kotak' || jenis === 'persegi') return { jenis: 'poligon', titik: [[arg[0], arg[1]], [arg[0] + arg[2], arg[1]], [arg[0] + arg[2], arg[1] + arg[3]], [arg[0], arg[1] + arg[3]]] };
+    if (jenis === 'poligon' || jenis === 'segitiga' || jenis === 'ruas') { const t = []; for (let i = 0; i + 1 < arg.length; i += 2) t.push([arg[i], arg[i + 1]]); return { jenis: 'poligon', titik: t, terbuka: jenis === 'ruas' || t.length === 2 }; }
+    if (jenis === 'lingkaran') return { jenis: 'lingkaran', c: [arg[0], arg[1]], r: arg[2] };
+    if (jenis === 'setengah') { const a = ARAH_SETENGAH[arg[3]] || ARAH_SETENGAH.atas; return { jenis: 'juring', c: [arg[0], arg[1]], r: arg[2], a0: a[0], a1: a[1] }; }
+    if (jenis === 'seperempat') { const q = Math.max(1, Math.min(4, parseInt(arg[3], 10) || 1)); return { jenis: 'juring', c: [arg[0], arg[1]], r: arg[2], a0: (q - 1) * 90, a1: q * 90 }; }
+    if (jenis === 'juring') return { jenis: 'juring', c: [arg[0], arg[1]], r: arg[2], a0: arg[3], a1: arg[4] };
+    if (jenis === 'busur') return { jenis: 'busur', c: [arg[0], arg[1]], r: arg[2], a0: arg[3], a1: arg[4] };
+    throw new Error('luasarsir: jenis unsur "' + jenis + '" tidak dikenal (kotak, lingkaran, setengah, seperempat, juring, busur, poligon)');
+  };
+  const daftarUnsur = (teks) => pisahAtas(teks || '', [',']).map((x) => x.isi.trim()).filter(Boolean).map(unsur);
+
+  // Rumus arsir: suku dipisah + (gabungan); dalam suku: A & B - C - D.
+  const suku = pisahAtas(cfg.arsir || '', ['+', '|']).map((x) => x.isi.trim()).filter(Boolean).map((t) => {
+    const bagian = pisahAtas(t, ['-']);
+    const positif = pisahAtas(bagian[0].isi, ['&']).map((x) => unsur(x.isi));
+    const negatif = bagian.slice(1).map((x) => x.isi.trim()).filter(Boolean).map(unsur);
+    return { positif, negatif };
+  });
+  const garisU = daftarUnsur(cfg.garis), putusU = daftarUnsur(cfg.putus);
+
+  // Batas data dari semua unsur dan titik.
+  const xs = [], ys = [];
+  const catat = (u) => {
+    if (u.jenis === 'poligon') u.titik.forEach(([x, y]) => { xs.push(x); ys.push(y); });
+    else if (u.jenis === 'lingkaran') { xs.push(u.c[0] - u.r, u.c[0] + u.r); ys.push(u.c[1] - u.r, u.c[1] + u.r); }
+    else {
+      const a0 = Math.min(u.a0, u.a1), a1 = Math.max(u.a0, u.a1);
+      if (u.jenis === 'juring') { xs.push(u.c[0]); ys.push(u.c[1]); }
+      for (let a = a0; a <= a1 + 1e-9; a += Math.max(1, (a1 - a0) / 36)) { xs.push(u.c[0] + u.r * Math.cos((a * Math.PI) / 180)); ys.push(u.c[1] + u.r * Math.sin((a * Math.PI) / 180)); }
+    }
+  };
+  suku.forEach((sk) => sk.positif.concat(sk.negatif).forEach(catat));
+  garisU.concat(putusU).forEach(catat);
+  Object.keys(titik).forEach((k) => { xs.push(titik[k][0]); ys.push(titik[k][1]); });
+  if (!xs.length) throw new Error('luasarsir perlu garis= atau arsir= berisi unsur (mis. kotak(0,0,14,14))');
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  const skala = Math.min(240 / Math.max(maxX - minX, 1e-6), 200 / Math.max(maxY - minY, 1e-6));
+  const P = (x, y) => [(x - minX) * skala, (maxY - y) * skala];
+  const f = (v) => v.toFixed(1);
+
+  const jalur = (u, tutup) => {
+    // Ruas (dua titik) tidak ditutup: garis bolak-balik merusak pola putus-putus.
+    if (u.jenis === 'poligon') return u.titik.map(([x, y], i) => { const [px, py] = P(x, y); return (i ? 'L' : 'M') + f(px) + ' ' + f(py); }).join(' ') + (u.terbuka && !tutup ? '' : ' Z');
+    const r = u.r * skala;
+    if (u.jenis === 'lingkaran') {
+      const [cx, cy] = P(u.c[0], u.c[1]);
+      return `M${f(cx - r)} ${f(cy)} A${f(r)} ${f(r)} 0 1 0 ${f(cx + r)} ${f(cy)} A${f(r)} ${f(r)} 0 1 0 ${f(cx - r)} ${f(cy)} Z`;
+    }
+    const titikSudut = (a) => P(u.c[0] + u.r * Math.cos((a * Math.PI) / 180), u.c[1] + u.r * Math.sin((a * Math.PI) / 180));
+    const [x0, y0] = titikSudut(u.a0), [x1, y1] = titikSudut(u.a1);
+    const besar = Math.abs(u.a1 - u.a0) > 180 ? 1 : 0, sapu = u.a1 > u.a0 ? 0 : 1;
+    const busurD = `A${f(r)} ${f(r)} 0 ${besar} ${sapu} ${f(x1)} ${f(y1)}`;
+    if (u.jenis === 'busur' && !tutup) return `M${f(x0)} ${f(y0)} ${busurD}`;
+    const [cx, cy] = P(u.c[0], u.c[1]);
+    return `M${f(cx)} ${f(cy)} L${f(x0)} ${f(y0)} ${busurD} Z`;
+  };
+
+  const b = kotakBatas();
+  xs.forEach((x, i) => { const [px, py] = P(x, ys[i]); b.titik(px, py); });
+  let isi = '', defs = '';
+  const id = 'la' + (++LUAS_ARSIR_ID) + Math.random().toString(36).slice(2, 6);
+  suku.forEach((sk, si) => {
+    let tubuh = `<path d="${jalur(sk.positif[0], true)}" fill="${BAGIAN_FILL}" stroke="none"/>`;
+    sk.positif.slice(1).forEach((u, j) => {
+      const cid = `${id}c${si}_${j}`;
+      defs += `<clipPath id="${cid}"><path d="${jalur(u, true)}"/></clipPath>`;
+      tubuh = `<g clip-path="url(#${cid})">${tubuh}</g>`;
+    });
+    if (sk.negatif.length) {
+      const mid = `${id}m${si}`;
+      defs += `<mask id="${mid}" maskUnits="userSpaceOnUse" x="-2000" y="-2000" width="4000" height="4000"><rect x="-2000" y="-2000" width="4000" height="4000" fill="#ffffff"/>`
+        + sk.negatif.map((u) => `<path d="${jalur(u, true)}" fill="#000000"/>`).join('') + '</mask>';
+      tubuh = `<g mask="url(#${mid})">${tubuh}</g>`;
+    }
+    isi += tubuh;
+  });
+  putusU.forEach((u) => { isi += `<path d="${jalur(u, false)}" fill="none" stroke="${GAYA.hitam}" stroke-width="1" stroke-dasharray="${GAYA.putus}"/>`; });
+  garisU.forEach((u) => { isi += `<path d="${jalur(u, false)}" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}" stroke-linejoin="round"/>`; });
+
+  // Titik bernama (awalan . = titik bantu tanpa huruf), noktah di titik tertentu.
+  const pusatPx = P((minX + maxX) / 2, (minY + maxY) / 2);
+  const noktah = String(cfg.noktah || '').split(',').map((t) => t.trim()).filter((t) => titik[t]);
+  noktah.forEach((n) => { const [x, y] = P(...titik[n]); isi += `<circle cx="${f(x)}" cy="${f(y)}" r="2.4" fill="${GAYA.hitam}"/>`; });
+  Object.keys(titik).forEach((n) => {
+    if (/^[._]/.test(n)) return;
+    const [x, y] = P(...titik[n]);
+    let nx = x - pusatPx[0], ny = y - pusatPx[1]; const m = Math.hypot(nx, ny);
+    if (m < 1) { nx = 0.7; ny = -0.7; } else { nx /= m; ny /= m; }
+    const pos = letakTeksLuar(x, y, nx, ny, 7, 12.5);
+    isi += teksGeoSVG(pos, n, 12.5, true, true);
+    b.teks(pos.x, pos.y, n, 12.5, pos.anchor);
+  });
+  // ukur=A-B:14 cm — garis ukur berpanah dengan garis bantu, di sisi luar bangun (~ membalik sisi).
+  String(cfg.ukur || '').split('|').flatMap((t) => pisahAtas(t, [',']).map((x) => x.isi)).map((t) => t.trim()).filter(Boolean).forEach((t) => {
+    const m = t.match(/^([^-:]+)-([^:]+):(.*)$/);
+    if (!m || !titik[m[1].trim()] || !titik[m[2].trim()]) return;
+    let teks = m[3].trim();
+    const balik = teks[0] === '~'; if (balik) teks = teks.slice(1).trim();
+    const [x1, y1] = P(...titik[m[1].trim()]), [x2, y2] = P(...titik[m[2].trim()]);
+    const len = Math.hypot(x2 - x1, y2 - y1) || 1;
+    let nx = -(y2 - y1) / len, ny = (x2 - x1) / len;
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    if (nx * (mx - pusatPx[0]) + ny * (my - pusatPx[1]) < 0) { nx = -nx; ny = -ny; }
+    if (balik) { nx = -nx; ny = -ny; }
+    const o = 16;
+    isi += `<line x1="${f(x1 + nx * 3)}" y1="${f(y1 + ny * 3)}" x2="${f(x1 + nx * (o + 4))}" y2="${f(y1 + ny * (o + 4))}" stroke="${GAYA.abu}" stroke-width="0.8"/>`;
+    isi += `<line x1="${f(x2 + nx * 3)}" y1="${f(y2 + ny * 3)}" x2="${f(x2 + nx * (o + 4))}" y2="${f(y2 + ny * (o + 4))}" stroke="${GAYA.abu}" stroke-width="0.8"/>`;
+    isi += garisDimensiDuaPanahSVG(x1 + nx * o, y1 + ny * o, x2 + nx * o, y2 + ny * o);
+    const pos = letakTeksLuar(mx + nx * o, my + ny * o, nx, ny, 5, 12);
+    isi += teksGeoSVG(pos, teks, 12, false, true);
+    b.teks(pos.x, pos.y, teks, 12, pos.anchor); b.titik(x1 + nx * (o + 4), y1 + ny * (o + 4)); b.titik(x2 + nx * (o + 4), y2 + ny * (o + 4));
+  });
+  // tulis=7 cm@3,8|r@7,7.5 — tulisan bebas di koordinat data.
+  String(cfg.tulis || '').split('|').map((t) => t.trim()).filter(Boolean).forEach((t) => {
+    const at = t.lastIndexOf('@');
+    if (at < 1) return;
+    const [x, y] = t.slice(at + 1).split(',').map((v) => parseFloat(v));
+    if (!isFinite(x) || !isFinite(y)) return;
+    const [px, py] = P(x, y), teks = t.slice(0, at).trim();
+    isi += teksGeoSVG({ x: px, y: py + 4, anchor: 'middle' }, teks, 12, false, true);
+    b.teks(px, py + 4, teks, 12, 'middle');
+  });
+  return bungkusGambarSVG((defs ? `<defs>${defs}</defs>` : '') + isi, b, /^(ya|iya|true|1)$/i.test(String(cfg.skala || '')) ? false : false);
 }
 
 // ---------------------------------------------------------------------
@@ -13258,6 +13423,7 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'keping') svg = renderKepingSVG(params);
     else if (type === 'gantung') svg = renderGantungSVG(params);
     else if (type === 'garissejajar') svg = renderGarisSejajarSVG(params);
+    else if (type === 'luasarsir') svg = renderLuasArsirSVG(params);
     else if (type === 'aliranenergi') svg = renderEnergyFlowSVG(params);
     else if (type === 'jodohkan') svg = renderMatchingSVG(params);
     else if (type === 'statistik') svg = renderStatSVG(params);
@@ -13460,7 +13626,7 @@ if (typeof module !== 'undefined') {
     componentSVG, parseCircuitComponent, CIRCUIT_KINDS,
     renderLabApparatusSVG, LAB_APPARATUS,
     renderCircleTheoremSVG, renderNetSVG, renderViewsSVG, CIRCLE_THEOREMS, SOLID_NETS, SOLID_VIEWS,
-    renderPunnettSVG, renderDichotomousKeySVG, renderPlantSVG, renderLorentzSVG, renderMuatanSVG, renderKepingSVG, renderGantungSVG, renderGarisSejajarSVG, formatSudutGS, renderEnergyFlowSVG, renderMatchingSVG, renderFoodWebSVG, splitGenotype, gametesOf, combineGametes, phenotypeOf,
+    renderPunnettSVG, renderDichotomousKeySVG, renderPlantSVG, renderLorentzSVG, renderMuatanSVG, renderKepingSVG, renderGantungSVG, renderGarisSejajarSVG, formatSudutGS, renderLuasArsirSVG, renderEnergyFlowSVG, renderMatchingSVG, renderFoodWebSVG, splitGenotype, gametesOf, combineGametes, phenotypeOf,
     renderFigureHTML, renderImageHTML, setImageResolver, resetFigureCounter, applyAnnotations,
     extractDiagramTags, substituteDiagramTokens, setModeSiswaDiagram, GEOMETRY_PRESETS, SOLID_PRESETS, LEWIS_PRESETS, VSEPR_PRESETS,
   };
