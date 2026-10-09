@@ -2775,7 +2775,9 @@ function renderAlatUkurSVG(cfg) {
   const { S, T } = bacaanMikrometer(R);
   const s = 15, Yc = 56, ms = Math.max(0, Math.floor(S) - 12), X0 = 10;
   const X = (mm) => X0 + (mm - ms) * s;
-  const xTepi = X(S);
+  // Tepi selubung berada tepat di bacaan penuh: S (garis skala terakhir yang masih terlihat) + T/100 mm,
+  // jadi garis S selalu tampak penuh di kiri tepi — bukan tertutup tepi selubung.
+  const xTepi = X(S + T / 100);
   isi += `<rect x="${X0 - 4}" y="${Yc - 32}" width="${(xTepi - X0 + 4).toFixed(1)}" height="56" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
   isi += garis(X0 - 4, Yc, xTepi, Yc, 1.2);
   b.titik(X0 - 4, Yc - 40); b.titik(xTepi + 112, Yc + 56);
@@ -2788,7 +2790,7 @@ function renderAlatUkurSVG(cfg) {
   const d = 4.6;
   isi += `<path d="M${xTepi.toFixed(1)} ${Yc - 46} L${(xTepi + 112).toFixed(1)} ${Yc - 46} L${(xTepi + 112).toFixed(1)} ${Yc + 46} L${xTepi.toFixed(1)} ${Yc + 46} L${(xTepi - 4).toFixed(1)} ${Yc + 38} L${(xTepi - 4).toFixed(1)} ${Yc - 38} Z" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.3" stroke-linejoin="round"/>`;
   for (let i = T - 9; i <= T + 9; i++) {
-    const y = Yc + (i - T) * d;
+    const y = Yc - (i - T) * d;                     // angka selubung naik ke atas (nilai kecil di bawah)
     if (y < Yc - 42 || y > Yc + 42) continue;
     const idx = ((i % 50) + 50) % 50, besar = idx % 5 === 0;
     isi += garis(xTepi, y, xTepi + (besar ? 14 : 8), y, besar ? 1.1 : 0.8);
