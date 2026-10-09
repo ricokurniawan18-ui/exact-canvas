@@ -3654,7 +3654,38 @@ function renderSketsaSVG(cfg) {
     isi += `<circle cx="${cxp.toFixed(1)}" cy="${cyp.toFixed(1)}" r="${(ling.r * skala).toFixed(1)}" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
     b.titik(cxp - ling.r * skala, cyp - ling.r * skala); b.titik(cxp + ling.r * skala, cyp + ling.r * skala);
   }
-  garis.forEach((s) => { isi += garisSVG(px[s[0]], px[s[1]], false); });
+  // lompat=E-F — kawat E-F digambar dengan lompatan setengah lingkaran kecil
+  // di setiap persilangan dengan garis lain (kawat bersilang tanpa
+  // tersambung, seperti susunan kawat di soal medan magnet).
+  const lompat = parseSisiSketsa(cfg.lompat).filter((s) => ada(s[0]) && ada(s[1]));
+  const samaSisi = (u, v) => (u[0] === v[0] && u[1] === v[1]) || (u[0] === v[1] && u[1] === v[0]);
+  const garisBiasa = garis.filter((g) => !lompat.some((l) => samaSisi(g, l)));
+  garisBiasa.forEach((s) => { isi += garisSVG(px[s[0]], px[s[1]], false); });
+  lompat.forEach((l) => {
+    const [x1, y1] = px[l[0]], [x2, y2] = px[l[1]];
+    const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
+    const rH = 6;
+    const potong = [];
+    garisBiasa.concat(putus).forEach((g) => {
+      if (g.indexOf(l[0]) >= 0 || g.indexOf(l[1]) >= 0) return;
+      const [x3, y3] = px[g[0]], [x4, y4] = px[g[1]];
+      const den = dx * (y4 - y3) - dy * (x4 - x3);
+      if (Math.abs(den) < 1e-9) return;
+      const t = ((x3 - x1) * (y4 - y3) - (y3 - y1) * (x4 - x3)) / den;
+      const u = ((x3 - x1) * dy - (y3 - y1) * dx) / den;
+      if (t > 0.02 && t < 0.98 && u > 0.02 && u < 0.98) potong.push(t * len);
+    });
+    potong.sort((a, c) => a - c);
+    // Lengkung menonjol ke "atas" layar (atau ke kiri untuk kawat tegak).
+    const sweep = (ux > 0.3 || (Math.abs(ux) <= 0.3 && uy < 0)) ? 1 : 0;
+    let d = `M${x1.toFixed(1)} ${y1.toFixed(1)}`;
+    potong.forEach((jarak) => {
+      const a = jarak - rH, c = jarak + rH;
+      d += ` L${(x1 + ux * a).toFixed(1)} ${(y1 + uy * a).toFixed(1)} A${rH} ${rH} 0 0 ${sweep} ${(x1 + ux * c).toFixed(1)} ${(y1 + uy * c).toFixed(1)}`;
+    });
+    d += ` L${x2.toFixed(1)} ${y2.toFixed(1)}`;
+    isi += `<path d="${d}" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}" stroke-linecap="round"/>`;
+  });
   // lengkung=B^(A)D|C~(M)D menggambar busur (garis penuh); lengkungputus= putus-putus; rel= busur bergaris rel
   [['lengkung', false, ''], ['lengkungputus', true, ''], ['rel', false, 'rel']].forEach(([kunci, dash, gaya]) => {
     String(cfg[kunci] || '').split('|').map((t) => t.trim()).filter(Boolean).forEach((t) => {
@@ -3694,7 +3725,7 @@ function renderSketsaSVG(cfg) {
   // busur menghadap pusat gambar selebar ±70°.
   const pusatData = pts.reduce((acc, p) => [acc[0] + p.x / pts.length, acc[1] + p.y / pts.length], [0, 0]);
   String(cfg.busur || '').split('|').map((t) => t.trim()).filter(Boolean).forEach((t) => {
-    const [nm, rRaw, a0Raw, a1Raw] = t.split(':').map((x) => x.trim());
+    const [nm, rRaw, a0Raw, a1Raw, panahRaw] = t.split(':').map((x) => x.trim());
     const titikPusat = pts.find((q) => q.name === nm);
     const r = parseFloat(rRaw);
     if (!titikPusat || !(r > 0)) return;
@@ -3713,7 +3744,64 @@ function renderSketsaSVG(cfg) {
       d += (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1) + ' ';
       b.titik(x, y);
     }
-    isi += `<path d="${d}" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garisBantu + 0.3}"/>`;
+    // Kolom ke-5 ">" atau "<": busur jadi kawat berarus — garis tebal dengan
+    // mata panah arus di tengahnya (> searah sudut membesar, < sebaliknya).
+    const berpanah = panahRaw === '>' || panahRaw === '<';
+    isi += `<path d="${d}" fill="none" stroke="${GAYA.hitam}" stroke-width="${berpanah ? GAYA.garis : GAYA.garisBantu + 0.3}"/>`;
+    if (berpanah) {
+      const tengah = (a0 + a1) / 2, rad = (tengah * Math.PI) / 180;
+      const [mx, my] = titikBusur(tengah);
+      const arahSudut = (panahRaw === '>') === (a1 >= a0) ? 1 : -1;
+      // Garis singgung di layar (y ke bawah) untuk sudut membesar: (-sin, -cos).
+      isi += mataPanahArusSVG(mx, my, -Math.sin(rad) * arahSudut, -Math.cos(rad) * arahSudut);
+    }
+  });
+  // arus=A-B:2 A|C-D — mata panah arus di tengah kawat A-B (arah A ke B) dengan
+  // tulisan di sampingnya; ~ di depan tulisan memindahkannya ke sisi lain.
+  String(cfg.arus || '').split(/[|,]/).map((t) => t.trim()).filter(Boolean).forEach((t) => {
+    const k = t.indexOf(':');
+    const kunci = (k >= 0 ? t.slice(0, k) : t).split('-').map((x) => x.trim());
+    let teks = k >= 0 ? t.slice(k + 1).trim() : '';
+    if (kunci.length !== 2 || !ada(kunci[0]) || !ada(kunci[1])) return;
+    const [x1, y1] = px[kunci[0]], [x2, y2] = px[kunci[1]];
+    const len = Math.hypot(x2 - x1, y2 - y1) || 1, ux = (x2 - x1) / len, uy = (y2 - y1) / len;
+    // Titik tengah dipakai kecuali di situ ada kawat lain yang menyilang —
+    // lalu panahnya bergeser ke 3/4 (atau 1/4) panjang kawat.
+    const dekatSilang = (qx, qy) => garis.some((g) => {
+      if (g.indexOf(kunci[0]) >= 0 && g.indexOf(kunci[1]) >= 0) return false;
+      const [ax, ay] = px[g[0]], [bx, by] = px[g[1]];
+      const gl = Math.hypot(bx - ax, by - ay) || 1;
+      const tt = Math.max(0, Math.min(1, ((qx - ax) * (bx - ax) + (qy - ay) * (by - ay)) / (gl * gl)));
+      return Math.hypot(ax + (bx - ax) * tt - qx, ay + (by - ay) * tt - qy) < 14;
+    });
+    let fr = [0.5, 0.75, 0.25].find((f) => !dekatSilang(x1 + (x2 - x1) * f, y1 + (y2 - y1) * f));
+    if (fr === undefined) fr = 0.5;
+    const mx = x1 + (x2 - x1) * fr, my = y1 + (y2 - y1) * fr;
+    isi += mataPanahArusSVG(mx, my, ux, uy);
+    if (teks) {
+      const balik = teks[0] === '~';
+      if (balik) teks = teks.slice(1).trim();
+      let nx = -uy, ny = ux;
+      if (ny > 0.1 || (Math.abs(ny) <= 0.1 && nx < 0)) { nx = -nx; ny = -ny; }
+      if (balik) { nx = -nx; ny = -ny; }
+      const pos = letakTeksLuar(mx, my, nx, ny, 9, 11.5);
+      isi += teksGeoSVG(pos, teks, 11.5, false, true);
+      b.teks(pos.x, pos.y, teks, 11.5, pos.anchor);
+    }
+  });
+  // keluar=A,B (⊙ arus/medan keluar bidang) dan masuk=C (⊗ masuk bidang) di
+  // titik kawat yang tegak lurus kertas; noktah=P titik hitam kecil.
+  const simbolDi = {};
+  [['keluar', 'keluar'], ['masuk', 'masuk']].forEach(([kunci, jenis]) => {
+    String(cfg[kunci] || '').split(',').map((x) => x.trim()).filter(ada).forEach((nm) => {
+      const [x, y] = px[nm];
+      isi += simbolArahBidangSVG(x, y, jenis, 7);
+      b.titik(x, y, 8); simbolDi[nm] = true;
+    });
+  });
+  String(cfg.noktah || '').split(',').map((x) => x.trim()).filter(ada).forEach((nm) => {
+    const [x, y] = px[nm];
+    isi += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.6" fill="${GAYA.hitam}"/>`;
   });
   pts.forEach((p) => b.titik(px[p.name][0], px[p.name][1]));
   const sisiSemua = garis.concat(putus, sinar);
@@ -3811,7 +3899,7 @@ function renderSketsaSVG(cfg) {
     ux /= m; uy /= m;
     const cands = [0, 45, -45, 90, -90, 135, -135, 180].map((deg) => {
       const r = (deg * Math.PI) / 180;
-      return letakTeksLuar(x, y, ux * Math.cos(r) - uy * Math.sin(r), ux * Math.sin(r) + uy * Math.cos(r), 7, 12.5);
+      return letakTeksLuar(x, y, ux * Math.cos(r) - uy * Math.sin(r), ux * Math.sin(r) + uy * Math.cos(r), simbolDi[p.name] ? 13 : 7, 12.5);
     });
     taruh(cands, p.name, 12.5, true);
   });
@@ -4273,6 +4361,30 @@ function renderLongDivisionSVG(cfg) {
 // ---------------------------------------------------------------------
 // 6b. Shared arrow helper (fisika, rantai makanan)
 // ---------------------------------------------------------------------
+
+// Mata panah arus (segitiga hitam) berpusat di (x,y), menunjuk arah (ux,uy) —
+// dipakai di tengah kawat, tanpa batang panah sendiri.
+function mataPanahArusSVG(x, y, ux, uy, ukuran) {
+  const L = ukuran || 8, m = Math.hypot(ux, uy) || 1;
+  ux /= m; uy /= m;
+  const tip = [x + ux * L * 0.55, y + uy * L * 0.55], bx = x - ux * L * 0.45, by = y - uy * L * 0.45;
+  const p1 = [bx - uy * L * 0.42, by + ux * L * 0.42], p2 = [bx + uy * L * 0.42, by - ux * L * 0.42];
+  return `<polygon points="${tip[0].toFixed(1)},${tip[1].toFixed(1)} ${p1[0].toFixed(1)},${p1[1].toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}" fill="${GAYA.hitam}"/>`;
+}
+
+// ⊙ (keluar bidang kertas) atau ⊗ (masuk bidang kertas): lingkaran putih
+// dengan titik atau silang — konvensi arah arus/medan tegak lurus kertas.
+function simbolArahBidangSVG(x, y, jenis, r) {
+  r = r || 7;
+  let s = `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+  if (jenis === 'keluar') {
+    s += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(r * 0.28).toFixed(1)}" fill="${GAYA.hitam}"/>`;
+  } else {
+    const k = r * 0.68;
+    s += `<path d="M${(x - k).toFixed(1)} ${(y - k).toFixed(1)} L${(x + k).toFixed(1)} ${(y + k).toFixed(1)} M${(x - k).toFixed(1)} ${(y + k).toFixed(1)} L${(x + k).toFixed(1)} ${(y - k).toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+  }
+  return s;
+}
 
 function arrowSVG(x1, y1, x2, y2, opts) {
   opts = opts || {};
@@ -11895,6 +12007,7 @@ const DIAGRAM_TYPE_ALIASES = {
   sektor: 'sektor', juring: 'sektor',
   garisbilangan: 'garisbilangan',
   tumbuhan: 'tumbuhan', tanaman: 'tumbuhan', plant: 'tumbuhan',
+  lorentz: 'lorentz', gayalorentz: 'lorentz', tangankanan: 'lorentz', kaidahtangankanan: 'lorentz', sumbu3d: 'lorentz',
   aliranenergi: 'aliranenergi', transferenergi: 'aliranenergi', energyflow: 'aliranenergi', sankey: 'aliranenergi',
   jodohkan: 'jodohkan', menjodohkan: 'jodohkan', matching: 'jodohkan', pasangkan: 'jodohkan',
   venn: 'venn',
@@ -12019,6 +12132,160 @@ function parseTagParams(raw) {
     if (key) params[key] = val;
   });
   return params;
+}
+
+// ---------------------------------------------------------------------
+// Gaya Lorentz / kaidah tangan kanan: partikel atau kawat dengan vektor
+// v, I, B, F; sumbu X-Y-Z miring; latar medan ⊗/⊙; skema tangan kanan.
+//   v=bawah; F=kanan; B=masuk:B (arah[:label]); muatan=- ; benda=kawat
+//   arah: kanan kiri atas bawah masuk keluar miring miringbalik, atau
+//   +x -x +y -y +z -z (dipetakan lewat sumbu=x:kanan,y:miring,z:atas)
+//   sumbu=ya/tidak; medan=masuk/keluar (latar); tangan=ya
+// ---------------------------------------------------------------------
+const ARAH_LAYAR = {
+  kanan: [1, 0], kiri: [-1, 0], atas: [0, -1], bawah: [0, 1],
+  miring: [0.72, -0.62], miringbalik: [-0.72, 0.62], miringkiri: [-0.72, -0.62], miringkanan: [0.72, 0.62],
+};
+
+function petaSumbuLorentz(cfg) {
+  const peta = { x: 'kanan', y: 'miring', z: 'atas' };
+  const raw = String(cfg.sumbu || '').trim();
+  if (raw.indexOf(':') > 0) {
+    raw.split(',').forEach((t) => {
+      const [k, v] = t.split(':').map((x) => x.trim().toLowerCase());
+      if (peta[k] !== undefined && v) peta[k] = v;
+    });
+  }
+  return peta;
+}
+
+// "bawah", "-z", "masuk:B" -> { arah: 'bawah'|'masuk'|'keluar', vec: [dx,dy] | null, label }
+function arahLorentz(raw, nama, peta) {
+  if (raw == null || String(raw).trim() === '') return null;
+  const t = String(raw).trim();
+  const k = t.indexOf(':');
+  let arah = (k >= 0 ? t.slice(0, k) : t).trim().toLowerCase().replace(/\s+/g, '');
+  const label = k >= 0 ? t.slice(k + 1).trim() : nama;
+  const m = arah.match(/^([+-]?)([xyz])$/);
+  let balik = false;
+  if (m) { balik = m[1] === '-'; arah = peta[m[2]]; }
+  const lawan = { kanan: 'kiri', kiri: 'kanan', atas: 'bawah', bawah: 'atas', masuk: 'keluar', keluar: 'masuk', miring: 'miringbalik', miringbalik: 'miring', miringkiri: 'miringkanan', miringkanan: 'miringkiri' };
+  if (balik) arah = lawan[arah] || arah;
+  if (arah === 'masuk' || arah === 'keluar') return { arah, vec: null, label };
+  const vec = ARAH_LAYAR[arah];
+  if (!vec) throw new Error('lorentz: arah "' + t + '" tidak dikenal (kanan, kiri, atas, bawah, masuk, keluar, miring, +x, -y, ...)');
+  const n = Math.hypot(vec[0], vec[1]);
+  return { arah, vec: [vec[0] / n, vec[1] / n], label };
+}
+
+function renderLorentzSVG(cfg) {
+  const b = kotakBatas();
+  let isi = '';
+  const peta = petaSumbuLorentz(cfg);
+  const teks = (x, y, t, anchor, miring) => {
+    isi += `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="12.5"${miring ? ' font-style="italic"' : ''} text-anchor="${anchor || 'middle'}" fill="${GAYA.hitam}" stroke="${GAYA.putih}" stroke-width="3" paint-order="stroke">${escText(t)}</text>`;
+    b.teks(x, y, t, 12.5, anchor || 'middle');
+  };
+  const vektor = ['v', 'I', 'B', 'F'].map((n) => arahLorentz(cfg[n] != null ? cfg[n] : cfg[n.toLowerCase()], n, peta)).filter(Boolean);
+  const benda = String(cfg.benda || 'partikel').toLowerCase();
+  const adaBenda = benda !== 'tidak' && (vektor.length > 0 || cfg.benda);
+
+  // Latar medan: deretan ⊗ atau • (konvensi buku: medan masuk/keluar bidang).
+  const medan = String(cfg.medan || '').toLowerCase();
+  if (adaBenda && (medan === 'masuk' || medan === 'keluar')) {
+    for (let gx = -96; gx <= 96; gx += 32) {
+      for (let gy = -80; gy <= 80; gy += 32) {
+        if (Math.hypot(gx, gy) < 26) continue;
+        // Jangan menimpa kawat: lewati simbol yang terlalu dekat garis kawat.
+        const kawatV = String(cfg.benda || '').toLowerCase() === 'kawat' && cfg.I != null ? arahLorentz(cfg.I, 'I', peta) : null;
+        if (kawatV && kawatV.vec && Math.abs(gx * kawatV.vec[1] - gy * kawatV.vec[0]) < 12) continue;
+        if (medan === 'masuk') isi += `<path d="M${gx - 4} ${gy - 4} L${gx + 4} ${gy + 4} M${gx - 4} ${gy + 4} L${gx + 4} ${gy - 4}" stroke="${GAYA.abu}" stroke-width="1.1"/>`;
+        else isi += `<circle cx="${gx}" cy="${gy}" r="2" fill="${GAYA.abu}"/>`;
+        b.titik(gx, gy, 5);
+      }
+    }
+    if (cfg.namamedan !== '-') teks(110, -92, String(cfg.namamedan || 'B'), 'start', true);
+  }
+
+  if (adaBenda) {
+    const arusVec = cfg.I != null ? arahLorentz(cfg.I, 'I', peta) : null;
+    if (benda === 'kawat' && arusVec) {
+      if (arusVec.vec) {
+        const [ux, uy] = arusVec.vec, L = 92;
+        isi += `<line x1="${(-ux * L).toFixed(1)}" y1="${(-uy * L).toFixed(1)}" x2="${(ux * L).toFixed(1)}" y2="${(uy * L).toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="2.4" stroke-linecap="round"/>`;
+        isi += mataPanahArusSVG(-ux * 46, -uy * 46, ux, uy, 10);
+        teks(-ux * 46 - uy * 14, -uy * 46 + ux * 14 + 4, arusVec.label, 'middle', true);
+        b.titik(-ux * L, -uy * L, 3); b.titik(ux * L, uy * L, 3);
+      } else {
+        isi += simbolArahBidangSVG(0, 0, arusVec.arah, 11);
+        teks(16, -12, arusVec.label, 'start', true);
+      }
+    } else if (benda !== 'kawat') {
+      isi += `<circle cx="0" cy="0" r="8" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+      const muatan = String(cfg.muatan || '').trim();
+      if (muatan) isi += `<text x="0" y="4" font-size="11" font-weight="700" text-anchor="middle" fill="${GAYA.hitam}">${escText(muatan === '-' ? '−' : muatan)}</text>`;
+      b.titik(0, 0, 9);
+    }
+    // Vektor dalam bidang: panah dari tepi benda; masuk/keluar: simbol bertumpuk di kiri atas.
+    let tumpuk = 0;
+    vektor.forEach((v) => {
+      if (benda === 'kawat' && v.label === (arusVec && arusVec.label) && cfg.I != null && v.arah === arusVec.arah) return;
+      if (v.vec) {
+        const [ux, uy] = v.vec, mulai = benda === 'kawat' ? 0 : 10, L = 70;
+        isi += arrowSVG(ux * mulai, uy * mulai, ux * L, uy * L, { headLen: 8, strokeWidth: 1.5 });
+        const pos = letakTeksLuar(ux * L, uy * L, ux, uy, 8, 12.5);
+        teks(pos.x, pos.y, v.label, pos.anchor, true);
+        b.titik(ux * L, uy * L, 4);
+      } else {
+        const x = -34 - tumpuk * 0, y = -30 - tumpuk * 24;
+        isi += simbolArahBidangSVG(x, y, v.arah, 7);
+        teks(x - 12, y + 4, v.label, 'end', true);
+        b.titik(x, y, 8);
+        tumpuk++;
+      }
+    });
+  }
+
+  // Sumbu X-Y-Z: di kanan benda (atau sendiri kalau tanpa benda).
+  const tampilSumbu = !/^(tidak|no|false|0)$/i.test(String(cfg.sumbu || '').trim());
+  if (tampilSumbu) {
+    const ox = adaBenda ? 150 : 0, oy = adaBenda ? 40 : 0, L = 74;
+    const huruf = String(cfg.namasumbu || 'X,Y,Z').split(',').map((x) => x.trim());
+    ['x', 'y', 'z'].forEach((sb, i) => {
+      const arah = peta[sb];
+      if (arah === 'masuk' || arah === 'keluar') {
+        isi += simbolArahBidangSVG(ox, oy, arah, 7);
+        teks(ox - 12, oy + 16, huruf[i] || sb.toUpperCase(), 'end', false);
+        return;
+      }
+      const v = ARAH_LAYAR[arah];
+      if (!v) return;
+      const n = Math.hypot(v[0], v[1]), ux = v[0] / n, uy = v[1] / n;
+      isi += arrowSVG(ox, oy, ox + ux * L, oy + uy * L, { headLen: 7, strokeWidth: 1.2 });
+      const pos = letakTeksLuar(ox + ux * L, oy + uy * L, ux, uy, 7, 12.5);
+      teks(pos.x, pos.y, huruf[i] || sb.toUpperCase(), pos.anchor, false);
+      b.titik(ox, oy); b.titik(ox + ux * L, oy + uy * L, 4);
+    });
+  }
+
+  // Skema kaidah tangan kanan (telapak terbuka): ibu jari = I/v, empat jari =
+  // B, dorongan telapak = F — tiga panah saling tegak lurus.
+  if (/^(ya|iya|true|1)$/i.test(String(cfg.tangan || '').trim())) {
+    const ox = (adaBenda || tampilSumbu ? 300 : 0), oy = 40, L = 66;
+    const lab = String(cfg.labeltangan || 'ibu jari: I (v),empat jari: B,telapak: F').split(',').map((x) => x.trim());
+    [[0, -1, lab[0]], [1, 0, lab[1]], [0.72, 0.62, lab[2]]].forEach(([dx, dy, t]) => {
+      const n = Math.hypot(dx, dy), ux = dx / n, uy = dy / n;
+      isi += arrowSVG(ox, oy, ox + ux * L, oy + uy * L, { headLen: 7, strokeWidth: 1.4 });
+      const pos = letakTeksLuar(ox + ux * L, oy + uy * L, ux, uy, 7, 11);
+      isi += `<text x="${pos.x.toFixed(1)}" y="${pos.y.toFixed(1)}" font-size="11" text-anchor="${pos.anchor}" fill="${GAYA.hitam}">${escText(t)}</text>`;
+      b.teks(pos.x, pos.y, t, 11, pos.anchor);
+      b.titik(ox, oy);
+    });
+    isi += `<text x="${ox.toFixed(1)}" y="${(oy + L + 26).toFixed(1)}" font-size="11" font-weight="700" text-anchor="middle" fill="${GAYA.hitam}">kaidah tangan kanan</text>`;
+    b.teks(ox, oy + L + 26, 'kaidah tangan kanan', 11, 'middle');
+  }
+  if (!isFinite(b.x0)) throw new Error('lorentz perlu vektor (v=, I=, B=, F=), sumbu=ya, atau tangan=ya');
+  return bungkusGambarSVG(isi, b, false);
 }
 
 // ---------------------------------------------------------------------
@@ -12306,6 +12573,7 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'garisbilangan') { params.titik = parseTitikList(params.titik); svg = renderNumberLineSVG(params); }
     else if (type === 'venn') svg = renderVennSVG(params);
     else if (type === 'tumbuhan') svg = renderPlantSVG(params);
+    else if (type === 'lorentz') svg = renderLorentzSVG(params);
     else if (type === 'aliranenergi') svg = renderEnergyFlowSVG(params);
     else if (type === 'jodohkan') svg = renderMatchingSVG(params);
     else if (type === 'statistik') svg = renderStatSVG(params);
@@ -12508,7 +12776,7 @@ if (typeof module !== 'undefined') {
     componentSVG, parseCircuitComponent, CIRCUIT_KINDS,
     renderLabApparatusSVG, LAB_APPARATUS,
     renderCircleTheoremSVG, renderNetSVG, renderViewsSVG, CIRCLE_THEOREMS, SOLID_NETS, SOLID_VIEWS,
-    renderPunnettSVG, renderDichotomousKeySVG, renderPlantSVG, renderEnergyFlowSVG, renderMatchingSVG, renderFoodWebSVG, splitGenotype, gametesOf, combineGametes, phenotypeOf,
+    renderPunnettSVG, renderDichotomousKeySVG, renderPlantSVG, renderLorentzSVG, renderEnergyFlowSVG, renderMatchingSVG, renderFoodWebSVG, splitGenotype, gametesOf, combineGametes, phenotypeOf,
     renderFigureHTML, renderImageHTML, setImageResolver, resetFigureCounter, applyAnnotations,
     extractDiagramTags, substituteDiagramTokens, setModeSiswaDiagram, GEOMETRY_PRESETS, SOLID_PRESETS, LEWIS_PRESETS, VSEPR_PRESETS,
   };
