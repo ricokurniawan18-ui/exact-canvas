@@ -1241,7 +1241,12 @@ function letakTeksLuar(x, y, nx, ny, jarak, size) {
 
 // halo = garis tepi putih di bawah huruf (paint-order) supaya label yang
 // terpaksa dekat garis bantu tetap terbaca.
+function rapikanPi(t) {
+  return String(t == null ? '' : t).replace(/(\d)\s*pi(?![a-z])/gi, '$1π').replace(/(^|[^A-Za-z])pi(?![A-Za-z])/g, '$1π');
+}
+
 function teksGeoSVG(pos, teks, size, italic, halo) {
+  teks = rapikanPi(teks);
   return `<text x="${pos.x.toFixed(1)}" y="${pos.y.toFixed(1)}" font-size="${size}"${italic ? ' font-style="italic"' : ''} text-anchor="${pos.anchor}" fill="${GAYA.hitam}"${halo ? ` stroke="${GAYA.putih}" stroke-width="3" paint-order="stroke"` : ''}>${escText(teks)}</text>`;
 }
 
@@ -1593,6 +1598,20 @@ function renderSebangunSVG(cfg) {
 // MENGGAMBAR (angka wajar dipakai kalau yang diberikan bukan angka bersih,
 // mis. "r" yang dicari) sekaligus sebagai TEKS label kalau memang angka —
 // pola yang sama seperti tinggiA/tinggiB di sebangun.
+// Nilai angka dari "22 cm", "4pi cm", "4π", "2.5 pi"; kelipatan π dikembalikan sebagai {k, pi:true}.
+function angkaBerPi(t) {
+  const m = rapikanPi(t).replace(',', '.').match(/(-?\d*\.?\d+)?\s*(π)?/);
+  if (!m || (m[1] === undefined && !m[2])) return null;
+  const k = m[1] === undefined ? 1 : parseFloat(m[1]);
+  return m[2] ? k * Math.PI : k;
+}
+function busurRedundan(jari, rad, labelBusur) {
+  const r = angkaBerPi(jari), L = angkaBerPi(labelBusur);
+  if (!(r > 0) || !(L > 0) || !(rad > 0)) return false;
+  const hitung = r * rad;
+  return Math.abs(hitung - L) / hitung < 0.03 || Math.abs((r * rad * 22 / 7 / Math.PI) - L) / hitung < 0.03;
+}
+
 function renderSectorSVG(cfg) {
   const rGambar = numOrDefault(cfg.jari, 6);
   const labelJari = String(cfg.jari ?? rGambar).trim();
@@ -1600,8 +1619,12 @@ function renderSectorSVG(cfg) {
   const dalamRadian = /rad|π|pi/i.test(String(cfg.sudut || '')) || /^rad/i.test(String(cfg.satuan || ''));
   const sb = dalamRadian ? sudutBagian(cfg.sudut, 'radian', 1.2) : null;
   const sudutGambar = Math.min(300, Math.max(20, sb ? (sb.rad * 180) / Math.PI : numOrDefault(cfg.sudut, 90)));
-  const labelSudut = sb ? sb.teks : String(cfg.sudut ?? sudutGambar).trim();
-  const labelBusur = cfg.busur != null ? String(cfg.busur).trim() : '';
+  let labelSudut = sb ? sb.teks : String(cfg.sudut ?? sudutGambar).trim();
+  if (/^\d+([.,]\d+)?$/.test(labelSudut)) labelSudut += '°';
+  let labelBusur = cfg.busur != null ? String(cfg.busur).trim() : '';
+  // Busur yang bisa dihitung dari jari-jari dan sudut (ketiganya angka) berarti jawaban soal "panjang busur":
+  // label itu dibuang supaya gambar tidak membocorkan jawaban.
+  if (labelBusur && busurRedundan(cfg.jari, sb ? sb.rad : (numOrDefault(cfg.sudut, NaN) * Math.PI) / 180, labelBusur)) labelBusur = '';
 
   const R = 95;
   const setengah = (sudutGambar / 2) * Math.PI / 180;
@@ -3436,23 +3459,26 @@ function parseJalurSketsa(str) {
 }
 
 // Satu segmen busur P1 -> P2 mengelilingi C (koordinat layar). Mengembalikan perintah path SVG "A ..." dan titik contoh untuk batas.
-function busurSegmenSVG(p1, p2, c, ccw) {
+function busurSegmenSVG(p1, p2, c, ccw, kecil) {
   const r = Math.hypot(p1[0] - c[0], p1[1] - c[1]);
   const a1 = Math.atan2(p1[1] - c[1], p1[0] - c[0]), a2 = Math.atan2(p2[1] - c[1], p2[0] - c[0]);
   const TP = 2 * Math.PI;
-  const delta = ccw ? (((a1 - a2) % TP) + TP) % TP : (((a2 - a1) % TP) + TP) % TP;
+  const hitungDelta = (cc) => (cc ? (((a1 - a2) % TP) + TP) % TP : (((a2 - a1) % TP) + TP) % TP);
+  let delta = hitungDelta(ccw);
+  // arah yang salah menghasilkan busur besar 270° (kasus lazim: seperempat lingkaran) -> pakai arah sebaliknya
+  if (kecil && delta > Math.PI * 1.25 && delta < Math.PI * 1.75) { ccw = !ccw; delta = hitungDelta(ccw); }
   const contoh = [];
   for (let k = 0; k <= 12; k++) { const a = a1 + (ccw ? -1 : 1) * delta * (k / 12); contoh.push([c[0] + r * Math.cos(a), c[1] + r * Math.sin(a)]); }
   return { d: `A${r.toFixed(1)} ${r.toFixed(1)} 0 ${delta > Math.PI ? 1 : 0} ${ccw ? 0 : 1} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`, contoh };
 }
 
-function jalurKePath(jalur, px, b, tutup) {
+function jalurKePath(jalur, px, b, tutup, kecil) {
   if (!jalur || jalur.nama.some((n) => px[n] === undefined) || jalur.seg.some((g) => g.pusat && px[g.pusat] === undefined)) return '';
   let d = `M${px[jalur.nama[0]][0].toFixed(1)} ${px[jalur.nama[0]][1].toFixed(1)}`;
   jalur.seg.forEach((g, k) => {
     const p1 = px[jalur.nama[k]], p2 = px[jalur.nama[k + 1]];
     if (g.sep === '-') { d += ` L${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`; b.titik(p2[0], p2[1]); }
-    else { const a = busurSegmenSVG(p1, p2, px[g.pusat], g.sep === '~'); d += ' ' + a.d; a.contoh.forEach((q) => b.titik(q[0], q[1])); }
+    else { const a = busurSegmenSVG(p1, p2, px[g.pusat], g.sep === '~', kecil); d += ' ' + a.d; a.contoh.forEach((q) => b.titik(q[0], q[1])); }
   });
   b.titik(px[jalur.nama[0]][0], px[jalur.nama[0]][1]);
   return d + (tutup ? ' Z' : '');
@@ -3589,8 +3615,23 @@ function renderSketsaSVG(cfg) {
   else if (/^bayangan$/i.test(String(cfg.bentuk || ''))) cfg = gabungSketsa(cfg, sketsaBayangan(cfg));
   const semua = parseVertexList(cfg.titik);
   const pts = semua.length ? semua : [{ name: 'A', x: 0, y: 0 }, { name: 'B', x: 10, y: 0 }, { name: 'C', x: 5, y: 8 }];
-  const areaW = 260, areaH = 200;
+  const areaW = 230, areaH = 170;
   const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+  // lingkaran=luar (melalui titik-titik) atau lingkaran=O:5 (berpusat di titik O, jari-jari 5 satuan koordinat)
+  let ling = null;
+  const lt = String(cfg.lingkaran || '').trim();
+  if (/^luar$/i.test(lt) && pts.length >= 3) {
+    const [p1, p2, p3] = pts, dn = 2 * (p1.x * (p2.y - p3.y) + p2.x * (p3.y - p1.y) + p3.x * (p1.y - p2.y));
+    if (Math.abs(dn) > 1e-9) {
+      const q1 = p1.x * p1.x + p1.y * p1.y, q2 = p2.x * p2.x + p2.y * p2.y, q3 = p3.x * p3.x + p3.y * p3.y;
+      const ux = (q1 * (p2.y - p3.y) + q2 * (p3.y - p1.y) + q3 * (p1.y - p2.y)) / dn, uy = (q1 * (p3.x - p2.x) + q2 * (p1.x - p3.x) + q3 * (p2.x - p1.x)) / dn;
+      ling = { x: ux, y: uy, r: Math.hypot(p1.x - ux, p1.y - uy) };
+    }
+  } else if (lt.indexOf(':') > 0) {
+    const [nmP, rP] = lt.split(':'), pu = pts.find((q) => q.name === nmP.trim()), rv = parseFloat(String(rP).replace(',', '.'));
+    if (pu && rv > 0) ling = { x: pu.x, y: pu.y, r: rv };
+  }
+  if (ling) { xs.push(ling.x - ling.r, ling.x + ling.r); ys.push(ling.y - ling.r, ling.y + ling.r); }
   const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
   const skala = Math.min(areaW / Math.max(maxX - minX, 1e-6), areaH / Math.max(maxY - minY, 1e-6));
   const px = {};
@@ -3608,11 +3649,16 @@ function renderSketsaSVG(cfg) {
     const d = jalurKePath(parseJalurSketsa(t), px, b, true);
     if (d) isi += `<path d="${d}" fill="${BAGIAN_FILL}" stroke="none"/>`;
   });
+  if (ling) {
+    const cxp = (ling.x - minX) * skala, cyp = (maxY - ling.y) * skala;
+    isi += `<circle cx="${cxp.toFixed(1)}" cy="${cyp.toFixed(1)}" r="${(ling.r * skala).toFixed(1)}" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    b.titik(cxp - ling.r * skala, cyp - ling.r * skala); b.titik(cxp + ling.r * skala, cyp + ling.r * skala);
+  }
   garis.forEach((s) => { isi += garisSVG(px[s[0]], px[s[1]], false); });
   // lengkung=B^(A)D|C~(M)D menggambar busur (garis penuh); lengkungputus= putus-putus; rel= busur bergaris rel
   [['lengkung', false, ''], ['lengkungputus', true, ''], ['rel', false, 'rel']].forEach(([kunci, dash, gaya]) => {
     String(cfg[kunci] || '').split('|').map((t) => t.trim()).filter(Boolean).forEach((t) => {
-      const d = jalurKePath(parseJalurSketsa(t), px, b, false);
+      const d = jalurKePath(parseJalurSketsa(t), px, b, false, true);
       if (!d) return;
       if (gaya === 'rel') isi += `<path d="${d}" fill="none" stroke="${GAYA.hitam}" stroke-width="7" stroke-dasharray="1.4 2.6"/><path d="${d}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
       else isi += `<path d="${d}" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}" stroke-linecap="round"${dash ? ` stroke-dasharray="${GAYA.putus}"` : ''}/>`;
@@ -11278,8 +11324,12 @@ function renderBagianLingkaranSVG(cfg) {
     isi += garis(O1, A, { tebal: 1.2 }) + garis(O1, B, { tebal: 1.2 }) + garis(O2, A, { tebal: 1.2 }) + garis(O2, B, { tebal: 1.2 });
     isi += dot(O1) + dot(O2) + dot(A) + dot(B);
     isi += titikLabel(O1, 'O₁', -0.5, 1, 13) + titikLabel(O2, 'O₂', 0.5, 1, 13) + titikLabel(A, 'A', 0, -1, 11) + titikLabel(B, 'B', 0, 1, 11);
-    if (cfg.sudut1 != null) isi += busurFis(0, 0, 22, -(a1 * 180) / PI_FIS, (a1 * 180) / PI_FIS) + halo(34, 4, String(cfg.sudut1) || 'θ', 'start');
-    if (cfg.sudut2 != null) isi += busurFis(O2[0], 0, 22, 180 - (a2 * 180) / PI_FIS, 180 + (a2 * 180) / PI_FIS) + halo(O2[0] - 34, 4, String(cfg.sudut2) || 'φ', 'end');
+    // dua label sudut berdekatan (lensa sempit) -> ditumpuk, yang satu di atas dan yang lain di bawah sumbu
+    const der = (v) => (/^\d+([.,]\d+)?$/.test(String(v).trim()) ? String(v).trim() + '°' : String(v));
+    const t1 = cfg.sudut1 != null ? der(cfg.sudut1) || 'θ' : '', t2 = cfg.sudut2 != null ? der(cfg.sudut2) || 'φ' : '';
+    const rapat = t1 && t2 && (O2[0] - 68 < lebarTeksKira(t1, GAYA.teks) + lebarTeksKira(t2, GAYA.teks) + 6);
+    if (t1) isi += busurFis(0, 0, 22, -(a1 * 180) / PI_FIS, (a1 * 180) / PI_FIS) + halo(30, rapat ? -4 : 4, t1, 'start');
+    if (t2) isi += busurFis(O2[0], 0, 22, 180 - (a2 * 180) / PI_FIS, 180 + (a2 * 180) / PI_FIS) + halo(O2[0] - 30, rapat ? 14 : 4, t2, 'end');
     isi += halo(-R1 * 0.45, 26, String(cfg.r1 != null ? cfg.r1 : 'r'), 'middle') + halo(O2[0] + R2 * 0.45, 26, String(cfg.r2 != null ? cfg.r2 : 'r'), 'middle');
     b.titik(-R1 - 8, -Math.max(R1, R2) - 14); b.titik(O2[0] + R2 + 8, Math.max(R1, R2) + 30);
     return bungkusGambarSVG(isi, b, true);
@@ -11326,6 +11376,30 @@ function renderBagianLingkaranSVG(cfg) {
     return bungkusGambarSVG(isi, b, true);
   }
 
+  // tali-jarak: lingkaran dengan tali busur, jarak tegak lurus dari pusat, dan (titik putus-putus) jari-jari ke ujung tali.
+  // jari=10 cm; jarak=6 cm; tali=16 cm; nama=CD — hanya yang diberikan yang ditulis; bentuk gambar mengikuti angka yang ada.
+  if (jenis === 'tali-jarak') {
+    const rr = angkaBerPi(cfg.jari), dd = angkaBerPi(cfg.jarak), cc = angkaBerPi(cfg.tali);
+    let frac = 0.6;
+    if (rr > 0 && dd > 0 && dd < rr) frac = dd / rr;
+    else if (rr > 0 && cc > 0 && cc / 2 < rr) frac = Math.sqrt(1 - Math.pow(cc / 2 / rr, 2));
+    else if (dd > 0 && cc > 0) frac = dd / Math.hypot(dd, cc / 2);
+    frac = Math.max(0.25, Math.min(0.85, frac));
+    const dp = R * frac, hw = Math.sqrt(R * R - dp * dp);
+    const nm = /^[A-Za-z]{2}$/.test(String(cfg.nama || '').trim()) ? String(cfg.nama).trim() : 'CD';
+    const C = [-hw, -dp], D = [hw, -dp], M = [0, -dp], O = [0, 0];
+    isi += `<circle cx="0" cy="0" r="${R}" fill="none" stroke="${GAYA.hitam}" stroke-width="${GAYA.garis}"/>`;
+    isi += garis(C, D) + garis(O, M) + garis(O, D, { putus: true, warna: GAYA.abu, tebal: 1.1 });
+    isi += rightAngleSVG(M[0], M[1], O[0], O[1], D[0], D[1], 9);
+    isi += dot(O) + dot(M);
+    isi += titikLabel(O, 'O', 0, 1, 14) + titikLabel(C, nm[0], -1, -0.5, 12) + titikLabel(D, nm[1], 1, -0.5, 12);
+    if (cfg.tali) isi += halo(0, -dp - 8, String(cfg.tali), 'middle');
+    if (cfg.jarak) isi += halo(7, -dp / 2 + 4, String(cfg.jarak), 'start');
+    if (cfg.jari) isi += halo(hw * 0.5 + 8, -dp * 0.5 + 16, String(cfg.jari), 'start');
+    b.titik(-R - 16, -R - 26); b.titik(R + 16, R + 18);
+    return bungkusGambarSVG(isi, b, true);
+  }
+
   // sektor, tembereng, sektor-tembereng (satu lingkaran, dua jari-jari)
   const th = batasSudut(th0), adeg = (th * 180) / PI_FIS;
   const A = P(R, 90 + adeg / 2), B = P(R, 90 - adeg / 2), O = [0, 0];
@@ -11344,11 +11418,17 @@ function renderBagianLingkaranSVG(cfg) {
   if (adaTali) isi += garis(A, B, jenis === 'sektor' ? { putus: true, tebal: 1.2 } : {});
   isi += busurFis(0, 0, 24, 90 - adeg / 2, 90 + adeg / 2) + halo(0, -38, thTeks, 'middle');
   const nA = [Math.cos(rd(90 + adeg / 2)), -Math.sin(rd(90 + adeg / 2))], nB = [Math.cos(rd(90 - adeg / 2)), -Math.sin(rd(90 - adeg / 2))];
-  isi += dot(O) + titikLabel(O, 'O', 0, 1, 14) + titikLabel(A, 'A', nA[0] || -1, nA[1], 12) + titikLabel(B, 'B', nB[0] || 1, nB[1], 12);
+  // tali=EF (dua huruf) menamai titik ujungnya E dan F (kiri ke kanan) dan tidak ditulis lagi di tengah tali.
+  const taliHuruf = /^[A-Za-z]{2}$/.test(String(cfg.tali || '').trim()) ? String(cfg.tali).trim() : null;
+  isi += dot(O) + titikLabel(O, 'O', 0, 1, 14) + titikLabel(A, taliHuruf ? taliHuruf[0] : 'A', nA[0] || -1, nA[1], 12) + titikLabel(B, taliHuruf ? taliHuruf[1] : 'B', nB[0] || 1, nB[1], 12);
   const mid = P(R * 0.5, 90 - adeg / 2);
   isi += halo(mid[0] + 12, mid[1] + 14, jariTeks, 'start');
   if (cfg.busur) isi += halo(0, -R - 12, String(cfg.busur), 'middle');
-  if (cfg.tali) { const mc = [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2]; isi += halo(mc[0], mc[1] + (th < PI_FIS ? 16 : -8), String(cfg.tali), 'middle'); }
+  if (cfg.tali && !taliHuruf) {
+    const mc = [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2];
+    // sudut lebar: tali dekat O, label sudut menimpa bila ditulis di bawah tali -> tulis di atasnya
+    isi += halo(mc[0], mc[1] + (th < PI_FIS && th < 1.75 ? 16 : -8), String(cfg.tali), 'middle');
+  }
   b.titik(-R - 16, -R - 26); b.titik(R + 16, th < PI_FIS ? 26 : R + 18);
   return bungkusGambarSVG(isi, b, true);
 }
