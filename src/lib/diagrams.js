@@ -12012,6 +12012,7 @@ const DIAGRAM_TYPE_ALIASES = {
   sektor: 'sektor', juring: 'sektor',
   garisbilangan: 'garisbilangan',
   tumbuhan: 'tumbuhan', tanaman: 'tumbuhan', plant: 'tumbuhan',
+  garissejajar: 'garissejajar', sejajar: 'garissejajar', transversal: 'garissejajar', garispotong: 'garissejajar',
   gantung: 'gantung', muatangantung: 'gantung', bandulmuatan: 'gantung', bolagantung: 'gantung',
   keping: 'keping', kapasitorkeping: 'keping', kepingsejajar: 'keping',
   muatan: 'muatan', muatantitik: 'muatan', coulomb: 'muatan', listrikstatis: 'muatan',
@@ -12441,6 +12442,238 @@ function renderKepingSVG(cfg) {
     const t = String(cfg.tegangan);
     isi += `<text x="${mx}" y="${yb + 28}" font-size="12" text-anchor="middle" fill="${GAYA.hitam}">${escText(t)}</text>`;
     b.teks(mx, yb + 28, t, 12, 'middle'); b.titik(x1, yb + 14);
+  }
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// ---------------------------------------------------------------------
+// Garis sejajar (SMP): sudut-sudut pada garis sejajar yang dipotong garis
+// lain, garis berbelok di antara dua garis sejajar, dan segitiga di antara
+// dua garis sejajar. Label sudut boleh aljabar ("2x + 15" -> 2x + 15°).
+//   jenis=potong (bawaan): sejajar=2|3; potong=60 (sudut garis potong,
+//     derajat dari arah kanan; 120 = condong ke kiri; beberapa: 65,65 atau
+//     60,120); titik=A,B; nama=g,l; namapotong=k; nomor=ya|urut;
+//     sudut=A1:105|B3:2x + 15|A2:?
+//   jenis=belok: belok=-1 (atau 1,-1,1); titik=E,G,B; sudut=E:93|G:x|B:112;
+//     tegak=ya (garis sejajar tegak)
+//   jenis=segitiga: kiri=70; kanan=45; titik=A,B,C; sudut=A:70|C-kanan:45|B-luar:q
+// ---------------------------------------------------------------------
+function formatSudutGS(t) {
+  t = texKeTeks(String(t).trim());
+  if (t === '' || t === '?') return t;
+  // Berakhir angka atau kurung tutup -> diberi °; huruf saja (x, p) apa adanya.
+  return /[\d)]$/.test(t) ? t + '°' : t;
+}
+
+function renderGarisSejajarSVG(cfg) {
+  const jenis = String(cfg.jenis || 'potong').toLowerCase();
+  const ya = (v) => /^(ya|iya|true|1)$/i.test(String(v || '').trim());
+  const b = kotakBatas();
+  let isi = '';
+  const garis = (x1, y1, x2, y2, w) => `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="${w || GAYA.garis}" stroke-linecap="round"/>`;
+  const daftar = (v) => String(v == null ? '' : v).split(',').map((t) => t.trim()).filter((t) => t !== '');
+  const terpakai = [];
+  const kotakT = (x, y, t, size, anchor) => {
+    const w = lebarTeksKira(t, size), x1 = anchor === 'end' ? x - w : anchor === 'start' ? x : x - w / 2;
+    return { x1: x1 - 1.5, x2: x1 + w + 1.5, y1: y - size * 0.85, y2: y + size * 0.3 };
+  };
+  const bentrok = (k) => terpakai.some((o) => k.x1 < o.x2 && k.x2 > o.x1 && k.y1 < o.y2 && k.y2 > o.y1);
+  const tulis = (x, y, t, size, opsi) => {
+    opsi = opsi || {};
+    const anchor = opsi.anchor || 'middle';
+    isi += `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${size}"${opsi.miring ? ' font-style="italic"' : ''} text-anchor="${anchor}" fill="${GAYA.hitam}" stroke="${GAYA.putih}" stroke-width="3" paint-order="stroke">${escText(t)}</text>`;
+    b.teks(x, y, t, size, anchor);
+    terpakai.push(kotakT(x, y, t, size, anchor));
+  };
+  // Busur sudut dari arah a1 sejauh `putar` radian (positif = searah jarum
+  // jam di layar), boleh lebih dari 180° (sudut refleks).
+  const busur = (vx, vy, a1, putar, r, teks) => {
+    const a2 = a1 + putar;
+    const p1 = [vx + r * Math.cos(a1), vy + r * Math.sin(a1)], p2 = [vx + r * Math.cos(a2), vy + r * Math.sin(a2)];
+    const besar = Math.abs(putar) > Math.PI ? 1 : 0, sapu = putar > 0 ? 1 : 0;
+    isi += `<path d="M${p1[0].toFixed(1)} ${p1[1].toFixed(1)} A${r} ${r} 0 ${besar} ${sapu} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.1"/>`;
+    if (!teks) return;
+    const tengah = a1 + putar / 2;
+    const w = lebarTeksKira(teks, 11.5);
+    const calon = [0, 8, 16, 26].map((ekstra) => {
+      const jarak = r + 7 + ekstra + w * 0.5 * Math.abs(Math.cos(tengah)) + 4 * Math.abs(Math.sin(tengah));
+      return [vx + jarak * Math.cos(tengah), vy + jarak * Math.sin(tengah) + 4];
+    });
+    const pilih = calon.find(([x, y]) => !bentrok(kotakT(x, y, teks, 11.5, 'middle'))) || calon[0];
+    tulis(pilih[0], pilih[1], teks, 11.5);
+  };
+  const sudutRay = (ux, uy) => Math.atan2(uy, ux);
+  // Selisih sudut dari ray a ke ray b, searah jarum jam layar, 0..2π.
+  const searah = (a, c) => { let d = c - a; while (d <= 0) d += 2 * Math.PI; while (d > 2 * Math.PI) d -= 2 * Math.PI; return d; };
+  const entriSudut = String(cfg.sudut || '').split('|').map((t) => t.trim()).filter(Boolean).map((t) => {
+    const k = t.indexOf(':');
+    const kunci = (k >= 0 ? t.slice(0, k) : t).trim();
+    const sisa = k >= 0 ? t.slice(k + 1) : '';
+    const m = sisa.match(/^(.*?)(?::(kiri|kanan|besar|kecil))?$/i);
+    return { kunci, teks: formatSudutGS(m ? m[1] : sisa), opsi: m && m[2] ? m[2].toLowerCase() : '' };
+  });
+  const panahUjung = (x1, y1, x2, y2) => arrowSVG(x1, y1, x2, y2, { headLen: 8, strokeWidth: GAYA.garis });
+
+  if (jenis === 'potong') {
+    const nSejajar = Math.max(2, Math.min(4, parseInt(cfg.sejajar, 10) || 2));
+    const jarak = 100;
+    const ysj = Array.from({ length: nSejajar }, (_, i) => i * jarak);
+    const potong = daftar(cfg.potong || '62').map((v) => parseFloat(v)).filter((v) => isFinite(v) && v > 5 && v < 175);
+    if (!potong.length) potong.push(62);
+    const posisi = daftar(cfg.posisi).map(parseFloat);
+    const transversal = potong.map((th, i) => {
+      const r = (th * Math.PI) / 180, ux = Math.cos(r), uy = -Math.sin(r);
+      const x0 = isFinite(posisi[i]) ? posisi[i] * 30 : i * 150;
+      // Titik potong dengan garis sejajar di ketinggian y: x = x0 − y·cot θ.
+      const titik = ysj.map((y) => [x0 - y * (ux / -uy), y]);
+      return { th, ux, uy, x0, titik };
+    });
+    const xsSemua = transversal.flatMap((t) => t.titik.map((p) => p[0]));
+    const xKiri = Math.min(...xsSemua) - 75, xKanan = Math.max(...xsSemua) + 80;
+    const namaGaris = daftar(cfg.nama);
+    ysj.forEach((y, i) => {
+      isi += garis(xKiri, y, xKanan - 9, y);
+      if (!/^(tidak|no)$/i.test(String(cfg.panah || ''))) isi += panahUjung(xKanan - 20, y, xKanan, y);
+      else isi += garis(xKanan - 9, y, xKanan, y);
+      if (namaGaris[i]) tulis(xKanan + 8, y + 4, namaGaris[i], 12.5, { anchor: 'start', miring: true });
+      b.titik(xKiri, y); b.titik(xKanan, y);
+    });
+    const namaPotong = daftar(cfg.namapotong);
+    const ext = 58;
+    transversal.forEach((t, i) => {
+      const [ax, ay] = t.titik[0], [zx, zy] = t.titik[t.titik.length - 1];
+      const k = ext / Math.max(0.35, -t.uy);
+      const x1 = ax + t.ux * k, y1 = ay + t.uy * k;
+      const x2 = zx - t.ux * k, y2 = zy - t.uy * k;
+      isi += ya(cfg.panahpotong) ? panahUjung(x2, y2, x1, y1) : garis(x1, y1, x2, y2);
+      b.titik(x1, y1); b.titik(x2, y2);
+      if (namaPotong[i]) tulis(x2 - t.ux * 8, y2 - t.uy * 8 + 12, namaPotong[i], 12.5, { miring: true });
+    });
+    // Titik potong berurutan: per garis potong, dari atas ke bawah.
+    const namaTitik = daftar(cfg.titik);
+    const simpul = [];
+    transversal.forEach((t) => t.titik.forEach((p) => simpul.push({ x: p[0], y: p[1], t })));
+    // Titik tanpa nama tetap bisa dirujuk A, B, C, ... sesuai urutan (tidak ditulis).
+    simpul.forEach((sp, i) => { sp.nama = namaTitik[i] || ''; sp.kunci = sp.nama || String.fromCharCode(65 + i); sp.urut = i; });
+    const kuadran = (sp, q) => {
+      const kiri = Math.PI, kanan = 0, atas = sudutRay(sp.t.ux, sp.t.uy), bawah = sudutRay(-sp.t.ux, -sp.t.uy);
+      // 1 kiri-atas, 2 kanan-atas, 3 kanan-bawah, 4 kiri-bawah (searah jarum jam).
+      const pasangan = { 1: [kiri, atas], 2: [atas, kanan], 3: [kanan, bawah], 4: [bawah, kiri] }[q];
+      return { a: pasangan[0], putar: searah(pasangan[0], pasangan[1]) };
+    };
+    // Nama titik di kiri atas simpul.
+    simpul.forEach((sp) => { if (sp.nama) tulis(sp.x - 24, sp.y - 7, sp.nama, 12.5, { anchor: 'end', miring: true }); });
+    const modeNomor = String(cfg.nomor || '').toLowerCase();
+    if (modeNomor === 'ya' || modeNomor === 'urut') {
+      simpul.forEach((sp, i) => {
+        [1, 2, 3, 4].forEach((q) => {
+          const { a, putar } = kuadran(sp, q);
+          const tg = a + putar / 2, d = 13 + 4 * Math.abs(Math.cos(tg));
+          const n = modeNomor === 'urut' ? String(i * 4 + q) : String(q);
+          tulis(sp.x + d * Math.cos(tg), sp.y + d * Math.sin(tg) + 4, n, 10.5);
+        });
+      });
+    }
+    entriSudut.forEach((e) => {
+      let sp = null, q = 0;
+      const m = e.kunci.match(/^(.*?)(\d+)$/);
+      if (m && m[1]) { sp = simpul.find((x) => x.kunci === m[1]); q = parseInt(m[2], 10); }
+      else if (m) { const n = parseInt(m[2], 10); sp = simpul[Math.floor((n - 1) / 4)]; q = ((n - 1) % 4) + 1; }
+      if (!sp || q < 1 || q > 4) return;
+      const { a, putar } = kuadran(sp, q);
+      busur(sp.x, sp.y, a, putar, 15, e.teks);
+    });
+  } else if (jenis === 'belok') {
+    const H = 130;
+    const tegak = ya(cfg.tegak);
+    const belok = daftar(cfg.belok || '-1').map(parseFloat).filter(isFinite);
+    const ujung = parseFloat(cfg.ujung);
+    const titikAbs = [[0, 0]];
+    belok.forEach((v, i) => titikAbs.push([v * 75, (H * (i + 1)) / (belok.length + 1)]));
+    titikAbs.push([isFinite(ujung) ? ujung * 75 : 0, H]);
+    const map = (x, y) => (tegak ? [y, -x] : [x, y]);
+    const P = titikAbs.map(([x, y]) => map(x, y));
+    const xsA = titikAbs.map((p) => p[0]);
+    const xMin = Math.min(...xsA) - 80, xMax = Math.max(...xsA) + 80;
+    [0, H].forEach((y) => {
+      const [x1, y1] = map(xMin, y), [x2, y2] = map(xMax, y);
+      isi += garis(x1, y1, x2, y2);
+      const [xa, ya2] = map(xMax - 22, y);
+      isi += panahUjung(xa, ya2, x2, y2);
+      b.titik(x1, y1); b.titik(x2, y2);
+    });
+    for (let i = 0; i + 1 < P.length; i++) isi += garis(P[i][0], P[i][1], P[i + 1][0], P[i + 1][1]);
+    const namaTitik = daftar(cfg.titik);
+    const namaGaris = daftar(cfg.nama);
+    namaGaris.forEach((n, i) => {
+      const [x, y] = map(xMax + 6, i === 0 ? 0 : H);
+      tulis(x + (tegak ? 0 : 6), y + (tegak ? -8 : 4), n, 12.5, { anchor: tegak ? 'middle' : 'start', miring: true });
+    });
+    const arahRay = (dx, dy) => { const [x, y] = tegak ? [dy, -dx] : [dx, dy]; return Math.atan2(y, x); };
+    P.forEach((p, i) => {
+      const nama = namaTitik[i];
+      const e = entriSudut.find((x) => x.kunci === nama || x.kunci === String(i + 1));
+      if (i === 0 || i === P.length - 1) {
+        const tetangga = titikAbs[i === 0 ? 1 : i - 1];
+        const ke = Math.atan2(P[i === 0 ? 1 : i - 1][1] - p[1], P[i === 0 ? 1 : i - 1][0] - p[0]);
+        // Ray garis sejajar ke sisi tempat belokan berada (bawaan), atau kiri/kanan.
+        let sisi = Math.sign(tetangga[0] - titikAbs[i][0]) || 1;
+        if (e && e.opsi === 'kiri') sisi = -1; else if (e && e.opsi === 'kanan') sisi = 1;
+        const ray = arahRay(sisi, 0);
+        if (nama) {
+          const [nx, ny] = map(-sisi * 14, i === 0 ? -10 : 18);
+          tulis(p[0] + nx, p[1] + ny, nama, 12.5, { miring: true });
+        }
+        if (e) {
+          let d = ke - ray; while (d <= -Math.PI) d += 2 * Math.PI; while (d > Math.PI) d -= 2 * Math.PI;
+          if (e.opsi === 'besar') d = d > 0 ? d - 2 * Math.PI : d + 2 * Math.PI;
+          busur(p[0], p[1], ray, d, 16, e.teks);
+        }
+      } else {
+        const a = Math.atan2(P[i - 1][1] - p[1], P[i - 1][0] - p[0]), c = Math.atan2(P[i + 1][1] - p[1], P[i + 1][0] - p[0]);
+        let d = c - a; while (d <= -Math.PI) d += 2 * Math.PI; while (d > Math.PI) d -= 2 * Math.PI;
+        if (e && e.opsi === 'besar') d = d > 0 ? d - 2 * Math.PI : d + 2 * Math.PI;
+        if (nama) {
+          const tengah = a + d / 2;
+          tulis(p[0] - 16 * Math.cos(tengah), p[1] - 16 * Math.sin(tengah) + 4, nama, 12.5, { miring: true });
+        }
+        if (e) busur(p[0], p[1], a, d, 16, e.teks);
+      }
+      b.titik(p[0], p[1]);
+    });
+  } else if (jenis === 'segitiga') {
+    const H = 130;
+    const ak = Math.max(15, Math.min(150, parseFloat(cfg.kiri) || 65)), bk = Math.max(15, Math.min(150, parseFloat(cfg.kanan) || 55));
+    const xc = H / Math.tan((ak * Math.PI) / 180), w = xc + H / Math.tan((bk * Math.PI) / 180);
+    const A = [0, H], B = [w, H], C = [xc, 0];
+    const xMin = Math.min(0, xc) - 70, xMax = Math.max(w, xc) + 75;
+    const atas = !/^(tidak|no)$/i.test(String(cfg.atas || ''));
+    [[H, true], [0, atas]].forEach(([y, tampil]) => {
+      if (!tampil) return;
+      isi += garis(xMin, y, xMax - 9, y) + panahUjung(xMax - 22, y, xMax, y);
+      b.titik(xMin, y); b.titik(xMax, y);
+    });
+    isi += garis(A[0], A[1], C[0], C[1]) + garis(B[0], B[1], C[0], C[1]);
+    const [nA, nB, nC] = daftar(cfg.titik || 'A,B,C');
+    if (nA) tulis(A[0] - 6, A[1] + 16, nA, 12.5, { miring: true });
+    if (nB) tulis(B[0] + 6, B[1] + 16, nB, 12.5, { miring: true });
+    if (nC) tulis(C[0], C[1] - 9, nC, 12.5, { miring: true });
+    const ar = (p, q) => Math.atan2(q[1] - p[1], q[0] - p[0]);
+    const KIRI = Math.PI, KANAN = 0;
+    const sudutDef = {
+      A: [A, ar(A, B), ar(A, C)], B: [B, ar(B, C), ar(B, A)], C: [C, ar(C, A), ar(C, B)],
+      'C-kiri': [C, KIRI, ar(C, A)], 'C-kanan': [C, ar(C, B), KANAN],
+      'A-luar': [A, ar(A, C), KIRI], 'B-luar': [B, KANAN, ar(B, C)],
+    };
+    entriSudut.forEach((e) => {
+      const key = Object.keys(sudutDef).find((k) => k.toLowerCase() === e.kunci.toLowerCase().replace(nA || 'A', 'A').replace(nB || 'B', 'B').replace(nC || 'C', 'C'));
+      if (!key) return;
+      const [v, a1, a2] = sudutDef[key];
+      let d = a2 - a1; while (d <= -Math.PI) d += 2 * Math.PI; while (d > Math.PI) d -= 2 * Math.PI;
+      busur(v[0], v[1], a1, d, 17, e.teks);
+    });
+  } else {
+    throw new Error('garissejajar: jenis "' + cfg.jenis + '" tidak dikenal (potong, belok, segitiga)');
   }
   return bungkusGambarSVG(isi, b, false);
 }
@@ -13024,6 +13257,7 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'muatan') svg = renderMuatanSVG(params);
     else if (type === 'keping') svg = renderKepingSVG(params);
     else if (type === 'gantung') svg = renderGantungSVG(params);
+    else if (type === 'garissejajar') svg = renderGarisSejajarSVG(params);
     else if (type === 'aliranenergi') svg = renderEnergyFlowSVG(params);
     else if (type === 'jodohkan') svg = renderMatchingSVG(params);
     else if (type === 'statistik') svg = renderStatSVG(params);
@@ -13226,7 +13460,7 @@ if (typeof module !== 'undefined') {
     componentSVG, parseCircuitComponent, CIRCUIT_KINDS,
     renderLabApparatusSVG, LAB_APPARATUS,
     renderCircleTheoremSVG, renderNetSVG, renderViewsSVG, CIRCLE_THEOREMS, SOLID_NETS, SOLID_VIEWS,
-    renderPunnettSVG, renderDichotomousKeySVG, renderPlantSVG, renderLorentzSVG, renderMuatanSVG, renderKepingSVG, renderGantungSVG, renderEnergyFlowSVG, renderMatchingSVG, renderFoodWebSVG, splitGenotype, gametesOf, combineGametes, phenotypeOf,
+    renderPunnettSVG, renderDichotomousKeySVG, renderPlantSVG, renderLorentzSVG, renderMuatanSVG, renderKepingSVG, renderGantungSVG, renderGarisSejajarSVG, formatSudutGS, renderEnergyFlowSVG, renderMatchingSVG, renderFoodWebSVG, splitGenotype, gametesOf, combineGametes, phenotypeOf,
     renderFigureHTML, renderImageHTML, setImageResolver, resetFigureCounter, applyAnnotations,
     extractDiagramTags, substituteDiagramTokens, setModeSiswaDiagram, GEOMETRY_PRESETS, SOLID_PRESETS, LEWIS_PRESETS, VSEPR_PRESETS,
   };
