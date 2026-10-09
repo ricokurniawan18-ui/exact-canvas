@@ -3455,8 +3455,135 @@ function jalurKePath(jalur, px, b, tutup) {
   return d + (tutup ? ' Z' : '');
 }
 
+// ---- Sketsa: pola segitiga sebangun yang koordinatnya dihitung di sini (bukan oleh penulis soal) ----
+
+// Gabungkan hasil pola dengan isian pemakai pada tag yang sama (isian pemakai ditambahkan di belakang).
+function gabungSketsa(cfg, t) {
+  const out = Object.assign({}, cfg);
+  const norm = (v) => { const x = String(v || ''); return x.indexOf('|') > -1 || x.indexOf(',') < 0 ? x : x.split(',').join('|'); };
+  ['titik', 'garis', 'putus', 'sinar'].forEach((k) => { out[k] = [t[k], cfg[k]].filter(Boolean).join(','); });
+  ['label', 'sudut', 'siku'].forEach((k) => { out[k] = [t[k], norm(cfg[k])].filter(Boolean).join('|'); });
+  ['sama', 'sejajar'].forEach((k) => { out[k] = [t[k], cfg[k]].filter(Boolean).join('|'); });
+  if (/^(tidak|no|false)$/i.test(String(cfg.sejajar || ''))) out.sejajar = '';
+  return out;
+}
+
+// bentuk=segitiga-sejajar; puncak=P; kiri=Q; kanan=R; potong=M,N:0.75|S,T:0.5
+// Segitiga dengan satu atau lebih garis sejajar alas. Tiap potong "titikKiri,titikKanan:t" dengan t = jarak dari
+// puncak dibagi panjang sisi (= panjang garis dibagi panjang alas, karena sebangun). Nama diawali "." tak berhuruf.
+function sketsaSegitigaSejajar(cfg) {
+  const P = String(cfg.puncak || 'P').trim(), Q = String(cfg.kiri || 'Q').trim(), R = String(cfg.kanan || 'R').trim();
+  const W = numOrDefault(cfg.lebar, 12), H = numOrDefault(cfg.tinggi, 10), g = numOrDefault(cfg.geser, W * 0.42);
+  let titik = `${P}:${g}:${H},${Q}:0:0,${R}:${W}:0`, garis = `${P}-${Q}-${R}-${P}`;
+  const sej = [];
+  String(cfg.potong || '').split('|').map((x) => x.trim()).filter(Boolean).forEach((e) => {
+    const [nm, tt] = e.split(':');
+    const [a, c] = String(nm || '').split(',').map((x) => x.trim());
+    const t = parseFloat(String(tt || '').replace(',', '.'));
+    if (!a || !c || !(t > 0 && t < 1)) return;
+    titik += `,${a}:${(g + t * (0 - g)).toFixed(3)}:${(H * (1 - t)).toFixed(3)},${c}:${(g + t * (W - g)).toFixed(3)}:${(H * (1 - t)).toFixed(3)}`;
+    garis += `,${a}-${c}`;
+    sej.push(`${a}-${c}`);
+  });
+  return { titik, garis, sejajar: sej.length ? `${sej.join(',')},${Q}-${R}` : '' };
+}
+
+// bentuk=silang; nama=A,B,P,Q; rasio=0.5; tengah=C,D; pusat=X
+// Trapesium dengan kedua diagonal berpotongan di pusat (dua segitiga sebangun AXB dan PXQ); AB sejajar PQ,
+// rasio = AB/PQ. tengah=C,D menarik garis sejajar melalui titik potong; kaki=tidak menghilangkan sisi miring (dasi).
+function sketsaSilang(cfg) {
+  const [A, B, P, Q] = String(cfg.nama || 'A,B,P,Q').split(',').map((x) => x.trim());
+  const X = String(cfg.pusat || 'X').trim();
+  const W = numOrDefault(cfg.lebar, 12), H = numOrDefault(cfg.tinggi, 8), r = Math.max(0.1, Math.min(3, numOrDefault(cfg.rasio, 0.5)));
+  const a0 = numOrDefault(cfg.geser, (W - r * W) / 2);
+  const ax = a0, bx = a0 + r * W;
+  const u = r / (1 + r), xx = ax + u * (W - ax), xy = H + u * (0 - H);
+  let titik = `${P}:0:0,${Q}:${W}:0,${A}:${ax.toFixed(3)}:${H},${B}:${bx.toFixed(3)}:${H},${X}:${xx.toFixed(3)}:${xy.toFixed(3)}`;
+  const kaki = !/^(tidak|no|false)$/i.test(String(cfg.kaki || ''));
+  let garis = `${A}-${B},${P}-${Q},${A}-${Q},${B}-${P}` + (kaki ? `,${A}-${P},${B}-${Q}` : '');
+  const sej = [`${A}-${B}`, `${P}-${Q}`];
+  if (cfg.tengah) {
+    const [C, D] = String(cfg.tengah).split(',').map((x) => x.trim());
+    if (C && D) {
+      const t = (H - xy) / H;
+      titik += `,${C}:${(ax + t * (0 - ax)).toFixed(3)}:${xy.toFixed(3)},${D}:${(bx + t * (W - bx)).toFixed(3)}:${xy.toFixed(3)}`;
+      garis += `,${C}-${D}`; sej.push(`${C}-${D}`);
+    }
+  }
+  return { titik, garis, sejajar: sej.join(',') };
+}
+
+// bentuk=bayangan; tegak=B-A:4.8 m|Q-P:1.2 m; bayangan=Q:1.5; ujung=C; jarak=F-B:5; arah=kiri
+// Benda tegak (tiang, orang, pohon, gedung) dengan sinar matahari dari puncak benda ke ujung bayangan di tanah.
+// tegak: "kaki-puncak:tinggi" (tinggi ? atau huruf = dicari); bayangan=kaki:panjang (bayangan benda itu sampai ujung);
+// jarak=kaki1-kaki2:jarak antar dua kaki. Posisi dan tinggi yang dicari dihitung dari kesebangunan.
+function sketsaBayangan(cfg) {
+  // Angka dengan satuan (cm, mm, m) disamakan ke meter supaya "120 cm" dan "4.8 m" bisa bercampur.
+  const meter = (raw) => {
+    const t = String(raw || '').trim().replace(',', '.');
+    const m = t.match(/^(-?\d*\.?\d+)\s*(mm|cm|m|km)?/i);
+    if (!m) return null;
+    const k = { mm: 0.001, cm: 0.01, m: 1, km: 1000 }[(m[2] || 'm').toLowerCase()];
+    return parseFloat(m[1]) * k;
+  };
+  const benda = String(cfg.tegak || 'B-A:4.8|Q-P:1.2').split('|').map((x) => x.trim()).filter(Boolean).map((e) => {
+    const i = e.indexOf(':');
+    const [kaki, puncak] = e.slice(0, i < 0 ? e.length : i).split('-').map((x) => x.trim());
+    const raw = i < 0 ? '' : e.slice(i + 1).trim();
+    const h = /^[\d.,]/.test(raw) ? meter(raw) : null;
+    return { kaki, puncak, raw, h: h !== null && isFinite(h) ? h : null, s: null };
+  });
+  const by = {}; benda.forEach((o) => { by[o.kaki] = o; });
+  String(cfg.bayangan || '').split('|').map((x) => x.trim()).filter(Boolean).forEach((e) => {
+    const [k, v] = e.split(':'); const n = meter(v);
+    if (by[(k || '').trim()] && n !== null && isFinite(n)) by[k.trim()].s = n;
+  });
+  const jarak = String(cfg.jarak || '').split('|').map((x) => x.trim()).filter(Boolean).map((e) => {
+    const [pr, v] = e.split(':'); const [a, c] = String(pr || '').split('-').map((x) => x.trim()); const dm = meter(v); return { a, c, d: dm === null ? NaN : dm };
+  }).filter((j) => by[j.a] && by[j.c] && isFinite(j.d));
+  let m = null;
+  benda.forEach((o) => { if (m === null && o.h !== null && o.s !== null && o.s > 0) m = o.h / o.s; });
+  if (m === null) { const o = benda.find((x) => x.h !== null); if (o) { o.s = o.s !== null ? o.s : o.h / 0.8; m = o.h / o.s; } else m = 0.8; }
+  for (let k = 0; k < 4; k++) {
+    benda.forEach((o) => {
+      if (o.s === null && o.h !== null) o.s = o.h / m;
+      if (o.h === null && o.s !== null) o.h = m * o.s;
+    });
+    jarak.forEach((j) => {
+      const A = by[j.a], C = by[j.c];
+      if (A.s !== null && C.s === null) C.s = A.s + j.d;       // benda kedua lebih jauh dari ujung bayangan
+      else if (C.s !== null && A.s === null) A.s = C.s - j.d;
+    });
+  }
+  benda.forEach((o) => { if (o.s === null) o.s = 1; if (o.h === null) o.h = m * o.s; });
+  const kiri = /kiri|left/i.test(String(cfg.arah || ''));
+  const S = Math.max(...benda.map((o) => o.s));
+  const ujung = String(cfg.ujung || 'C').trim();
+  const xOf = (o) => (kiri ? o.s : S - o.s);
+  const xUjung = kiri ? 0 : S;
+  const urut = benda.slice().sort((p, q) => xOf(p) - xOf(q));
+  let titik = `${ujung}:${xUjung.toFixed(3)}:0`, garis = '', siku = [], label = [];
+  benda.forEach((o) => {
+    titik += `,${o.kaki}:${xOf(o).toFixed(3)}:0,${o.puncak}:${xOf(o).toFixed(3)}:${o.h.toFixed(3)}`;
+    garis += (garis ? ',' : '') + `${o.kaki}-${o.puncak}`;
+    if (o.raw && o.h !== null && /^[\d.,]/.test(o.raw)) label.push(`${o.kaki}-${o.puncak}:~${o.raw}`);
+  });
+  // tanah dari titik paling kiri sampai paling kanan, sinar dari puncak benda terjauh ke ujung bayangan
+  const rantai = [ujung].concat(urut.map((o) => o.kaki)).sort((a, b) => 0);
+  const tanah = (kiri ? [ujung].concat(urut.map((o) => o.kaki)) : urut.map((o) => o.kaki).concat([ujung]));
+  garis += `,${tanah.join('-')}`;
+  const jauh = benda.slice().sort((p, q) => q.s - p.s)[0];
+  garis += `,${jauh.puncak}-${ujung}`;
+  tanah.slice(0, -1).forEach((n, i) => { if (benda.find((o) => o.kaki === n)) { const o = benda.find((x) => x.kaki === n); siku.push(`${o.puncak}-${o.kaki}-${tanah[i + 1]}`); } });
+  if (!kiri) { /* objek berdiri; sudut siku di sisi kanan kaki */ }
+  return { titik, garis, siku: siku.join('|'), label: label.join('|') };
+}
+
 function renderSketsaSVG(cfg) {
   if (/siku-?tinggi/i.test(String(cfg.bentuk || ''))) cfg = Object.assign({}, cfg, sketsaSikuTinggi(cfg));
+  else if (/^segitiga-?sejajar$/i.test(String(cfg.bentuk || ''))) cfg = gabungSketsa(cfg, sketsaSegitigaSejajar(cfg));
+  else if (/^silang$/i.test(String(cfg.bentuk || ''))) cfg = gabungSketsa(cfg, sketsaSilang(cfg));
+  else if (/^bayangan$/i.test(String(cfg.bentuk || ''))) cfg = gabungSketsa(cfg, sketsaBayangan(cfg));
   const semua = parseVertexList(cfg.titik);
   const pts = semua.length ? semua : [{ name: 'A', x: 0, y: 0 }, { name: 'B', x: 10, y: 0 }, { name: 'C', x: 5, y: 8 }];
   const areaW = 260, areaH = 200;
