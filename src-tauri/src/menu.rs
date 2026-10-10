@@ -122,7 +122,8 @@ pub fn buat_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         .item(&MenuItemBuilder::new("Main window").id("window:focus").build(app)?)
         .separator()
         .minimize()
-        .fullscreen()
+        // "Enter Full Screen" sengaja tidak dipasang: layar penuh macOS sering
+        // menyisakan layar hitam saat jendela kerja disembunyikan.
         .separator()
         .close_window()
         .build()?;

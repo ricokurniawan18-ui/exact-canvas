@@ -38,7 +38,13 @@ pub fn run() {
                 .add_migrations(&db_url, db::migrations())
                 .build(),
         )
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        // Keadaan layar penuh TIDAK dipulihkan: jendela yang dibuka langsung dalam
+        // layar penuh lalu ditengahkan oleh windows::siapkan tampil rusak.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(tauri_plugin_window_state::StateFlags::all() - tauri_plugin_window_state::StateFlags::FULLSCREEN)
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
@@ -96,7 +102,19 @@ pub fn run() {
             if window.label() == windows::FOCUS {
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
-                    let _ = window.hide();
+                    // Menyembunyikan jendela yang sedang layar penuh menyisakan
+                    // Space hitam di macOS: keluar layar penuh dulu, tunggu
+                    // animasinya selesai, baru sembunyikan.
+                    if window.is_fullscreen().unwrap_or(false) {
+                        let _ = window.set_fullscreen(false);
+                        let w = window.clone();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_millis(900));
+                            let _ = w.hide();
+                        });
+                    } else {
+                        let _ = window.hide();
+                    }
                 }
             }
         })

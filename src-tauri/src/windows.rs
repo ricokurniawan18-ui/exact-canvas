@@ -63,7 +63,9 @@ pub fn siapkan(app: &AppHandle) -> tauri::Result<()> {
     let focus = atau_buat(app, FOCUS)?;
     // Hanya tempatkan bila belum pernah — plugin window-state memulihkan
     // posisi terakhir, dan itu yang harus menang.
-    if focus.outer_position().map(|p| p.x == 0 && p.y == 0).unwrap_or(true) {
+    // Jendela layar penuh memang berposisi (0,0); jangan diubah ukurannya.
+    let penuh = focus.is_fullscreen().unwrap_or(false);
+    if !penuh && focus.outer_position().map(|p| p.x == 0 && p.y == 0).unwrap_or(true) {
         if let Some(m) = app.primary_monitor().ok().flatten() {
             tengahkan(&focus, &m);
         }

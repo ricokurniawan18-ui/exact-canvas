@@ -106,7 +106,7 @@
       #tunggu .judul { font-size: 18px; color: #999; }
       #tunggu .sub { font-size: 14px; line-height: 1.5; margin-top: 8px; }
       #tunggu #tunggu-antrean { margin-top: 18px; font-size: 15px; color: #8a8; }
-      #bilah #tombol-tunggu, #bilah #tombol-coret { flex: 0 0 auto; padding: 11px 14px; }
+      #bilah #tombol-tunggu, #bilah #tombol-coret, #bilah #tombol-layar-penuh { flex: 0 0 auto; padding: 11px 14px; }
       #bilah #tombol-coret.aktif { background: var(--accent); border-color: var(--accent); }
       #alat-coret { position: absolute; left: 8px; right: 8px; top: calc(8px + env(safe-area-inset-top)); display: none; gap: 6px; align-items: center; padding: 8px;
         border-radius: 14px; background: rgba(242, 240, 234, 0.94); border: 1px solid var(--line); backdrop-filter: blur(8px); overflow-x: auto; }
@@ -164,6 +164,7 @@
       <button id="tombol-coret" title="Draw on your own canvas" hidden>✏️</button>
       <button id="tombol-sisip-foto" title="Insert a photo onto your canvas" hidden>🖼️</button>
       <button id="tombol-tunggu" title="Dim the screen or lock the phone until the teacher gets to you">🌙</button>
+      <button id="tombol-layar-penuh" title="Full screen" hidden>⛶</button>
     </div>
     <!-- Foto ditempel langsung ke kanvas sendiri (tidak lewat antrian guru) —
          cuma untuk murid yang sedang diizinkan mencoret. -->

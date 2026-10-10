@@ -702,6 +702,7 @@ async function mulai() {
     pasangBilahMurid()
     pasangGestur()
     pasangCoret()
+    pasangLayarPenuh()
     // Ditunggu, bukan dilepas: kanvas sendiri/grup harus sudah terpasang
     // sebelum jatuh ke sketsa terakhir kelas di bawah — kalau tidak, muatan
     // sketsa kelas bisa datang belakangan dan menimpa kanvas anak itu.
@@ -966,13 +967,8 @@ function layarMasuk(): Promise<void> {
     form.onsubmit = async (e) => {
       e.preventDefault()
       bunyi('diam')
-      // iPhone tidak punya requestFullscreen; jangan sampai itu menggagalkan masuk.
-      try {
-        const janji = document.documentElement.requestFullscreen?.()
-        void janji?.catch?.(() => {})
-      } catch {
-        /* tidak didukung */
-      }
+      // Layar penuh tidak lagi diminta otomatis saat masuk (sering bermasalah,
+      // dan iPhone tidak mendukungnya); murid memakai tombol ⛶ bila mau.
       try {
         await api('/api/kelas/masuk', { method: 'POST', json: { murid: muridId, nama: namaSaya } })
       } catch (err) {
@@ -2047,6 +2043,17 @@ async function sisipFotoKanvas(berkasTerpilih: File[]) {
   kotorAktif = true
   kirim({ t: 'ubah', idKanvas: idSketsa, hapus: { coretan: [], objek: [] }, tambah: { coretan: [], objek: [], gambar: baru } })
   tampilkanStatus(baru.length > 1 ? `${baru.length} photos added to your canvas.` : 'Photo added to your canvas.')
+}
+
+/** Tombol ⛶ sukarela: hanya tampil di perangkat yang mendukung layar penuh. */
+function pasangLayarPenuh() {
+  const tombol = el('tombol-layar-penuh') as HTMLButtonElement
+  if (!document.fullscreenEnabled) return
+  tombol.hidden = false
+  tombol.onclick = () => {
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {})
+    else void document.documentElement.requestFullscreen().catch(() => {})
+  }
 }
 
 function pasangCoret() {
