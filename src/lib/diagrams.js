@@ -8796,6 +8796,15 @@ function renderEcoPyramidSVG(cfg) {
 
 // Rows use "|" between rows and "," between cells (not SVG — plain HTML
 // <table>, since a data/frequency table is text, not a coordinate drawing).
+// Sel tabel yang berisi perintah LaTeX tanpa tanda $ (mis. "[\text{NO}] (M)" dari Gemini) dibungkus $...$
+// supaya dirender sebagai rumus; keterangan satuan "(M)" di ujung dibiarkan teks biasa.
+function selTabelTeks(c) {
+  c = String(c == null ? '' : c);
+  if (c.indexOf('$') > -1 || !/\\[A-Za-z]+/.test(c)) return c;
+  const m = c.match(/^(.*?)(\s*\([^()]*\))$/);
+  return m && m[1] ? '$' + m[1].trim() + '$' + m[2] : '$' + c + '$';
+}
+
 function renderTableHTML(cfg) {
   const headers = pisahKolom(String(cfg.header || ''));
   const rows = String(cfg.baris || '')
@@ -8808,11 +8817,11 @@ function renderTableHTML(cfg) {
   html += '<table class="ws-table">';
   if (headers.length) {
     // "element*2" = judul kolom yang membentang dua kolom
-    html += '<thead><tr>' + headers.map((h) => { const m = h.match(/^(.*)\*(\d+)$/); return m ? `<th colspan="${m[2]}">${escText(m[1].trim())}</th>` : `<th>${escText(h)}</th>`; }).join('') + '</tr></thead>';
+    html += '<thead><tr>' + headers.map((h) => { const m = h.match(/^(.*)\*(\d+)$/); return m ? `<th colspan="${m[2]}">${escText(selTabelTeks(m[1].trim()))}</th>` : `<th>${escText(selTabelTeks(h))}</th>`; }).join('') + '</tr></thead>';
   }
   html += '<tbody>';
   rows.forEach((r) => {
-    html += '<tr>' + r.map((c) => `<td>${escText(c)}</td>`).join('') + '</tr>';
+    html += '<tr>' + r.map((c) => `<td>${escText(selTabelTeks(c))}</td>`).join('') + '</tr>';
   });
   html += '</tbody></table>';
   return html;
@@ -17034,3 +17043,6 @@ if (typeof module !== 'undefined') {
     extractDiagramTags, substituteDiagramTokens, setModeSiswaDiagram, GEOMETRY_PRESETS, SOLID_PRESETS, LEWIS_PRESETS, VSEPR_PRESETS,
   };
 }
+
+// --- ditambahkan scripts/salin-diagrams.mjs (Exact Canvas) ---
+export { renderDiagramTag };
