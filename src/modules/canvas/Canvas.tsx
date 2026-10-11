@@ -11,7 +11,7 @@ import { ANGGARAN_PDF, padatkanHalaman } from '@/lib/pdf'
 import { IconButton } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
 import { KERTAS_BAWAAN, berkasBaru, bacaKanvas, simpanKanvas } from './data'
-import { JARAK_HALAMAN, KERTAS, kotakHalaman } from './kertas'
+import { JARAK_HALAMAN, KERTAS, kotakHalaman, letakCoretanGuruTerakhir } from './kertas'
 import {
   JUMLAH_LAPISAN,
   alatObjek,
@@ -206,6 +206,26 @@ interface Props {
   judul?: string
 }
 
+/**
+ * Posisi y tampilan untuk letak coretan guru terakhir: tepi atas halamannya
+ * sedikit di bawah tepi layar; kalau coretannya jatuh di bagian bawah halaman
+ * (tidak akan terlihat), coretannya sendiri yang dibawa ke tengah layar.
+ * Tanpa coretan guru: halaman terakhir, seperti sebelumnya.
+ */
+function yUntukLetak(
+  k: { w: number; h: number },
+  letak: { halaman: number; cy: number } | null,
+  jumlahHalaman: number,
+  skala: number,
+  tinggiLayar: number,
+): number {
+  const i = letak ? letak.halaman : Math.max(0, jumlahHalaman - 1)
+  const atas = kotakHalaman(k as Parameters<typeof kotakHalaman>[0], i).y1
+  const yAtas = -atas * skala + 24
+  if (letak && (letak.cy - atas) * skala + 24 > tinggiLayar * 0.75) return -letak.cy * skala + tinggiLayar * 0.45
+  return yAtas
+}
+
 export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
   const v = useViewport()
   const dasarRef = useRef<HTMLCanvasElement | null>(null)
@@ -355,7 +375,7 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
     if (idTujuan === idKanvas) {
       // Kanvas ini sudah terbuka: jumlahHalaman di sini sudah pasti segar,
       // beda dari kanvas yang baru saja termuat lewat cabang di bawah.
-      if (!tempelan.lampiran && !tempelan.teks) keHalaman(jumlahHalaman - 1)
+      if (!tempelan.lampiran && !tempelan.teks) keCoretanTerakhir()
       await kerjakanTempelan(tempelan)
       return
     }
@@ -878,8 +898,12 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
       // pembahasan terakhir kali berhenti — pakai jumlah halaman yang baru
       // saja dibaca di atas, bukan state React yang belum tentu segar di sini.
       if (bukaUntukBahas && !tertunda?.lampiran?.length && k && k.w > 0 && jumlahHalamanBaru > 1) {
-        const kh = kotakHalaman(k, jumlahHalamanBaru - 1)
-        v.setTampilan((t) => ({ ...t, y: -kh.y1 * t.skala + 24 }))
+        // Ke tempat coretan guru yang terakhir (bukan halaman paling bawah,
+        // yang pada kanvas ber-PDF biasanya halaman yang belum disentuh);
+        // halaman terakhir hanya bila guru belum pernah mencoret di sini.
+        const letak = letakCoretanGuruTerakhir(b?.strokes ?? [], k, jumlahHalamanBaru)
+        const tinggiLayar = el?.getBoundingClientRect().height ?? 800
+        v.setTampilan((t) => ({ ...t, y: yUntukLetak(k, letak, jumlahHalamanBaru, t.skala, tinggiLayar) }))
       } else if (k && k.w > 0 && el) {
         // Halaman pertama dibawa ke tengah layar dan dimuat penuh tingginya:
         // membuka sketsa seharusnya memperlihatkan kertasnya, bukan sudut kirinya.
@@ -2785,6 +2809,14 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
     )
     for (const b of berkas) await terimaRef.current(b)
   }
+
+  /** Bawa layar ke coretan guru terakhir (atau halaman terakhir bila belum ada). */
+  const keCoretanTerakhir = useCallback(() => {
+    if (halaman.w <= 0) return
+    const letak = letakCoretanGuruTerakhir(coretanRef.current, halaman, jumlahHalaman)
+    const tinggiLayar = wadahRef.current?.getBoundingClientRect().height ?? 800
+    v.setTampilan((t) => ({ ...t, y: yUntukLetak(halaman, letak, jumlahHalaman, t.skala, tinggiLayar) }))
+  }, [halaman, jumlahHalaman, v])
 
   /** Bawa layar ke halaman ke-`i`, tepinya sedikit di bawah tepi atas. */
   const keHalaman = useCallback(

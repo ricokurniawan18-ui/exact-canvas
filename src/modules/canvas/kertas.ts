@@ -36,3 +36,32 @@ export const KERTAS: Kertas[] = [
 export function kertasDari(id: string | undefined): Kertas {
   return KERTAS.find((k) => k.id === id) ?? KERTAS[0]
 }
+
+/**
+ * Halaman dan tinggi (koordinat dunia) coretan GURU yang terakhir — coretan
+ * tanpa tanda `murid`. Dipakai saat membuka kanvas murid untuk dibahas lagi:
+ * melompat ke halaman terakhir menjatuhkan guru di ujung PDF yang belum
+ * pernah disentuh, padahal pembahasannya berhenti di halaman lain.
+ * Kosong bila guru belum pernah mencoret di kanvas itu.
+ */
+export function letakCoretanGuruTerakhir(
+  strokes: { points: [number, number, number][]; murid?: string }[],
+  k: Kertas,
+  jumlahHalaman: number,
+): { halaman: number; cy: number } | null {
+  if (k.h <= 0) return null
+  for (let i = strokes.length - 1; i >= 0; i--) {
+    const s = strokes[i]
+    if (s.murid || !s.points?.length) continue
+    let lo = Infinity
+    let hi = -Infinity
+    for (const p of s.points) {
+      if (p[1] < lo) lo = p[1]
+      if (p[1] > hi) hi = p[1]
+    }
+    const cy = (lo + hi) / 2
+    const halaman = Math.max(0, Math.min(jumlahHalaman - 1, Math.floor(cy / (k.h + JARAK_HALAMAN))))
+    return { halaman, cy }
+  }
+  return null
+}
