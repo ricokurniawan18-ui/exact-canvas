@@ -33,8 +33,10 @@ import {
   ubahGrup,
   ubahTanya,
   type Grup,
+  type LaporanNilai,
   type Murid,
   type Tanya,
+  type UpdateJadwal,
 } from '@/lib/kelas'
 
 type Tab = 'antrian' | 'murid' | 'grup' | 'guru' | 'nilai' | 'jadwal'
@@ -54,6 +56,10 @@ export function PanelKelas({
 }) {
   const [tab, setTab] = useState<Tab>('antrian')
   const [cariMurid, setCariMurid] = useState('')
+  /** Murid yang kartu datanya sedang dibuka (ketuk namanya). */
+  const [terbuka, setTerbuka] = useState<string | null>(null)
+  /** Daftar murid: semua akun, atau hanya yang sedang terhubung sekarang. */
+  const [saringMurid, setSaringMurid] = useState<'semua' | 'online'>('semua')
   const [cariGuru, setCariGuru] = useState('')
   const { data: laporanNilai } = useData('kelas', daftarLaporanNilai, [])
   const { data: updateJadwal } = useData('kelas', daftarUpdateJadwal, [])
@@ -113,7 +119,7 @@ export function PanelKelas({
 
   return (
     <>
-      <div className="flex gap-1">
+      <div className="flex flex-wrap gap-1">
         {(
           [
             ['antrian', `Queue${menunggu ? ` · ${menunggu}` : ''}`],
@@ -129,7 +135,7 @@ export function PanelKelas({
             key={id}
             className="ex-btn flex-1 justify-center"
             data-variant={tab === id ? 'accent' : 'ghost'}
-            style={{ padding: '4px 0', fontSize: 'var(--fs-label)' }}
+            style={{ padding: '4px 8px', fontSize: 'var(--fs-label)', whiteSpace: 'nowrap' }}
             onClick={() => setTab(id)}
           >
             {label}
@@ -242,10 +248,35 @@ export function PanelKelas({
               ))}
             </div>
           )}
+          {saringMurid === 'online' && semuaMurid.length > 0 && !semuaMurid.some((m) => hadir.has(m.id)) && (
+            <p className="ex-label" style={{ color: 'var(--ink-faint)' }}>
+              No student is connected right now.
+            </p>
+          )}
           {semuaMurid.length === 0 && !galat && !memuat && (
             <p className="ex-label" style={{ color: 'var(--ink-faint)' }}>
               No students yet. They join from the TV link on their phone.
             </p>
+          )}
+          {semuaMurid.length > 0 && (
+            <div className="flex gap-1">
+              {(
+                [
+                  ['semua', `All · ${semuaMurid.length}`],
+                  ['online', `Online now · ${semuaMurid.filter((m) => hadir.has(m.id)).length}`],
+                ] as ['semua' | 'online', string][]
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  className="ex-btn flex-1 justify-center"
+                  data-variant={saringMurid === id ? 'accent' : 'ghost'}
+                  style={{ padding: '3px 8px', fontSize: 'var(--fs-label)', whiteSpace: 'nowrap' }}
+                  onClick={() => setSaringMurid(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           )}
           {semuaMurid.length > 0 && (
             <input
@@ -258,6 +289,7 @@ export function PanelKelas({
           )}
           {semuaMurid
             .filter((m) => m.name.toLowerCase().includes(cariMurid.trim().toLowerCase()))
+            .filter((m) => saringMurid === 'semua' || hadir.has(m.id))
             .map((m) => {
             const k = hadir.get(m.id)
             const warna = !k ? 'var(--ink-faint)' : k.tunggu ? 'var(--accent-2)' : k.fokus ? 'var(--up)' : 'var(--down)'
@@ -268,15 +300,36 @@ export function PanelKelas({
                 : k.fokus
                   ? `On the board${k.keluar ? ` · left ${k.keluar}×` : ''}`
                   : `Left the page · ${k.keluar}×`
+            const buka = terbuka === m.id
             return (
-              <div key={m.id} className="flex items-center gap-2" title={`${judul}${m.phone ? ` · ${m.phone}` : ''}`}>
+              <div key={m.id} className="flex flex-col gap-1">
+              <div className="flex items-center gap-2" title={`${judul}${m.phone ? ` · ${m.phone}` : ''}`}>
                 <span
                   aria-hidden
                   style={{ width: 9, height: 9, borderRadius: 999, background: warna, flexShrink: 0, boxShadow: k?.fokus ? `0 0 6px ${warna}` : undefined }}
                 />
-                <span className="min-w-0 flex-1 truncate" style={{ fontSize: 'var(--fs-label)', opacity: k ? 1 : 0.55 }}>
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 truncate"
+                  style={{
+                    fontSize: 'var(--fs-label)',
+                    opacity: k ? 1 : 0.55,
+                    textAlign: 'left',
+                    background: 'none',
+                    border: 0,
+                    padding: 0,
+                    cursor: 'pointer',
+                    color: 'inherit',
+                    fontWeight: buka ? 700 : 400,
+                    textDecoration: buka ? 'none' : 'underline dotted',
+                    textUnderlineOffset: 3,
+                  }}
+                  title="Tap to see this student's data"
+                  aria-expanded={buka}
+                  onClick={() => setTerbuka(buka ? null : m.id)}
+                >
                   {m.name}
-                </span>
+                </button>
                 {k && k.keluar > 0 && (
                   <span className="ex-num" style={{ fontSize: 11, color: 'var(--ink-faint)' }}>
                     {k.keluar}×
@@ -360,6 +413,18 @@ export function PanelKelas({
                     </option>
                   ))}
                 </select>
+              </div>
+              {buka && (
+                <KartuMurid
+                  murid={m}
+                  hadir={k}
+                  namaGrup={grup.find((g) => g.id === petaGrupMurid.get(m.id))?.name ?? null}
+                  tanya={antrian.filter((t) => t.student_id === m.id)}
+                  nilai={laporanNilai.filter((n) => n.student_id === m.id)}
+                  jadwal={updateJadwal.filter((u) => u.student_id === m.id)}
+                  onTutup={() => setTerbuka(null)}
+                />
+              )}
               </div>
             )
           })}
@@ -796,5 +861,94 @@ function TambahGrup() {
         <Icon nama="tambah" ukuran={14} />
       </button>
     </form>
+  )
+}
+
+
+const waktuLengkap = (t: number | null | undefined) =>
+  t ? new Date(t).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'
+
+/** Kartu data satu murid: status sekarang, grup, pertanyaan, nilai ulangan, dan jadwal les yang ia laporkan. */
+function KartuMurid({
+  murid,
+  hadir,
+  namaGrup,
+  tanya,
+  nilai,
+  jadwal,
+  onTutup,
+}: {
+  murid: Murid
+  hadir: { fokus?: boolean; tunggu?: boolean; keluar: number } | undefined
+  namaGrup: string | null
+  tanya: Tanya[]
+  nilai: LaporanNilai[]
+  jadwal: UpdateJadwal[]
+  onTutup: () => void
+}) {
+  const status = !hadir ? 'Offline' : hadir.tunggu ? 'Waiting (screen dimmed)' : hadir.fokus ? 'On the board' : 'Left the page'
+  const baris = (k: string, v: string) => (
+    <div className="flex gap-2" style={{ fontSize: 'var(--fs-label)' }}>
+      <span style={{ width: 92, flexShrink: 0, color: 'var(--ink-faint)' }}>{k}</span>
+      <span className="min-w-0 flex-1" style={{ overflowWrap: 'anywhere' }}>{v}</span>
+    </div>
+  )
+  const menunggu = tanya.filter((t) => t.status === 'menunggu').length
+  const pertanyaan = tanya.filter((t) => !t.kind)
+  return (
+    <div className="ex-card flex flex-col gap-2 p-2" style={{ marginLeft: 17, borderColor: 'var(--accent)' }}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="ex-label" style={{ color: 'var(--accent)' }}>{murid.name}</span>
+        <IconButton nama="silang" label="Close" ukuran={12} onClick={onTutup} />
+      </div>
+      <div className="flex flex-col gap-0.5">
+        {baris('Status', `${status}${hadir && hadir.keluar > 0 ? ` · left the page ${hadir.keluar}×` : ''}`)}
+        {baris('Phone', murid.phone || '—')}
+        {baris('Group', namaGrup || 'no group')}
+        {baris('Room', String(murid.room))}
+        {baris('First seen', waktuLengkap(murid.first_seen))}
+        {baris('Last seen', waktuLengkap(murid.last_seen))}
+        {baris('Draw on own canvas', murid.can_draw ? 'allowed' : 'not allowed')}
+        {murid.muted_until && murid.muted_until > Date.now() && baris('Muted until', waktuLengkap(murid.muted_until))}
+      </div>
+      <div className="flex flex-col gap-0.5">
+        <span className="ex-label" style={{ color: 'var(--ink-faint)' }}>
+          Questions · {pertanyaan.length}
+          {menunggu ? ` (${menunggu} waiting)` : ''}
+        </span>
+        {pertanyaan.length === 0 && <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>None in the queue history.</span>}
+        {pertanyaan.slice(0, 5).map((t) => (
+          <div key={t.id} className="flex gap-2" style={{ fontSize: 11 }}>
+            <span className="ex-num" style={{ width: 92, flexShrink: 0, color: 'var(--ink-faint)' }}>{waktuLengkap(t.created_at)}</span>
+            <span className="min-w-0 flex-1 truncate">{t.text || (t.photos.length ? `${t.photos.length} photo(s)` : '—')}</span>
+            <span style={{ color: 'var(--ink-faint)' }}>{t.status}</span>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-col gap-0.5">
+        <span className="ex-label" style={{ color: 'var(--ink-faint)' }}>Reported scores · {nilai.length}</span>
+        {nilai.length === 0 && <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>No score reports yet.</span>}
+        {nilai.slice(0, 8).map((n) => (
+          <div key={n.id} className="flex gap-2" style={{ fontSize: 11 }}>
+            <span className="min-w-0 flex-1 truncate">
+              {[n.subject, n.test].filter(Boolean).join(' · ') || 'Test'}
+              {n.test_date ? ` · ${n.test_date}` : ''}
+            </span>
+            <span className="ex-num" style={{ fontWeight: 700 }}>{n.score}</span>
+          </div>
+        ))}
+      </div>
+      {jadwal.length > 0 && (
+        <div className="flex flex-col gap-0.5">
+          <span className="ex-label" style={{ color: 'var(--ink-faint)' }}>Schedule updates · {jadwal.length}</span>
+          {jadwal.slice(0, 3).map((u) => (
+            <div key={u.id} className="flex gap-2" style={{ fontSize: 11 }}>
+              <span className="ex-num" style={{ width: 92, flexShrink: 0, color: 'var(--ink-faint)' }}>{waktuLengkap(u.created_at)}</span>
+              <span className="min-w-0 flex-1" style={{ overflowWrap: 'anywhere' }}>{teksJadwal(u.schedule)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }

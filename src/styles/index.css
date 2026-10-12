@@ -304,7 +304,7 @@ html.ex-sentuh .ex-panel {
   bottom: 64px !important;
   transform: translateX(-50%);
   max-height: calc(100% / 1.45 - 90px) !important;
-  width: min(320px, calc(100% / 1.45 - 24px)) !important;
+  width: min(460px, calc(100% / 1.45 - 24px)) !important;
 }
 html.ex-sentuh .ex-sketsa { bottom: auto !important; top: 12px !important; }
 html.ex-sentuh .ex-tampilkan { top: auto !important; bottom: 10px !important; left: 40% !important; transform: translateX(-50%); }

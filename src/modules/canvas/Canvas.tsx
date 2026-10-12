@@ -4118,7 +4118,7 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
           style={{
             left: 62,
             top: 12,
-            width: panelAlat === 'alat' ? 214 : panelAlat === 'kelas' ? 300 : 232,
+            width: panelAlat === 'alat' ? 214 : panelAlat === 'kelas' ? 440 : 232,
             maxHeight: 'calc(100% - 24px)',
             overflowY: 'auto',
           }}
