@@ -90,6 +90,7 @@ import { PanelTabel } from './PanelTabel'
 import { PanelKelas } from './PanelKelas'
 import { bunyiTanya, daftarTanya, ubahTanya, type Tanya } from '@/lib/kelas'
 import { buatKanvas } from './data'
+import { useTampilan } from '@/lib/tampilan'
 import { q1, x } from '@/lib/db'
 import { useData } from '@/lib/useData'
 import { ukuranTabel, type DefinisiGrafik, type DefinisiTabel, type MetaGambar } from './sisipan'
@@ -267,6 +268,9 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
   }
   /** Kelompok yang panelnya sedang terbuka di sebelah rel; null = tertutup. */
   const [panelAlat, setPanelAlat] = useState<KelompokAlat | null>('alat')
+  /** Bagian yang disembunyikan di perangkat ini (Pengaturan → This device). */
+  const sembunyiPerangkat = useTampilan((x) => x.sembunyi)
+  const ada = (id: string) => !sembunyiPerangkat[id]
 
   function bukaPanel(k: KelompokAlat) {
     setPanelAlat((lama) => (lama === k ? null : k))
@@ -3963,7 +3967,7 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
         )}
       </div>
 
-      {!menuTampil ? null : halaman.w > 0 ? (
+      {!menuTampil || !ada('halaman') ? null : halaman.w > 0 ? (
         daftarTampil ? (
           <DaftarHalaman
             jumlah={jumlahHalaman}
@@ -4027,21 +4031,26 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
         className="ex-card ex-bilah ex-rel absolute left-3 top-3 z-10 flex flex-col gap-1 p-1"
         style={{ display: menuTampil ? undefined : 'none' }}
       >
+        {ada('alat') && (
         <IconButton
           nama={infoAlat(alat).ikon}
           label={`${infoAlat(alat).label} — tools and shapes`}
           aktif={panelAlat === 'alat'}
           onClick={() => bukaPanel('alat')}
         />
+        )}
         {/* Penghapus punya tombolnya sendiri tepat di bawah alat: berganti
             pena ↔ penghapus adalah gerakan yang paling sering dilakukan, dan
             di tablet membuka panel dulu terasa dua ketukan kelebihan. */}
+        {ada('penghapus') && (
         <IconButton
           nama="penghapus"
           label={alat === 'penghapus' ? 'Back to the pen' : 'Eraser'}
           aktif={alat === 'penghapus'}
           onClick={() => setAlat(alat === 'penghapus' ? alatTulisTerakhir.current : 'penghapus')}
         />
+        )}
+        {ada('warna') && (
         <button
           type="button"
           className="ex-btn grid place-items-center"
@@ -4062,36 +4071,48 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
             }}
           />
         </button>
+        )}
+        {ada('goresan') && (
         <IconButton
           nama="garis"
           label="Thickness, ink, and line pattern"
           aktif={panelAlat === 'goresan'}
           onClick={() => bukaPanel('goresan')}
         />
+        )}
+        {ada('kertas') && (
         <IconButton
           nama="halaman"
           label="Paper and pages"
           aktif={panelAlat === 'kertas'}
           onClick={() => bukaPanel('kertas')}
         />
+        )}
+        {ada('lapisan') && (
         <IconButton
           nama="lapisan"
           label="Layers"
           aktif={panelAlat === 'lapisan'}
           onClick={() => bukaPanel('lapisan')}
         />
+        )}
+        {ada('instrumen') && (
         <IconButton
           nama={instrumen?.jenis ?? 'penggaris'}
           label="Ruler, protractor, compass"
           aktif={panelAlat === 'instrumen'}
           onClick={() => bukaPanel('instrumen')}
         />
+        )}
+        {ada('sisip') && (
         <IconButton
           nama="sisip"
           label="Insert a function graph, table, PDF or image"
           aktif={panelAlat === 'sisip'}
           onClick={() => bukaPanel('sisip')}
         />
+        )}
+        {ada('kelas') && (
         <div className="relative">
           <IconButton
             nama="grup"
@@ -4121,18 +4142,21 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
             </span>
           )}
         </div>
+        )}
 
         <div className="ex-divider ex-pemisah" style={{ margin: '2px 0' }} />
 
-        <IconButton nama="urungkan" label="Undo (⌘Z)" onClick={urungkan} />
-        <IconButton nama="ulangi" label="Redo (⇧⌘Z)" onClick={ulangi} />
+        {ada('undo') && <IconButton nama="urungkan" label="Undo (⌘Z)" onClick={urungkan} />}
+        {ada('undo') && <IconButton nama="ulangi" label="Redo (⇧⌘Z)" onClick={ulangi} />}
+        {ada('ekspor') && (
         <IconButton
           nama="arsip"
           label="Export, print, import"
           aktif={panelAlat === 'ekspor'}
           onClick={() => bukaPanel('ekspor')}
         />
-        {inTauri && (
+        )}
+        {inTauri && ada('jendela') && (
           <IconButton
             nama="jendela"
             label="Open the canvas in another window"
@@ -4146,7 +4170,7 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
         {/* Di tablet, rel ini menetap di bawah dan selalu terbuka — tidak ada
             tombol untuk melipatnya sendiri, supaya tidak perlu mengejar
             tombol "tampilkan" tiap kali mau memakai alat. */}
-        {!layarSentuh && (
+        {!layarSentuh && ada('sembunyi') && (
           <IconButton
             nama="sembunyi"
             label="Hide all panels for a clean canvas (Esc or ⌘.)"
@@ -4731,14 +4755,14 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
         </p>
       )}
 
-      <p className="ex-label ex-statusbar absolute bottom-3 left-4" style={{ color: 'var(--ink-faint)' }}>
+      {ada('statusbar') && <p className="ex-label ex-statusbar absolute bottom-3 left-4" style={{ color: 'var(--ink-faint)' }}>
         {jumlahTampak} strokes
         {objek.length > 0 && ` · ${objek.length} shape${objek.length === 1 ? '' : 's'}`}
         {gambar.length > 0 && ` · ${gambar.length} image${gambar.length === 1 ? '' : 's'}`} ·{' '}
         {Math.round(v.tampilan.skala * 100)}%
         {pilihan.size > 0 && ` · ${pilihan.size} selected`}
         {tekananTersedia === false && ' · no pen pressure detected; check that the Wacom driver is installed'}
-      </p>
+      </p>}
     </div>
   )
 }

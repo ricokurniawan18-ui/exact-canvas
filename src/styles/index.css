@@ -278,6 +278,8 @@
 
 /* HP dan tablet memakai tata letak yang SAMA dengan Mac: rel alat tegak di kiri, pemilih sketsa kiri bawah, daftar
    halaman kanan bawah, Practice + roda gigi kanan atas. Yang khusus layar sentuh hanya ukuran sasaran jari. */
+/* Ukuran bilah per perangkat (Pengaturan → This device): 1 = ukuran Mac. `zoom` ikut menskalakan posisi dan ikon. */
+.ex-bilah { zoom: var(--skala-bilah, 1); }
 html.ex-sentuh .ex-btn { min-height: 34px; }
 html.ex-sentuh input[type="range"] { height: 28px; }
 html.ex-sentuh .ex-statusbar { display: none; }
@@ -290,17 +292,17 @@ html.ex-sentuh .ex-statusbar { display: none; }
   top: 52px !important;
   bottom: auto !important;
   transform: none !important;
-  max-width: calc(100% - 24px) !important;
-  max-height: calc(100% - 64px) !important;
+  max-width: calc((100% - 24px) / var(--skala-bilah, 1)) !important;
+  max-height: calc((100% - 64px) / var(--skala-bilah, 1)) !important;
 }
 
 /* Layar sempit (HP): rel tegak bisa digulir bila lebih tinggi dari layar, panel alat tidak lebih lebar dari sisa
    layar di samping rel, daftar halaman disembunyikan (gulir jari cukup), pemilih sketsa boleh membungkus. */
 @media (max-width: 640px) {
-  .ex-rel { max-height: calc(100% - 24px); overflow-y: auto; }
-  .ex-panel:not(.ex-panel-kelas) { max-width: calc(100% - 74px); }
+  .ex-rel { max-height: calc((100% - 24px) / var(--skala-bilah, 1)); overflow-y: auto; }
+  .ex-panel:not(.ex-panel-kelas) { max-width: calc((100% - 74px) / var(--skala-bilah, 1)); }
   .ex-halaman { display: none !important; }
-  .ex-sketsa { flex-wrap: wrap; max-width: calc(100% - 32px); }
+  .ex-sketsa { flex-wrap: wrap; max-width: calc((100% - 32px) / var(--skala-bilah, 1)); }
   .ex-sketsa .ex-input { max-width: 52vw; }
 }
 

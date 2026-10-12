@@ -5,10 +5,11 @@ import { useApp } from '@/lib/appStore'
 import { getSetting, lipatWal } from '@/lib/db'
 import { dengarkan } from '@/lib/events'
 import { bukaJendelaBaru } from '@/lib/layar'
-import { adminAktif, api, guruPembantu, namaPerangkat, pinAktif, sesiAktif, setAlamatServer, setPeranEditor, simpanAdmin, simpanSesi, type PeranEditor } from '@/lib/api'
+import { adminAktif, api, namaPerangkat, pinAktif, sesiAktif, setAlamatServer, setPeranEditor, simpanAdmin, simpanSesi, type PeranEditor } from '@/lib/api'
 import { hentikanSinkron, mulaiSinkron } from '@/lib/sinkron'
 import { Toast } from '@/components/Toast'
 import { Pengaturan } from '@/components/Pengaturan'
+import { useTampilan } from '@/lib/tampilan'
 import { IconButton } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
 import { KanvasLayar } from '@/modules/canvas/KanvasLayar'
@@ -73,6 +74,8 @@ export default function App() {
   const [perluAdmin, setPerluAdmin] = useState(false)
 
   useEffect(() => pasangTema(), [])
+  const sembunyiPerangkat = useTampilan((x) => x.sembunyi)
+  useEffect(() => useTampilan.getState().setel(), [])
 
   // Pastikan database (atau server, di browser) bisa dijangkau sebelum kanvas
   // mencoba membacanya.
@@ -146,23 +149,25 @@ export default function App() {
       <div className="ex-texture relative h-full w-full">
         <KanvasLayar />
         <div className="absolute right-3 top-3 z-10 flex gap-2">
-          <button
-            className="ex-card ex-btn"
-            data-variant="ghost"
-            style={{ padding: '6px 10px', fontSize: 'var(--fs-label)' }}
-            title="Exact Practice: answer keys and live monitoring (no sign-in needed)"
-            onClick={() => void bukaRuangGuru()}
-          >
-            📘 Practice
-          </button>
-          {!guruPembantu() && (
-            <IconButton
-              nama="atur"
-              label="Settings (⌘,)"
-              className="ex-card"
-              onClick={() => useApp.getState().setPengaturan(true)}
-            />
+          {!sembunyiPerangkat.practice && (
+            <button
+              className="ex-card ex-btn"
+              data-variant="ghost"
+              style={{ padding: '6px 10px', fontSize: 'var(--fs-label)' }}
+              title="Exact Practice: answer keys and live monitoring (no sign-in needed)"
+              onClick={() => void bukaRuangGuru()}
+            >
+              📘 Practice
+            </button>
           )}
+          {/* Roda gigi selalu ada, juga untuk guru pembantu: di sinilah tampilan perangkat ini (ukuran bilah,
+              bagian yang disembunyikan) dipulihkan. Pengaturan di browser hanya memuat bagian yang aman. */}
+          <IconButton
+            nama="atur"
+            label="Settings (⌘,)"
+            className="ex-card"
+            onClick={() => useApp.getState().setPengaturan(true)}
+          />
         </div>
       </div>
       <Pengaturan />

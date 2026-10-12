@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTampilan } from '@/lib/tampilan'
 import { useApp } from '@/lib/appStore'
 import { useData } from '@/lib/useData'
 import { windowLabel } from '@/lib/runtime'
@@ -23,6 +24,7 @@ import {
  * Sketsa pertama dibuat otomatis supaya layar tidak pernah kosong melompong.
  */
 export function KanvasLayar() {
+  const sembunyiPerangkat = useTampilan((x) => x.sembunyi)
   const { data: kanvas, memuat } = useData('canvas', daftarKanvas, [])
   const [aktif, setAktif] = useState<string | null>(null)
   const [ubahNama, setUbahNama] = useState(false)
@@ -149,6 +151,7 @@ export function KanvasLayar() {
     <div className="relative h-full w-full">
       <Canvas idKanvas={aktif} judul={sekarang.title} />
 
+      {!sembunyiPerangkat.sketsa && (
       <div className="ex-card ex-bilah ex-sketsa absolute bottom-4 left-4 flex items-center gap-1 p-1">
         {ubahNama ? (
           <input
@@ -243,6 +246,7 @@ export function KanvasLayar() {
           }}
         />
       </div>
+      )}
 
       {kelolaTerbuka && (
         <div

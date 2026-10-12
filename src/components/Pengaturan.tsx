@@ -17,6 +17,7 @@ import { toast, toastGalat } from '@/lib/toast'
 import { getSetting, setSetting } from '@/lib/db'
 import { pancarkan } from '@/lib/events'
 import { useSinkron } from '@/lib/sinkron'
+import { BAGIAN, UKURAN, useTampilan } from '@/lib/tampilan'
 import type { InfoBerbagi } from '@/App'
 
 /**
@@ -100,6 +101,8 @@ export function Pengaturan() {
             }}
           />
         </section>
+
+        <BagianPerangkat />
 
         {inTauri && <BagianBerbagi buka={buka} />}
 
@@ -532,5 +535,68 @@ function Tautan({
         Open
       </button>
     </div>
+  )
+}
+
+
+/** Tampilan perangkat ini: ukuran bilah dan bagian yang boleh tampil. Disimpan di perangkat ini saja. */
+function BagianPerangkat() {
+  const skala = useTampilan((s) => s.skala)
+  const sembunyi = useTampilan((s) => s.sembunyi)
+  const setSkala = useTampilan((s) => s.setSkala)
+  const atur = useTampilan((s) => s.atur)
+  const pulihkan = useTampilan((s) => s.pulihkan)
+  const kotak = (grup: 'rel' | 'layar') => (
+    <div className="grid gap-1" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+      {BAGIAN.filter((b) => b.grup === grup).map((b) => (
+        <label key={b.id} className="ex-label flex items-center gap-2" style={{ color: 'var(--ink-soft)', minHeight: 30 }}>
+          <input
+            type="checkbox"
+            checked={!sembunyi[b.id]}
+            onChange={(e) => atur(b.id, e.target.checked)}
+            style={{ accentColor: 'var(--accent)', width: 18, height: 18 }}
+          />
+          {b.label}
+        </label>
+      ))}
+    </div>
+  )
+  return (
+    <section className="flex flex-col gap-3">
+      <h3 className="ex-module-title">This device: toolbar</h3>
+      <p className="ex-label" style={{ color: 'var(--ink-soft)' }}>
+        Applies to this phone, tablet or computer only — other devices keep their own layout. Uncheck what you never
+        use to give the canvas more room; this page and the gear button always stay.
+      </p>
+      <div className="flex flex-col gap-1">
+        <span className="ex-label" style={{ color: 'var(--ink-soft)' }}>Toolbar size</span>
+        <div className="flex flex-wrap gap-1">
+          {UKURAN.map((u) => (
+            <button
+              key={u.nilai}
+              className="ex-btn"
+              data-variant={Math.abs(skala - u.nilai) < 0.01 ? 'accent' : 'ghost'}
+              style={{ padding: '6px 12px', fontSize: 'var(--fs-label)' }}
+              onClick={() => setSkala(u.nilai)}
+            >
+              {u.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="flex flex-col gap-1">
+        <span className="ex-label" style={{ color: 'var(--ink-soft)' }}>Tool rail (left)</span>
+        {kotak('rel')}
+      </div>
+      <div className="flex flex-col gap-1">
+        <span className="ex-label" style={{ color: 'var(--ink-soft)' }}>On the canvas</span>
+        {kotak('layar')}
+      </div>
+      <div>
+        <button className="ex-btn" data-variant="ghost" onClick={pulihkan}>
+          Reset this device to the default layout
+        </button>
+      </div>
+    </section>
   )
 }
