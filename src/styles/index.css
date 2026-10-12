@@ -335,15 +335,19 @@ html.ex-sentuh .ex-panel-kelas {
 }
 html.ex-sentuh .ex-statusbar { display: none; }
 
-/* HP: rel di tengah bawah, panel selebar layar, panel Class penuh lebar di bawah roda gigi. */
+/* HP: baris atas = Practice + roda gigi (kanan); di bawahnya pemilih sketsa selebar layar; rel alat di tengah bawah
+   (width: max-content supaya tidak dibatasi 50% lebar akibat left:50% — itu yang membuatnya patah jadi tiga baris);
+   panel alat membuka di atas rel; panel Class penuh lebar di bawah pemilih sketsa. */
 @media (max-width: 640px) {
-  html.ex-sentuh .ex-rel { left: 50% !important; max-width: calc(100% / var(--z) - 12px); gap: 2px; }
-  html.ex-sentuh .ex-panel { left: 50% !important; width: calc(100% / var(--z) - 16px) !important; bottom: 58px !important; max-height: calc(100% / var(--z) - 84px) !important; }
+  html.ex-sentuh .ex-rel { left: 50% !important; width: max-content !important; max-width: calc(100% / var(--z) - 12px); gap: 2px; padding: 4px; }
+  html.ex-sentuh .ex-panel { left: 50% !important; width: calc(100% / var(--z) - 16px) !important; bottom: 96px !important; max-height: calc(100% / var(--z) - 176px) !important; }
   html.ex-sentuh .ex-tampilkan { left: 50% !important; }
+  html.ex-sentuh .ex-sketsa { top: 54px !important; left: 8px !important; right: 8px !important; width: auto !important; flex-wrap: wrap; }
+  html.ex-sentuh .ex-sketsa .ex-input { width: auto !important; flex: 1 1 8rem; min-width: 0; }
   html.ex-sentuh .ex-panel-kelas {
     left: 8px !important; right: 8px !important; width: auto !important;
-    transform: none !important; top: 40px !important; bottom: auto !important;
-    max-height: calc(100% / var(--z) - 52px) !important;
+    transform: none !important; top: 108px !important; bottom: auto !important;
+    max-height: calc(100% / var(--z) - 190px) !important;
   }
 }
 
