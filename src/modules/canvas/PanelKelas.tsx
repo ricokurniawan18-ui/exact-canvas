@@ -123,7 +123,7 @@ export function PanelKelas({
 
   return (
     <>
-      <div className="flex flex-wrap gap-1">
+      <div className="flex flex-wrap gap-1" style={{ display: pembantu ? 'none' : undefined }}>
         {(
           [
             ['antrian', `Queue${menunggu ? ` · ${menunggu}` : ''}`],
@@ -134,7 +134,10 @@ export function PanelKelas({
             // Hanya guru utama yang mengangkat/mencabut guru pembantu.
             ...(pembantu ? [] : ([['guru', `Teachers · ${semuaMurid.filter((m) => m.role === 'guru').length}`]] as [Tab, string][])),
           ] as [Tab, string][]
-        ).map(([id, label]) => (
+        )
+          // Guru pembantu hanya mengurus antrean pertanyaan: murid, grup, nilai, dan jadwal urusan guru utama.
+          .filter(([id]) => !pembantu || id === 'antrian')
+          .map(([id, label]) => (
           <button
             key={id}
             className="ex-btn flex-1 justify-center"
