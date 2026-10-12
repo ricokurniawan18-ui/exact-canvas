@@ -189,6 +189,11 @@ pub async fn api_saya(State(hub): State<Arc<Hub>>, headers: HeaderMap, Query(q):
         // di sketsa terakhir yang kebetulan dibuka guru — dulu kanvas baru
         // lahir saat guru memberi izin coret atau membuka pertanyaannya.
         let (kanvas, kanvas_baru) = pastikan_sketsa_murid(&c, &murid).unwrap_or((None, None));
+        // Setiap murid punya kanvas pribadi DAN (kalau bergrup) kanvas grup;
+        // HP memilih mana yang ditampilkan.
+        let (pribadi, pribadi_baru) = pastikan_pribadi(&c, &murid).unwrap_or((None, None));
+        let (kanvas_grup, _) = pastikan_grup(&c, &murid).unwrap_or((None, None));
+        let kanvas_baru = kanvas_baru.or(pribadi_baru);
         // Berapa persen layar HP diisi wilayah guru (mode "penuh" di layar
         // sempit) — bawaan 88, guru bisa mengecilkannya dari Settings kalau
         // masih terasa terlalu dekat, terutama di HP tegak (potret).
@@ -211,6 +216,8 @@ pub async fn api_saya(State(hub): State<Arc<Hub>>, headers: HeaderMap, Query(q):
             "boleh": boleh,
             "sketsa": sketsa,
             "kanvas": kanvas,
+            "kanvasPribadi": pribadi,
+            "kanvasGrup": kanvas_grup,
             "zoom": zoom,
             "duaJariUndo": dua_jari_undo,
         }), kanvas_baru))
@@ -301,6 +308,63 @@ fn pastikan_sketsa_murid(c: &rusqlite::Connection, murid: &str) -> Result<(Optio
         }
     };
     Ok((Some(id.clone()), Some(id)))
+}
+
+fn kanvas_ada(c: &rusqlite::Connection, id: &str) -> bool {
+    c.query_row("SELECT 1 FROM canvases WHERE id = ?1", rusqlite::params![id], |_| Ok(())).is_ok()
+        && vault::canvas_read(id.to_string()).ok().flatten().is_some()
+}
+
+/// Kanvas PRIBADI murid hari ini, dibuatkan kalau belum ada — selalu ada,
+/// juga untuk murid bergrup (kanvas grup dan kanvas pribadi bisa dipilih
+/// bergantian di HP). Kembalian `(kanvas, baru_dibuat)`.
+pub fn pastikan_pribadi(c: &rusqlite::Connection, murid: &str) -> Result<(Option<String>, Option<String>), String> {
+    let sendiri: Option<(Option<String>, Option<String>, String)> = c
+        .query_row("SELECT sketch_id, sketch_day, name FROM students WHERE id = ?1", rusqlite::params![murid], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .ok();
+    let Some((sketsa, hari, nama)) = sendiri else { return Ok((None, None)) };
+    if let Some(s) = sketsa.filter(|s| hari.as_deref() == Some(hari_ini().as_str()) && kanvas_ada(c, s)) {
+        return Ok((Some(s), None));
+    }
+    let id = buat_sketsa_kosong(c, &format!("Tanya · {nama} · {}", tanggal_pendek()), None, Some(murid))?;
+    c.execute("UPDATE students SET sketch_id = ?1, sketch_day = ?2 WHERE id = ?3", rusqlite::params![id, hari_ini(), murid])
+        .map_err(|e| e.to_string())?;
+    Ok((Some(id.clone()), Some(id)))
+}
+
+/// Kanvas GRUP murid hari ini (dibuatkan kalau belum ada); `(None, None)` kalau tidak bergrup.
+pub fn pastikan_grup(c: &rusqlite::Connection, murid: &str) -> Result<(Option<String>, Option<String>), String> {
+    let grup: Option<(String, String, Option<String>, Option<String>)> = c
+        .query_row(
+            "SELECT g.id, g.name, g.sketch_id, g.sketch_day FROM groups g JOIN group_members m ON m.group_id = g.id WHERE m.student_id = ?1 ORDER BY g.sort_order LIMIT 1",
+            rusqlite::params![murid],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .ok();
+    let Some((gid, gnama, sketsa, hari)) = grup else { return Ok((None, None)) };
+    if let Some(s) = sketsa.filter(|s| hari.as_deref() == Some(hari_ini().as_str()) && kanvas_ada(c, s)) {
+        return Ok((Some(s), None));
+    }
+    let id = buat_sketsa_kosong(c, &format!("Grup · {gnama} · {}", tanggal_pendek()), Some(gid.as_str()), None)?;
+    c.execute("UPDATE groups SET sketch_id = ?1, sketch_day = ?2 WHERE id = ?3", rusqlite::params![id, hari_ini(), gid])
+        .map_err(|e| e.to_string())?;
+    Ok((Some(id.clone()), Some(id)))
+}
+
+/// Kanvas pribadi hari ini untuk pemeriksaan izin coret di WebSocket (cache per hari).
+static PRIBADI: std::sync::Mutex<Option<std::collections::HashMap<String, (String, Option<String>)>>> = std::sync::Mutex::new(None);
+pub fn kanvas_pribadi_terkini(murid: &str) -> Option<String> {
+    let hari = hari_ini();
+    if let Some((h, id)) = PRIBADI.lock().ok().and_then(|g| g.as_ref().and_then(|p| p.get(murid).cloned())) {
+        if h == hari {
+            return id;
+        }
+    }
+    let id = koneksi().ok().and_then(|c| pastikan_pribadi(&c, murid).ok()).and_then(|(id, _)| id);
+    if let Ok(mut g) = PRIBADI.lock() {
+        g.get_or_insert_with(Default::default).insert(murid.to_string(), (hari, id.clone()));
+    }
+    id
 }
 
 /// (boleh mencoret?, kanvas yang boleh dicoret).
@@ -704,10 +768,14 @@ pub struct Tanya {
     /// Guru yang dituju: 'utama', id akun guru pembantu, atau kosong = siapa saja.
     #[serde(default)]
     pub guru: Option<String>,
-    /// Permintaan, bukan pertanyaan: 'latihan' (minta soal latihan) atau
-    /// 'print'. Kosong = pertanyaan biasa.
+    /// Permintaan, bukan pertanyaan: 'latihan' (minta soal latihan),
+    /// 'print', atau 'hasil' (pengerjaan Practice). Kosong = pertanyaan biasa.
     #[serde(default)]
     pub jenis: Option<String>,
+    /// Kanvas yang sedang dilihat murid (pribadi atau grup) — pertanyaan
+    /// dibahas di sana. Kosong = aturan lama (grup kalau bergrup).
+    #[serde(default)]
+    pub kanvas: Option<String>,
 }
 
 pub async fn api_tanya(State(hub): State<Arc<Hub>>, headers: HeaderMap, Json(t): Json<Tanya>) -> Response {
@@ -795,7 +863,17 @@ pub async fn api_tanya(State(hub): State<Arc<Hub>>, headers: HeaderMap, Json(t):
         let jenis: Option<&str> = match t.jenis.as_deref() {
             Some("latihan") => Some("latihan"),
             Some("print") => Some("print"),
+            Some("hasil") => Some("hasil"),
             _ => None,
+        };
+        // Kanvas tujuan: hasil Practice selalu ke kanvas PRIBADI; selain itu
+        // kanvas yang sedang dilihat murid, asal memang miliknya.
+        let (pribadi, _) = pastikan_pribadi(&c, &t.murid).unwrap_or((None, None));
+        let (grup_k, _) = pastikan_grup(&c, &t.murid).unwrap_or((None, None));
+        let target: Option<String> = if jenis == Some("hasil") {
+            pribadi.clone()
+        } else {
+            t.kanvas.clone().filter(|k| Some(k) == pribadi.as_ref() || Some(k) == grup_k.as_ref())
         };
         let _ = c.execute(
             "UPDATE questions SET status = 'selesai', handled_at = ?1 WHERE student_id = ?2 AND status != 'selesai' AND COALESCE(kind, '') = COALESCE(?3, '')",
@@ -810,8 +888,8 @@ pub async fn api_tanya(State(hub): State<Arc<Hub>>, headers: HeaderMap, Json(t):
             None => None,
         };
         c.execute(
-            "INSERT INTO questions (id, student_id, name, room, text, photos, status, created_at, for_teacher, kind) VALUES (?1, ?2, ?3, 1, ?4, ?5, 'menunggu', ?6, ?7, ?8)",
-            rusqlite::params![id, t.murid, t.nama.trim().chars().take(40).collect::<String>(), if teks.is_empty() { None } else { Some(teks.clone()) }, foto_json, kini, tujuan, jenis],
+            "INSERT INTO questions (id, student_id, name, room, text, photos, status, created_at, for_teacher, kind, target_canvas) VALUES (?1, ?2, ?3, 1, ?4, ?5, 'menunggu', ?6, ?7, ?8, ?9)",
+            rusqlite::params![id, t.murid, t.nama.trim().chars().take(40).collect::<String>(), if teks.is_empty() { None } else { Some(teks.clone()) }, foto_json, kini, tujuan, jenis, target],
         )
         .map_err(|e| e.to_string())?;
         Ok(json!({ "id": id, "nama": t.nama, "teks": teks, "foto": !nama_foto.is_empty(), "guru": tujuan, "jenis": jenis }))
@@ -877,14 +955,18 @@ pub async fn api_ubah_tanya(State(hub): State<Arc<Hub>>, headers: HeaderMap, Jso
         let (murid, nama): (String, String) = c
             .query_row("SELECT student_id, name FROM questions WHERE id = ?1", rusqlite::params![u.id], |r| Ok((r.get(0)?, r.get(1)?)))
             .map_err(|e| e.to_string())?;
-        // Anggota grup yang sama ikut dikabari: "pertanyaan Dina sedang dibahas".
+        // Anggota grup yang sama ikut dikabari: "pertanyaan Dina sedang dibahas" —
+        // kecuali dibahas di kanvas PRIBADI murid itu: grupnya tidak ikut dipindah.
         let mut anggota: Vec<String> = Vec::new();
         let mut grup: Option<String> = None;
-        if let Ok((gid, gnama)) = c.query_row(
+        let di_pribadi = u.sketsa.as_ref().is_some_and(|s| {
+            c.query_row("SELECT 1 FROM students WHERE id = ?1 AND sketch_id = ?2", rusqlite::params![murid, s], |_| Ok(())).is_ok()
+        });
+        if let (false, Ok((gid, gnama))) = (di_pribadi, c.query_row(
             "SELECT g.id, g.name FROM groups g JOIN group_members m ON m.group_id = g.id WHERE m.student_id = ?1 LIMIT 1",
             rusqlite::params![murid],
             |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
-        ) {
+        )) {
             grup = Some(gnama);
             let mut st = c.prepare("SELECT student_id FROM group_members WHERE group_id = ?1").map_err(|e| e.to_string())?;
             anggota = st

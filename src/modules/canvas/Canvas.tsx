@@ -320,7 +320,10 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
         [t.student_id],
       )
       const adaSketsa = async (id: string | null) => (id ? !!(await q1('SELECT id FROM canvases WHERE id = ?', [id])) : false)
-      if (grup) {
+      if (t.target_canvas && (await adaSketsa(t.target_canvas))) {
+        // Murid bertanya dari kanvas tertentu (pribadi atau grupnya): bahas di sana.
+        idTujuan = t.target_canvas
+      } else if (grup) {
         // Satu kanvas per grup per hari: "Grup · Mat 1 · 6 Sep". Besok grup
         // yang sama mulai bersih; materi hari ini tetap ada di daftar sketsa.
         judulTujuan = `Grup · ${grup.name} · ${tanggalPendek(new Date())}`

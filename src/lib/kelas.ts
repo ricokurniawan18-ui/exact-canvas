@@ -26,7 +26,9 @@ export interface Tanya {
   /** Guru yang membahasnya ('utama' atau id akun). */
   handled_by?: string | null
   /** Permintaan murid: 'latihan' (minta soal latihan) atau 'print'; null = pertanyaan. */
-  kind?: 'latihan' | 'print' | null
+  kind?: 'latihan' | 'print' | 'hasil' | null
+  /** Kanvas yang sedang dilihat murid saat bertanya (pribadi atau grup); null = aturan lama. */
+  target_canvas?: string | null
 }
 
 /** Guru yang bisa dipilih murid: guru utama ('utama') dan akun ber-peran guru. */

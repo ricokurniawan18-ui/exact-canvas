@@ -116,6 +116,12 @@ pub fn migrations() -> Vec<Migration> {
                   ALTER TABLE students ADD COLUMN schedule TEXT;
                   ALTER TABLE students ADD COLUMN checkin_day TEXT;",
         },
+        Migration {
+            version: 16,
+            description: "kanvas tujuan pertanyaan: pribadi atau grup, sesuai yang sedang dilihat murid",
+            kind: MigrationKind::Up,
+            sql: "ALTER TABLE questions ADD COLUMN target_canvas TEXT;",
+        },
     ]
 }
 

@@ -577,7 +577,7 @@ function BarisTanya({
           <span
             style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: t.kind === 'print' ? 'var(--accent-2)' : 'var(--accent)', color: '#fff', flexShrink: 0 }}
           >
-            {t.kind === 'print' ? '🖨️ Print' : '📝 Practice'}
+            {t.kind === 'print' ? '🖨️ Print' : t.kind === 'hasil' ? '📊 Practice result' : '📝 Practice'}
           </span>
         )}
         <span className="min-w-0 flex-1 truncate" style={{ fontWeight: 600, fontSize: 'var(--fs-label)' }}>
@@ -618,7 +618,7 @@ function BarisTanya({
           ))}
         </div>
       ) : null}
-      {t.kind && (
+      {(t.kind === 'print' || t.kind === 'latihan') && (
         <button
           className="ex-btn"
           data-variant="accent"
@@ -638,7 +638,7 @@ function BarisTanya({
         </button>
       )}
       <div className="flex gap-1">
-        <button className="ex-btn flex-1" data-variant={dibahas || t.kind ? 'ghost' : 'accent'} style={{ padding: '4px 0' }} onClick={() => onBahas()}>
+        <button className="ex-btn flex-1" data-variant={dibahas || t.kind === 'print' || t.kind === 'latihan' ? 'ghost' : 'accent'} style={{ padding: '4px 0' }} onClick={() => onBahas()}>
           <Icon nama="pena" ukuran={13} />{' '}
           {dibahas
             ? 'Back to canvas'

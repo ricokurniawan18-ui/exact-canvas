@@ -124,6 +124,7 @@
       #tunggu .sub { font-size: 14px; line-height: 1.5; margin-top: 8px; }
       #tunggu #tunggu-antrean { margin-top: 18px; font-size: 15px; color: #8a8; }
       #bilah #tombol-tunggu, #bilah #tombol-coret, #bilah #tombol-layar-penuh { flex: 0 0 auto; padding: 11px 14px; }
+      #kembali-pribadi { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 30; padding: 10px 16px; border-radius: 999px; border: 0; background: var(--accent); color: #fff; font: inherit; font-weight: 600; box-shadow: 0 2px 10px rgba(0,0,0,.25); }
       #bilah #tombol-coret.aktif { background: var(--accent); border-color: var(--accent); }
       #alat-coret { position: absolute; left: 8px; right: 8px; top: calc(8px + env(safe-area-inset-top)); display: none; gap: 6px; align-items: center; padding: 8px;
         border-radius: 14px; background: rgba(242, 240, 234, 0.94); border: 1px solid var(--line); backdrop-filter: blur(8px); overflow-x: auto; }
@@ -170,8 +171,10 @@
     <div id="kabar"></div>
     <button id="ikuti" hidden>↩ Follow the teacher</button>
     <button id="kembali-riwayat" hidden>← Back to today</button>
+    <button id="kembali-pribadi" hidden>↩ Back to my canvas</button>
     <div id="status-saya"></div>
     <div id="bilah">
+      <button id="tombol-kanvas" title="Switch between your own canvas and your group's canvas" hidden>👤 Mine</button>
       <button id="tombol-grup" title="Study group">👥 Group</button>
       <button id="tombol-ekspor" title="Export your canvas as a PDF">📄 PDF</button>
       <button id="tombol-latihan" title="Practice questions from the teacher (Exact Practice)">📝 Practice</button>

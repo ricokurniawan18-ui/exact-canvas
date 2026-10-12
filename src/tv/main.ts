@@ -478,6 +478,73 @@ let sumberPaksa: string | null = null
  * kanvasnya sendiri kapan pun, tidak pernah melihat kanvas anak lain.
  */
 let kanvasSaya: string | null = null
+/**
+ * Setiap murid punya kanvas PRIBADI hari ini dan, kalau bergrup, kanvas GRUP
+ * hari ini. Murid memilih mana yang ditampilkan (tombol 👤/👥); pilihannya
+ * diingat. Saat guru aktif di kanvas grup, murid yang sedang di kanvas
+ * pribadinya dipindah otomatis ke kanvas grup, dengan tombol "Back to my canvas".
+ */
+let kanvasPribadi: string | null = null
+let kanvasGrup: string | null = null
+const KUNCI_PILIHAN_KANVAS = 'exact-canvas-pilihan'
+let pilihanKanvas: 'grup' | 'pribadi' = (() => {
+  try {
+    // `?kanvas=pribadi`: datang dari Practice sesudah mengirim hasil latihan ke guru.
+    if (params.get('kanvas') === 'pribadi') {
+      localStorage.setItem(KUNCI_PILIHAN_KANVAS, 'pribadi')
+      return 'pribadi'
+    }
+    return localStorage.getItem(KUNCI_PILIHAN_KANVAS) === 'pribadi' ? 'pribadi' : 'grup'
+  } catch {
+    return 'grup'
+  }
+})()
+/** Dipindah otomatis ke kanvas grup karena grup sedang dibahas. */
+let otomatisKeGrup = false
+/** Terakhir murid sendiri mencoret — selama itu tidak dipindah otomatis. */
+let terakhirCoretSendiri = 0
+/** Murid memilih tetap di kanvasnya sendiri: tidak dipindah otomatis lagi sampai saat ini. */
+let tetapPribadiSampai = 0
+
+function simpanPilihanKanvas(p: 'grup' | 'pribadi') {
+  pilihanKanvas = p
+  try {
+    localStorage.setItem(KUNCI_PILIHAN_KANVAS, p)
+  } catch {
+    /* penyimpanan tidak tersedia */
+  }
+}
+
+function kanvasPilihan(): string | null {
+  if (pilihanKanvas === 'pribadi' && kanvasPribadi) return kanvasPribadi
+  return kanvasGrup ?? kanvasPribadi
+}
+
+function perbaruiTombolKanvas() {
+  const t = el('tombol-kanvas')
+  t.hidden = !kanvasGrup || !kanvasPribadi
+  const diPribadi = !!kanvasPribadi && kanvasSaya === kanvasPribadi
+  // Tombol menunjukkan tujuan, bukan tempat sekarang.
+  t.textContent = diPribadi ? '👥 Group canvas' : '👤 My canvas'
+  el('kembali-pribadi').hidden = !(otomatisKeGrup && kanvasGrup && kanvasSaya === kanvasGrup)
+}
+
+/** Tampilkan salah satu kanvas saya. */
+async function keKanvas(id: string | null) {
+  if (!id) return
+  if (id !== kanvasSaya || id !== idSketsa) {
+    kanvasSaya = id
+    sumber = null
+    goresanHidup.clear()
+    kursor = null
+    await muatSketsa(id)
+    pandanganSumber = null
+    muatSatuHalaman()
+    kotorAktif = true
+  }
+  perbaruiTombolKanvas()
+}
+
 /** Grup belajar saya sekarang, kalau ada — dipakai tombol "Group" di bilah. */
 let grupSaya: { id: string; nama: string } | null = null
 /** Sedang melihat kanvas grup dari hari lampau (baca saja) — bukan kanvasSaya. */
@@ -541,6 +608,24 @@ function terima(p: PesanLangsung) {
     return
   }
   if (!bolehIkuti(p.src)) return
+  // Guru aktif di kanvas grup saya sementara saya di kanvas pribadi: pindah
+  // otomatis ke grup (bisa kembali) — kecuali saya baru saja mencoret sendiri.
+  if (
+    sebagaiMurid &&
+    !melihatRiwayat &&
+    kanvasGrup &&
+    p.idKanvas === kanvasGrup &&
+    kanvasSaya === kanvasPribadi &&
+    p.aktif !== false &&
+    ['goresan', 'titik', 'objek', 'ubah', 'instrumen'].includes(p.t) &&
+    Date.now() - terakhirCoretSendiri > 20_000 &&
+    Date.now() > tetapPribadiSampai
+  ) {
+    otomatisKeGrup = true
+    void keKanvas(kanvasGrup)
+    tampilkanStatus('The teacher is discussing your group — tap "Back to my canvas" to leave')
+    return
+  }
   // Guru sedang di kanvas anak lain: layar ini tidak pernah pindah ke sana —
   // murid selalu di kanvasnya sendiri, titik.
   if (kanvasSaya && typeof p.idKanvas === 'string' && p.idKanvas !== kanvasSaya) return
@@ -1019,9 +1104,13 @@ async function segarkanSaya() {
       boleh?: boolean
       sketsa?: string | null
       kanvas?: string | null
+      kanvasPribadi?: string | null
+      kanvasGrup?: string | null
       zoom?: number
       duaJariUndo?: boolean
     }>(`/api/kelas/saya?murid=${encodeURIComponent(muridId)}`)
+    kanvasPribadi = r.kanvasPribadi ?? null
+    kanvasGrup = r.kanvasGrup ?? null
     terapkanIzin(r.boleh === true, r.sketsa ?? null)
     if (typeof r.duaJariUndo === 'boolean') duaJariUndoAktif = r.duaJariUndo
     if (typeof r.zoom === 'number') {
@@ -1036,7 +1125,16 @@ async function segarkanSaya() {
     // Kanvas yang harus selalu ditampilkan: kalau grup diarahkan ke satu
     // sketsa tetap pakai itu, kalau tidak pakai kanvas grup/sendiri bawaan —
     // murid tidak pernah tanpa kanvas begitu satu sudah ada untuknya.
-    const kanvasBaru = arahBaru?.startsWith('sketsa:') ? arahBaru.slice(7) : (r.kanvas ?? null)
+    // Kanvas yang sedang dibuka masih milik saya (misalnya dipindah otomatis
+    // ke kanvas grup): biarkan; kalau tidak, pakai pilihan murid.
+    const masihMilikku = !!kanvasSaya && (kanvasSaya === kanvasPribadi || kanvasSaya === kanvasGrup)
+    const kanvasBaru = arahBaru?.startsWith('sketsa:')
+      ? arahBaru.slice(7)
+      : r.kanvasPribadi !== undefined
+        ? masihMilikku && (otomatisKeGrup || sumberPaksa)
+          ? kanvasSaya
+          : kanvasPilihan()
+        : (r.kanvas ?? null)
     if (arahBaru !== arah) arah = arahBaru
     if (kanvasBaru !== kanvasSaya) {
       kanvasSaya = kanvasBaru
@@ -1054,6 +1152,7 @@ async function segarkanSaya() {
         kotorAktif = true
       }
     }
+    perbaruiTombolKanvas()
     tanyaSaya = r.tanya
     perbaruiStatusSaya()
     if (modeTunggu) {
@@ -1504,7 +1603,7 @@ function pasangGrup() {
     void (async () => {
       melihatRiwayat = false
       el('kembali-riwayat').hidden = true
-      if (izinCoret.boleh && izinCoret.sketsa === kanvasSaya) el('tombol-coret').hidden = false
+      if (izinCoret.boleh && (izinCoret.sketsa === kanvasSaya || kanvasSaya === kanvasPribadi)) el('tombol-coret').hidden = false
       if (kanvasSaya) {
         await muatSketsa(kanvasSaya)
         pandanganSumber = null
@@ -1514,6 +1613,21 @@ function pasangGrup() {
     })()
   }
 
+  el('tombol-kanvas').onclick = () => {
+    const kePribadi = kanvasSaya !== kanvasPribadi
+    simpanPilihanKanvas(kePribadi ? 'pribadi' : 'grup')
+    tetapPribadiSampai = kePribadi ? Date.now() + 30 * 60_000 : 0
+    otomatisKeGrup = false
+    sumberPaksa = null
+    void keKanvas(kePribadi ? kanvasPribadi : kanvasGrup)
+  }
+  el('kembali-pribadi').onclick = () => {
+    otomatisKeGrup = false
+    sumberPaksa = null
+    // Pilihan sadar untuk tetap di kanvas sendiri: jangan ditarik lagi selama sesi bahas ini.
+    tetapPribadiSampai = Date.now() + 30 * 60_000
+    void keKanvas(kanvasPribadi)
+  }
   el('tombol-grup').onclick = () => {
     kotak.classList.add('tampil')
     void render()
@@ -1721,7 +1835,7 @@ async function kirimTanya(teks: string, fotos: string[], jenis?: 'latihan' | 'pr
     // memberi kabar alih-alih menggantung diam.
     await api('/api/kelas/tanya', {
       method: 'POST',
-      json: { murid: muridId, nama: namaSaya, teks, fotos, guru: guruDipilih || null, jenis: jenis ?? null },
+      json: { murid: muridId, nama: namaSaya, teks, fotos, guru: guruDipilih || null, jenis: jenis ?? null, kanvas: kanvasSaya },
       timeoutMs: 45000,
     })
     if (jenis) {
@@ -1867,6 +1981,9 @@ function terimaBahas(t: { murid: string; nama: string; anggota?: string[]; grup?
   // Langsung ikuti perangkat guru yang membahas — tidak menunggu ia bergerak.
   bebas = false
   kanvasSaya = (t as { sketsa?: string | null }).sketsa ?? null
+  if (kanvasSaya && kanvasSaya === kanvasGrup && pilihanKanvas === 'pribadi') otomatisKeGrup = true
+  else if (kanvasSaya && kanvasSaya === kanvasPribadi) otomatisKeGrup = false
+  perbaruiTombolKanvas()
   el('ikuti').hidden = true
   const teksKabar = punyaku
     ? 'Your question is being discussed — look at the board'
@@ -2187,11 +2304,15 @@ function terapkanIzin(boleh: boolean, sketsaId: string | null) {
 /** Buka kanvas saya dan nyalakan mode coret. */
 async function mulaiCoret() {
   if (!izinCoret.boleh || !izinCoret.sketsa) return
-  kanvasSaya = izinCoret.sketsa
+  // Mencoret di kanvas yang sedang dilihat kalau itu kanvas saya (pribadi
+  // atau grup); selain itu di kanvas izin bawaan.
+  const tujuan = kanvasSaya && (kanvasSaya === kanvasPribadi || kanvasSaya === kanvasGrup) ? kanvasSaya : izinCoret.sketsa
+  kanvasSaya = tujuan
+  terakhirCoretSendiri = Date.now()
   bebas = false
   el('ikuti').hidden = true
-  if (idSketsa !== izinCoret.sketsa) {
-    await muatSketsa(izinCoret.sketsa)
+  if (idSketsa !== tujuan) {
+    await muatSketsa(tujuan)
     pandanganSumber = null
     muatSatuHalaman()
   }
@@ -2488,6 +2609,7 @@ function mulaiGoresan(e: PointerEvent) {
     points: [[x, y, tekanan]],
   }
   goresanSaya = { c, pointer: e.pointerId, terkirim: 0, layar: { x: e.clientX, y: e.clientY } }
+  terakhirCoretSendiri = Date.now()
   goresanHidup.set(c.id, c)
   titikDiamKu = { x: e.clientX, y: e.clientY }
   // Tahan-untuk-bentuk tidak berlaku di tepi/lengkung instrumen: bentuknya

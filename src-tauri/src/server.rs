@@ -1215,6 +1215,17 @@ async fn layani(soket: WebSocket, hub: Arc<Hub>, klien: Klien) {
                             // murid berizin, untuk goresan di kanvasnya sendiri.
                             if !editor {
                                 let (boleh_coret, kanvas_izin) = if murid.is_empty() { (false, None) } else { crate::kelas::izin_murid_terkini(&murid) };
+                                // Murid berizin boleh menulis di kanvas grupnya ATAU kanvas
+                                // pribadinya — mana pun yang sedang ia tampilkan.
+                                let kanvas_izin = if boleh_coret {
+                                    let di = v.get("idKanvas").and_then(|x| x.as_str()).map(|x| x.to_string());
+                                    // Sudah di kanvas izin bawaan: tak perlu mencari kanvas pribadi.
+                                    let pribadi = if murid.is_empty() || di.is_none() || di == kanvas_izin { None } else {
+                                        let m = murid.clone();
+                                        tokio::task::spawn_blocking(move || crate::kelas::kanvas_pribadi_terkini(&m)).await.ok().flatten()
+                                    };
+                                    if di.is_some() && di == pribadi { pribadi } else { kanvas_izin }
+                                } else { kanvas_izin };
                                 if boleh_coret && kanvas_izin.is_some() && kanvas_izin != kanvas_dibenihi {
                                     let (k, m) = (kanvas_izin.clone().unwrap_or_default(), murid.clone());
                                     if let Ok(ids) = tokio::task::spawn_blocking(move || crate::kelas::goresan_milik(&k, &m)).await {
