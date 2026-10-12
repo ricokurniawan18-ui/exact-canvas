@@ -61,6 +61,12 @@ window.Scan = (function () {
   // Pilihan filter terakhir jadi bawaan halaman berikutnya — orang yang scan 30
   // lembar tidak mau memilih "Hemat Tinta" tiga puluh kali.
   let filterBawaan = 'tingkatkan';
+  /* Mode cepat (Exact Canvas, permintaan print): foto → sudut dan filter
+     otomatis → PDF langsung jadi, tanpa layar daftar. Halamannya disimpan di
+     `simpananCepat` supaya bisa dibuka lagi lewat Scan.ubah() kalau ada yang
+     perlu dibetulkan — edit hanya kalau perlu. */
+  let modeCepat = false;
+  let simpananCepat = null;
   /* Pesan yang perlu dibaca pengguna di layar daftar halaman.
 
      TIDAK memakai alert(): kotak bawaan peramban memblokir seluruh halaman
@@ -77,6 +83,8 @@ window.Scan = (function () {
   // ══ Titik masuk ═══════════════════════════════════════════════════════════
   function buka(opsi = {}) {
     selesaiCb = opsi.selesai || (() => {});
+    modeCepat = !!opsi.cepat;
+    if (opsi.filter) filterBawaan = opsi.filter;
     halaman = [];
     nomorHal = 0;
     buatLapis();
@@ -206,7 +214,11 @@ window.Scan = (function () {
       <button class="tombol kecil" id="scanKeDaftar" style="min-width:96px">Selesai (0)</button>`;
 
     $('#scanKeGaleri', lapis).onclick = () => $('#scanInputFoto', lapis).click();
-    $('#scanKeDaftar', lapis).onclick = () => { hentikanKamera(); tampilDaftar(); };
+    $('#scanKeDaftar', lapis).onclick = () => {
+      hentikanKamera();
+      tampilDaftar();
+      if (modeCepat && halaman.length) void siapLaluPdf();
+    };
     $('#scanJepret', lapis).onclick = jepret;
 
     try {
@@ -298,6 +310,7 @@ window.Scan = (function () {
     }
     sibuk('');
     gambarDaftar();
+    if (modeCepat) await siapLaluPdf();
   }
 
   function muatGambar(berkas) {
@@ -1910,6 +1923,26 @@ window.Scan = (function () {
   }
 
   // ══ Gabung jadi PDF ═══════════════════════════════════════════════════════
+  /* Mode cepat: tunggu semua halaman selesai dirapikan, lalu langsung buat PDF. */
+  async function siapLaluPdf() {
+    for (let i = 0; i < 600 && lapis && halaman.some((h) => !h.diproses); i += 1) await jeda(100);
+    if (!lapis || !halaman.length) return;
+    gambarDaftar();
+    await jadikanPdf();
+  }
+
+  /* Buka lagi halaman hasil pindai terakhir dalam mode lengkap (geser sudut,
+     ganti filter, putar, susun ulang) — dipakai tombol "Edit pages". */
+  function ubah(opsi = {}) {
+    if (!simpananCepat || !simpananCepat.length) return buka(opsi);
+    selesaiCb = opsi.selesai || (() => {});
+    modeCepat = false;
+    buatLapis();
+    halaman = simpananCepat.slice();
+    nomorHal = Math.max(...halaman.map((h) => h.id));
+    tampilDaftar();
+  }
+
   async function jadikanPdf() {
     if (!halaman.length) return;
     const tombol = $('#scanJadikan', lapis);
@@ -1968,6 +2001,7 @@ window.Scan = (function () {
 
       document.body.style.overflow = '';
       const kirim = selesaiCb;
+      simpananCepat = halaman.slice();
       tutup();
       kirim(berkas);
     } catch (e) {
@@ -1983,6 +2017,7 @@ window.Scan = (function () {
   // Fungsi matematika diekspor agar bisa diuji oleh test.js di luar peramban.
   return {
     buka,
+    ubah,
     tutup,
     _uji: {
       homografi, selesaikan, otsu, ukuranHasil, luasSegiempat, komponenTerbesar,

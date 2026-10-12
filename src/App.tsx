@@ -35,6 +35,28 @@ export interface InfoBerbagi {
   klien: { id: string; nama: string; peran: string }[]
 }
 
+/** Alamat publik Exact Practice (ruang guru: kunci jawaban + pemantauan). */
+const ALAMAT_PRACTICE = 'https://practice2.exactprintsolution.com'
+
+/**
+ * Buka ruang guru Exact Practice. Guru pembantu dibawa masuk dengan sesi
+ * Canvas-nya (tanpa login lagi; Practice memberinya peran guru); guru utama
+ * di Mac/tablet membuka /guru dengan akun admin Practice-nya.
+ */
+async function bukaRuangGuru() {
+  const sesi = sesiAktif()
+  const url =
+    guruPembantu() && sesi
+      ? `${ALAMAT_PRACTICE}/api/auth/canvas?sesi=${encodeURIComponent(sesi)}&next=${encodeURIComponent('/guru')}`
+      : `${ALAMAT_PRACTICE}/guru`
+  if (inTauri) {
+    const { openUrl } = await import('@tauri-apps/plugin-opener')
+    await openUrl(url).catch(() => {})
+  } else {
+    window.open(url, '_blank')
+  }
+}
+
 export default function App() {
   const [siap, setSiap] = useState(false)
   const [galat, setGalat] = useState<string | null>(null)
@@ -114,14 +136,25 @@ export default function App() {
     <>
       <div className="ex-texture relative h-full w-full">
         <KanvasLayar />
-        {!guruPembantu() && (
-          <IconButton
-            nama="atur"
-            label="Settings (⌘,)"
-            className="ex-card absolute right-3 top-3 z-10"
-            onClick={() => useApp.getState().setPengaturan(true)}
-          />
-        )}
+        <div className="absolute right-3 top-3 z-10 flex gap-2">
+          <button
+            className="ex-card ex-btn"
+            data-variant="ghost"
+            style={{ padding: '6px 10px', fontSize: 'var(--fs-label)' }}
+            title="Answer keys and live monitoring in Exact Practice"
+            onClick={() => void bukaRuangGuru()}
+          >
+            📘 Answer keys
+          </button>
+          {!guruPembantu() && (
+            <IconButton
+              nama="atur"
+              label="Settings (⌘,)"
+              className="ex-card"
+              onClick={() => useApp.getState().setPengaturan(true)}
+            />
+          )}
+        </div>
       </div>
       <Pengaturan />
       <Toast />

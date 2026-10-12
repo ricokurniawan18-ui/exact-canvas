@@ -1102,7 +1102,10 @@ const MAKS_FOTO_LATIHAN = 10
 
 declare global {
   interface Window {
-    Scan?: { buka: (o: { foto?: File[]; kamera?: boolean; selesai: (f: File | null) => void }) => void }
+    Scan?: {
+      buka: (o: { foto?: File[]; kamera?: boolean; cepat?: boolean; filter?: string; selesai: (f: File | null) => void }) => void
+      ubah: (o: { selesai: (f: File | null) => void }) => void
+    }
   }
 }
 
@@ -1203,7 +1206,29 @@ function pasangBilahMurid() {
     ;(b as HTMLButtonElement).onclick = () => aturLembar((b as HTMLButtonElement).dataset.jenis as 'latihan' | 'print')
   })
 
-  // Print: foto lewat alat pindai Exact Print, hasilnya satu PDF siap cetak.
+  // Print: foto lewat alat pindai Exact Print dalam mode cepat — sudut dan
+  // filter Hemat Tinta otomatis, PDF langsung jadi. "Edit pages" membuka lagi
+  // halaman yang sama dalam mode lengkap bila ada yang perlu dibetulkan.
+  const terimaPindai = (f: File | null) => {
+    if (!f) return
+    const fr = new FileReader()
+    fr.onload = () => {
+      pdfData = String(fr.result)
+      fotoDataList = []
+      gambarUlangPratinjau()
+      pratinjauPdf.replaceChildren()
+      const label = document.createElement('span')
+      label.textContent = `📄 Scanned PDF ready · ${(f.size / 1024 / 1024).toFixed(1)} MB  `
+      const edit = document.createElement('button')
+      edit.type = 'button'
+      edit.textContent = '✏️ Edit pages'
+      edit.style.cssText = 'margin-left:6px;padding:4px 10px;font-size:13px'
+      edit.onclick = () => window.Scan?.ubah({ selesai: terimaPindai })
+      pratinjauPdf.append(label, edit)
+      pratinjauPdf.hidden = false
+    }
+    fr.readAsDataURL(f)
+  }
   async function pindai(o: { foto?: File[]; kamera?: boolean }) {
     try {
       await muatScan()
@@ -1211,21 +1236,7 @@ function pasangBilahMurid() {
       tampilkanStatus('Could not open the scanner — check the connection and try again.', true)
       return
     }
-    window.Scan?.buka({
-      ...o,
-      selesai: (f) => {
-        if (!f) return
-        const fr = new FileReader()
-        fr.onload = () => {
-          pdfData = String(fr.result)
-          fotoDataList = []
-          gambarUlangPratinjau()
-          pratinjauPdf.textContent = `📄 Scanned PDF · ${(f.size / 1024 / 1024).toFixed(1)} MB`
-          pratinjauPdf.hidden = false
-        }
-        fr.readAsDataURL(f)
-      },
-    })
+    window.Scan?.buka({ ...o, cepat: true, filter: 'hemat', selesai: terimaPindai })
   }
 
   el('tombol-tangan').onclick = () => void kirimTanya('', [])
