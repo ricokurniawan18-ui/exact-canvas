@@ -1319,3 +1319,54 @@ pub async fn api_daftar_guru(State(hub): State<Arc<Hub>>, headers: HeaderMap) ->
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
+
+#[derive(Deserialize)]
+pub struct Panggil {
+    /// Id pertanyaan yang dijawab dengan memanggil muridnya ke meja guru.
+    pub id: String,
+}
+
+/// Guru memanggil murid ke mejanya: HP murid berbunyi dan menampilkan nama
+/// guru pemanggil; pertanyaannya ditutup (dicatat siapa yang memanggil)
+/// karena dibahas langsung di meja, bukan di kanvas.
+pub async fn api_panggil(State(hub): State<Arc<Hub>>, headers: HeaderMap, Json(p): Json<Panggil>) -> Response {
+    if !sah(&hub, &headers, None) {
+        return tolak();
+    }
+    if !crate::server::guru_sah(&hub, &headers, None, None) {
+        return (StatusCode::UNAUTHORIZED, "Teacher sign-in required.").into_response();
+    }
+    let oleh = crate::server::penjawab(&hub, &headers);
+    let guru_pembantu = crate::akun::guru_dari_headers(&headers, None);
+    let hasil = tokio::task::spawn_blocking(move || -> Result<Value, String> {
+        let c = koneksi()?;
+        let nama_guru = match guru_pembantu {
+            Some((_, nama)) => nama,
+            None => c
+                .query_row("SELECT value FROM settings WHERE key = 'nama_guru'", [], |r| r.get::<_, Option<String>>(0))
+                .ok()
+                .flatten()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| "Mr. Rico".into()),
+        };
+        let (murid, nama): (String, String) = c
+            .query_row("SELECT student_id, name FROM questions WHERE id = ?1", rusqlite::params![p.id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(|_| "Question not found.".to_string())?;
+        c.execute(
+            "UPDATE questions SET status = 'selesai', handled_at = ?1, handled_by = COALESCE(?2, handled_by) WHERE id = ?3",
+            rusqlite::params![sekarang(), oleh, p.id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(json!({ "id": p.id, "murid": murid, "nama": nama, "guru": nama_guru, "status": "selesai" }))
+    })
+    .await;
+    match hasil {
+        Ok(Ok(v)) => {
+            let _ = hub.tx.send(json!({ "t": "panggil", "murid": v["murid"], "guru": v["guru"] }).to_string());
+            kabari(&hub, "ubah", v.clone());
+            Json(v).into_response()
+        }
+        Ok(Err(e)) => (StatusCode::BAD_REQUEST, e).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}

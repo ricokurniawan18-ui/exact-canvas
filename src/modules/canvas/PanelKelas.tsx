@@ -16,6 +16,7 @@ import {
   daftarAkun,
   daftarGuru,
   jadikanGuru,
+  panggilMurid,
   daftarGrup,
   daftarMuridSemua,
   daftarTanya,
@@ -31,7 +32,7 @@ import {
   type Tanya,
 } from '@/lib/kelas'
 
-type Tab = 'antrian' | 'murid' | 'grup'
+type Tab = 'antrian' | 'murid' | 'grup' | 'guru'
 
 /**
  * Panel kelas di rel kanvas: ruangan editor ini, antrian pertanyaan murid,
@@ -48,6 +49,7 @@ export function PanelKelas({
 }) {
   const [tab, setTab] = useState<Tab>('antrian')
   const [cariMurid, setCariMurid] = useState('')
+  const [cariGuru, setCariGuru] = useState('')
   // window.prompt() tidak menampilkan apa pun di WKWebView (app Mac) — jadi
   // input sandi baru dibuka inline di sini, bukan lewat dialog bawaan browser.
   const [resetId, setResetId] = useState<string | null>(null)
@@ -109,6 +111,8 @@ export function PanelKelas({
             ['antrian', `Queue${menunggu ? ` · ${menunggu}` : ''}`],
             ['murid', `Students · ${semuaMurid.length}`],
             ['grup', `Groups · ${grup.length}`],
+            // Hanya guru utama yang mengangkat/mencabut guru pembantu.
+            ...(pembantu ? [] : ([['guru', `Teachers · ${semuaMurid.filter((m) => m.role === 'guru').length}`]] as [Tab, string][])),
           ] as [Tab, string][]
         ).map(([id, label]) => (
           <button
@@ -187,6 +191,11 @@ export function PanelKelas({
               grup={grup.find((g) => g.id === petaGrupMurid.get(t.student_id)) ?? null}
               onBahas={(paksaTempel) => onBahas(t, t.photos.length ? t.photos : null, paksaTempel)}
               onSelesai={() => void ubahTanya(t.id, 'selesai').catch(() => toastGalat('Could not close it.'))}
+              onPanggil={() =>
+                void panggilMurid(t.id)
+                  .then(() => toast(`${t.name} called to your desk.`))
+                  .catch(toastGalat)
+              }
             />
           ))}
         </div>
@@ -298,21 +307,6 @@ export function PanelKelas({
                     />
                   </form>
                 )}
-                {m.phone && !pembantu && (
-                  <button
-                    className="ex-btn"
-                    data-variant={m.role === 'guru' ? 'accent' : 'ghost'}
-                    style={{ padding: '1px 6px', fontSize: 10 }}
-                    title={m.role === 'guru' ? 'Assistant teacher — tap to make a regular student again' : 'Make this account an assistant teacher'}
-                    onClick={() =>
-                      jadikanGuru(m.id, m.role !== 'guru')
-                        .then(() => toast(m.role === 'guru' ? `${m.name} is a student again.` : `${m.name} is now an assistant teacher.`))
-                        .catch(toastGalat)
-                    }
-                  >
-                    {m.role === 'guru' ? 'Teacher' : '+ Teacher'}
-                  </button>
-                )}
                 {m.phone && resetId !== m.id && !pembantu && (
                   <IconButton
                     nama="gembok"
@@ -366,6 +360,77 @@ export function PanelKelas({
         </div>
       )}
 
+      {tab === 'guru' && !pembantu && (
+        <div className="flex flex-col gap-1">
+          <p className="ex-label" style={{ color: 'var(--ink-faint)', fontSize: 11 }}>
+            Assistant teachers sign in to the editor with their own account and can answer questions. Search a student
+            account to make it a teacher.
+          </p>
+          {semuaMurid
+            .filter((m) => m.role === 'guru')
+            .map((m) => (
+              <div key={m.id} className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate" style={{ fontSize: 'var(--fs-label)', fontWeight: 600 }}>
+                  {m.name}
+                </span>
+                <button
+                  className="ex-btn"
+                  data-variant="ghost"
+                  style={{ padding: '2px 8px', fontSize: 11 }}
+                  onClick={() =>
+                    jadikanGuru(m.id, false)
+                      .then(() => toast(`${m.name} is a student again.`))
+                      .catch(toastGalat)
+                  }
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          {semuaMurid.every((m) => m.role !== 'guru') && (
+            <p className="ex-label" style={{ color: 'var(--ink-faint)' }}>
+              No assistant teachers yet.
+            </p>
+          )}
+          <input
+            className="ex-input"
+            style={{ padding: '4px 8px', fontSize: 'var(--fs-label)', marginTop: 6 }}
+            placeholder="Search a name to add…"
+            value={cariGuru}
+            onChange={(e) => setCariGuru(e.target.value)}
+          />
+          {cariGuru.trim() &&
+            semuaMurid
+              .filter((m) => m.phone && m.role !== 'guru' && m.name.toLowerCase().includes(cariGuru.trim().toLowerCase()))
+              .slice(0, 12)
+              .map((m) => (
+                <div key={m.id} className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate" style={{ fontSize: 'var(--fs-label)' }}>
+                    {m.name}
+                    <span className="ex-num" style={{ marginLeft: 6, fontSize: 11, color: 'var(--ink-faint)' }}>
+                      {m.phone}
+                    </span>
+                  </span>
+                  <button
+                    className="ex-btn"
+                    data-variant="accent"
+                    style={{ padding: '2px 8px', fontSize: 11 }}
+                    onClick={() =>
+                      jadikanGuru(m.id, true)
+                        .then(() => {
+                          toast(`${m.name} is now an assistant teacher.`)
+                          setCariGuru('')
+                        })
+                        .catch(toastGalat)
+                    }
+                  >
+                    Make teacher
+                  </button>
+                </div>
+              ))}
+        </div>
+      )}
+
       {tab === 'grup' && (
         <div className="flex flex-col gap-2">
           {grup.map((g) => (
@@ -397,6 +462,7 @@ function BarisTanya({
   grup,
   onBahas,
   onSelesai,
+  onPanggil,
 }: {
   t: Tanya
   /** Nama guru yang dituju (atau 'anyone'); null bila hanya ada satu guru. */
@@ -406,6 +472,8 @@ function BarisTanya({
   grup: Grup | null
   onBahas: (paksaTempel?: boolean) => void
   onSelesai: () => void
+  /** Panggil murid ke meja guru ini (dibahas langsung, bukan di kanvas). */
+  onPanggil: () => void
 }) {
   const [, setTick] = useState(0)
   useEffect(() => {
@@ -490,6 +558,9 @@ function BarisTanya({
             <Icon nama="sisip" ukuran={13} />
           </button>
         )}
+        <button className="ex-btn" data-variant="ghost" style={{ padding: '4px 8px', fontSize: 11 }} onClick={onPanggil} title="Call this student to your desk — their phone rings">
+          🙋 Call
+        </button>
         <button className="ex-btn" data-variant="ghost" style={{ padding: '4px 8px' }} onClick={onSelesai} title="Done">
           <Icon nama="centang" ukuran={13} />
         </button>

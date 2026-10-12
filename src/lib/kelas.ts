@@ -42,6 +42,11 @@ export async function daftarGuru(): Promise<Guru[]> {
   }
 }
 
+/** Panggil murid ke meja guru ini: HP-nya berbunyi, pertanyaannya ditutup. */
+export async function panggilMurid(idTanya: string): Promise<void> {
+  await api('/api/kelas/panggil', { method: 'POST', json: { id: idTanya } })
+}
+
 /** Hanya guru utama: jadikan akun ini guru pembantu, atau cabut. */
 export async function jadikanGuru(id: string, guru: boolean): Promise<void> {
   await api('/api/akun/peran', { method: 'POST', json: { id, guru } })

@@ -520,6 +520,10 @@ function terima(p: PesanLangsung) {
     terimaBahas(p.tanya as { murid: string; nama: string; anggota?: string[]; grup?: string | null })
     return
   }
+  if (p.t === 'panggil') {
+    if (sebagaiMurid && p.murid === muridId) terimaPanggil(String(p.guru ?? 'the teacher'))
+    return
+  }
   if (p.t === 'tertinggal') {
     // Sambungan ini sempat tertinggal; yang terlewat sudah tersimpan di server.
     jadwalkanMuatUlang()
@@ -1666,6 +1670,47 @@ async function perkecilFoto(f: File): Promise<{ src: string; w: number; h: numbe
 }
 
 let timerKabar: number | null = null
+
+/**
+ * Guru memanggil murid ini ke mejanya: layar penuh yang tidak bisa terlewat,
+ * bunyi, getar, dan notifikasi sistem bila halaman sedang di latar belakang.
+ */
+function terimaPanggil(namaGuru: string) {
+  const teks = `Please come to ${namaGuru}'s desk`
+  bunyi('bahas')
+  window.setTimeout(() => bunyi('bahas'), 900)
+  try {
+    navigator.vibrate?.([300, 150, 300, 150, 300])
+  } catch {
+    /* tidak didukung */
+  }
+  if (modeTunggu) void keluarModeTunggu(teks, true)
+  try {
+    if (document.visibilityState !== 'visible' && 'Notification' in window && Notification.permission === 'granted') {
+      new Notification('Exact Canvas', { body: teks, tag: 'panggil' })
+    }
+  } catch {
+    /* abaikan */
+  }
+  document.getElementById('kabar-panggil')?.remove()
+  const lapis = document.createElement('div')
+  lapis.id = 'kabar-panggil'
+  lapis.style.cssText =
+    'position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px;text-align:center;background:rgba(20,22,26,.92);color:#fff'
+  const ikon = document.createElement('div')
+  ikon.textContent = '🙋'
+  ikon.style.cssText = 'font-size:64px'
+  const judul = document.createElement('div')
+  judul.textContent = teks
+  judul.style.cssText = 'font-size:26px;font-weight:700;line-height:1.3'
+  const tombol = document.createElement('button')
+  tombol.textContent = "OK, I'm coming"
+  tombol.style.cssText = 'font-size:18px;padding:12px 28px;border-radius:999px;border:0;background:var(--accent,#c2410c);color:#fff'
+  tombol.onclick = () => lapis.remove()
+  lapis.append(ikon, judul, tombol)
+  document.body.append(lapis)
+  kabariInduk('panggil', { guru: namaGuru })
+}
 
 function terimaBahas(t: { murid: string; nama: string; anggota?: string[]; grup?: string | null; editor?: string | null }) {
   if (!sebagaiMurid) return
