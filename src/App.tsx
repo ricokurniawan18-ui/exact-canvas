@@ -39,19 +39,26 @@ export interface InfoBerbagi {
 const ALAMAT_PRACTICE = 'https://practice2.exactprintsolution.com'
 
 /**
- * Buka ruang guru Exact Practice. Guru pembantu dibawa masuk dengan sesi
- * Canvas-nya (tanpa login lagi; Practice memberinya peran guru); guru utama
- * di Mac/tablet membuka /guru dengan akun admin Practice-nya.
+ * Buka ruang guru Exact Practice tanpa login: editor meminta tiket sekali
+ * pakai (60 detik) ke server Canvas, lalu Practice menukarnya langsung ke
+ * Canvas di Mac ini. Berlaku untuk guru utama (masuk sebagai admin Practice)
+ * dan guru pembantu (masuk sebagai guru).
  */
 async function bukaRuangGuru() {
-  const sesi = sesiAktif()
-  const url =
-    guruPembantu() && sesi
-      ? `${ALAMAT_PRACTICE}/api/auth/canvas?sesi=${encodeURIComponent(sesi)}&next=${encodeURIComponent('/guru')}`
-      : `${ALAMAT_PRACTICE}/guru`
+  // Tab dibuka lebih dulu: Safari tablet memblokir window.open sesudah await.
+  const tab = inTauri ? null : window.open('', '_blank')
+  let url = `${ALAMAT_PRACTICE}/guru`
+  try {
+    const { tiket } = await api<{ tiket: string }>('/api/guru/tiket', { method: 'POST' })
+    url = `${ALAMAT_PRACTICE}/api/auth/tiket?t=${encodeURIComponent(tiket)}&next=${encodeURIComponent('/guru')}`
+  } catch {
+    /* tanpa tiket: halaman masuk Practice */
+  }
   if (inTauri) {
     const { openUrl } = await import('@tauri-apps/plugin-opener')
     await openUrl(url).catch(() => {})
+  } else if (tab) {
+    tab.location.href = url
   } else {
     window.open(url, '_blank')
   }
@@ -141,10 +148,10 @@ export default function App() {
             className="ex-card ex-btn"
             data-variant="ghost"
             style={{ padding: '6px 10px', fontSize: 'var(--fs-label)' }}
-            title="Answer keys and live monitoring in Exact Practice"
+            title="Exact Practice: answer keys and live monitoring (no sign-in needed)"
             onClick={() => void bukaRuangGuru()}
           >
-            📘 Answer keys
+            📘 Practice
           </button>
           {!guruPembantu() && (
             <IconButton

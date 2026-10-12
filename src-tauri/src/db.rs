@@ -99,6 +99,23 @@ pub fn migrations() -> Vec<Migration> {
             kind: MigrationKind::Up,
             sql: "ALTER TABLE questions ADD COLUMN kind TEXT;",
         },
+        Migration {
+            version: 15,
+            description: "laporan harian murid: nilai ulangan (per semester) dan jadwal les",
+            kind: MigrationKind::Up,
+            sql: "CREATE TABLE IF NOT EXISTS score_reports (
+                    id TEXT PRIMARY KEY, student_id TEXT NOT NULL, name TEXT NOT NULL,
+                    subject TEXT, test TEXT, score TEXT NOT NULL, test_date TEXT,
+                    created_at INTEGER NOT NULL, read_at INTEGER);
+                  CREATE INDEX IF NOT EXISTS idx_score_reports ON score_reports(created_at);
+                  CREATE TABLE IF NOT EXISTS schedule_updates (
+                    id TEXT PRIMARY KEY, student_id TEXT NOT NULL, name TEXT NOT NULL,
+                    schedule TEXT NOT NULL, previous TEXT,
+                    created_at INTEGER NOT NULL, read_at INTEGER);
+                  CREATE INDEX IF NOT EXISTS idx_schedule_updates ON schedule_updates(created_at);
+                  ALTER TABLE students ADD COLUMN schedule TEXT;
+                  ALTER TABLE students ADD COLUMN checkin_day TEXT;",
+        },
     ]
 }
 

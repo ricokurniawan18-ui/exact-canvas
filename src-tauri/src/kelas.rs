@@ -1470,3 +1470,149 @@ pub async fn api_buka_permintaan(State(hub): State<Arc<Hub>>, headers: HeaderMap
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
+
+/* ── Laporan harian: nilai ulangan & jadwal les ──────────────────────── */
+
+/// Awal semester berjalan (1 Januari atau 1 Juli, waktu lokal) dalam ms —
+/// nilai dari semester sebelumnya dihapus.
+fn awal_semester_ms() -> i64 {
+    use chrono::{Datelike, TimeZone};
+    let kini = chrono::Local::now();
+    let bulan = if kini.month() <= 6 { 1 } else { 7 };
+    chrono::Local
+        .with_ymd_and_hms(kini.year(), bulan, 1, 0, 0, 0)
+        .single()
+        .map(|t| t.timestamp_millis())
+        .unwrap_or(0)
+}
+
+#[derive(Deserialize)]
+pub struct QueryHarian {
+    pub murid: String,
+    pub pin: Option<String>,
+    pub sesi: Option<String>,
+}
+
+/// Murid membuka kelas: perlukah isian harian hari ini, dan jadwal les yang
+/// tersimpan (ditampilkan supaya tinggal dikonfirmasi atau diubah).
+pub async fn api_harian(State(hub): State<Arc<Hub>>, headers: HeaderMap, Query(q): Query<QueryHarian>) -> Response {
+    if !crate::server::sah_lengkap(&hub, &headers, q.pin.as_deref(), q.sesi.as_deref(), None) {
+        return tolak();
+    }
+    let hasil = tokio::task::spawn_blocking(move || -> Result<Value, String> {
+        let c = koneksi()?;
+        let (jadwal, hari): (Option<String>, Option<String>) = c
+            .query_row("SELECT schedule, checkin_day FROM students WHERE id = ?1", rusqlite::params![q.murid], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap_or((None, None));
+        let jadwal: Value = jadwal.as_deref().and_then(|j| serde_json::from_str(j).ok()).unwrap_or(Value::Null);
+        Ok(json!({ "perlu": hari.as_deref() != Some(hari_ini().as_str()), "jadwal": jadwal }))
+    })
+    .await;
+    match hasil {
+        Ok(Ok(v)) => Json(v).into_response(),
+        Ok(Err(e)) => (StatusCode::BAD_REQUEST, e).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct NilaiBaru {
+    #[serde(default)]
+    pub mapel: String,
+    #[serde(default)]
+    pub ujian: String,
+    pub nilai: String,
+    #[serde(default)]
+    pub tanggal: String,
+}
+
+#[derive(Deserialize)]
+pub struct IsiHarian {
+    pub murid: String,
+    pub nama: String,
+    #[serde(default)]
+    pub nilai: Vec<NilaiBaru>,
+    /// Jadwal baru, mis. {"Mon":"16:00","Wed":"16:00"}; null = tidak diubah.
+    #[serde(default)]
+    pub jadwal: Option<Value>,
+}
+
+/// Isian harian murid: nilai ulangan baru (boleh beberapa) dan/atau jadwal
+/// les. Jadwal yang berubah dicatat bersama jadwal lamanya untuk guru.
+/// Tanpa bunyi — guru membacanya sesudah mengajar.
+pub async fn api_isi_harian(State(hub): State<Arc<Hub>>, headers: HeaderMap, Json(h): Json<IsiHarian>) -> Response {
+    if !sah(&hub, &headers, None) {
+        return tolak();
+    }
+    if kebanjiran(&headers) {
+        return terlalu_sering();
+    }
+    let hasil = tokio::task::spawn_blocking(move || -> Result<Value, String> {
+        let c = koneksi()?;
+        let kini = sekarang();
+        let nama: String = h.nama.trim().chars().take(40).collect();
+        // Nilai semester lalu tidak disimpan lagi (Januari–Juni, Juli–Desember).
+        let _ = c.execute("DELETE FROM score_reports WHERE created_at < ?1", rusqlite::params![awal_semester_ms()]);
+        let _ = c.execute("DELETE FROM schedule_updates WHERE created_at < ?1", rusqlite::params![awal_semester_ms()]);
+        let mut n_nilai = 0;
+        for n in h.nilai.iter().take(10) {
+            let skor = n.nilai.trim().chars().take(12).collect::<String>();
+            if skor.is_empty() {
+                continue;
+            }
+            c.execute(
+                "INSERT INTO score_reports (id, student_id, name, subject, test, score, test_date, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                rusqlite::params![
+                    id_baru("nil"), h.murid, nama,
+                    n.mapel.trim().chars().take(40).collect::<String>(),
+                    n.ujian.trim().chars().take(60).collect::<String>(),
+                    skor, n.tanggal.trim().chars().take(10).collect::<String>(), kini
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+            n_nilai += 1;
+        }
+        let mut jadwal_berubah = false;
+        if let Some(j) = h.jadwal.as_ref().filter(|j| j.is_object()) {
+            let baru = j.to_string();
+            if baru.len() > 1000 {
+                return Err("Schedule is too long.".into());
+            }
+            let lama: Option<String> = c
+                .query_row("SELECT schedule FROM students WHERE id = ?1", rusqlite::params![h.murid], |r| r.get(0))
+                .ok()
+                .flatten();
+            let sama = lama.as_deref().and_then(|l| serde_json::from_str::<Value>(l).ok()).as_ref() == Some(j);
+            if !sama {
+                c.execute("UPDATE students SET schedule = ?1 WHERE id = ?2", rusqlite::params![baru, h.murid]).map_err(|e| e.to_string())?;
+                c.execute(
+                    "INSERT INTO schedule_updates (id, student_id, name, schedule, previous, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    rusqlite::params![id_baru("jdw"), h.murid, nama, baru, lama, kini],
+                )
+                .map_err(|e| e.to_string())?;
+                jadwal_berubah = true;
+            }
+        }
+        let _ = c.execute("UPDATE students SET checkin_day = ?1 WHERE id = ?2", rusqlite::params![hari_ini(), h.murid]);
+        Ok(json!({ "nilai": n_nilai, "jadwal": jadwal_berubah }))
+    })
+    .await;
+    match hasil {
+        Ok(Ok(v)) => {
+            if v["nilai"].as_i64().unwrap_or(0) > 0 || v["jadwal"] == true {
+                // Hanya menyegarkan panel guru; sengaja tanpa bunyi.
+                kabari(&hub, "laporan", v.clone());
+            }
+            Json(v).into_response()
+        }
+        Ok(Err(e)) => (StatusCode::BAD_REQUEST, e).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// 32 karakter heks acak untuk tiket masuk Practice.
+pub fn acak_tiket() -> String {
+    let mut b = [0u8; 16];
+    let _ = getrandom::getrandom(&mut b);
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}

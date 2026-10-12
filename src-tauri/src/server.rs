@@ -381,6 +381,9 @@ fn rute(hub: Arc<Hub>) -> Router {
         .route("/api/kelas/guru", get(crate::kelas::api_daftar_guru))
         .route("/api/kelas/panggil", axum::routing::post(crate::kelas::api_panggil))
         .route("/api/kelas/permintaan/buka", axum::routing::post(crate::kelas::api_buka_permintaan))
+        .route("/api/kelas/harian", get(crate::kelas::api_harian).post(crate::kelas::api_isi_harian))
+        .route("/api/guru/tiket", axum::routing::post(api_buat_tiket))
+        .route("/api/guru/tiket/tukar", axum::routing::post(api_tukar_tiket))
         .route("/api/akun/{id}", axum::routing::delete(crate::akun::api_hapus_akun))
         .route("/api/kelas/terbaru", get(crate::kelas::api_terbaru))
         .route("/api/kelas/grup/buat", axum::routing::post(crate::kelas::api_grup_buat))
@@ -1301,5 +1304,55 @@ mod uji_guru {
         assert!(matches!(saring_p(q, &[json!("sandi_admin")]), SaringSql::Tolak(_)));
         assert!(matches!(saring_p("SELECT * FROM settings", &[] as &[Value]), SaringSql::Tolak(_)));
         assert!(matches!(saring_p("SELECT value FROM settings WHERE key = 'sandi_admin'", &[]), SaringSql::Tolak(_)));
+    }
+}
+
+/* ── Tiket masuk Exact Practice (tanpa login) ──────────────────────── */
+
+/// Tiket sekali pakai, berlaku 60 detik: editor (guru utama atau guru
+/// pembantu) memintanya, lalu membuka Practice dengan tiket itu; server
+/// Practice menukarnya di sini (dengan PIN, dari Mac yang sama) untuk tahu
+/// siapa yang datang. Sandi admin tidak pernah ikut ke alamat.
+static TIKET: Mutex<Option<std::collections::HashMap<String, (Value, std::time::Instant)>>> = Mutex::new(None);
+
+async fn api_buat_tiket(State(hub): State<Arc<Hub>>, headers: HeaderMap) -> Response {
+    if !sah(&hub, &headers, None) {
+        return tolak();
+    }
+    let identitas = if headers.contains_key("x-exact-admin") && admin_sah(&hub, &headers, None) {
+        json!({ "peran": "admin" })
+    } else if let Some((id, nama)) = crate::akun::guru_dari_headers(&headers, None) {
+        let hp: String = crate::kelas::koneksi()
+            .ok()
+            .and_then(|c| c.query_row("SELECT phone FROM accounts WHERE id = ?1", rusqlite::params![id], |r| r.get(0)).ok())
+            .unwrap_or_default();
+        json!({ "peran": "guru", "id": id, "nama": nama, "hp": hp, "disetujui": true })
+    } else {
+        return tolak_admin();
+    };
+    let tiket = format!("{}{}", pin_acak(), crate::kelas::acak_tiket());
+    let mut g = TIKET.lock().unwrap_or_else(|e| e.into_inner());
+    let peta = g.get_or_insert_with(std::collections::HashMap::new);
+    peta.retain(|_, (_, t)| t.elapsed().as_secs() < 60);
+    peta.insert(tiket.clone(), (identitas, std::time::Instant::now()));
+    Json(json!({ "tiket": tiket })).into_response()
+}
+
+#[derive(Deserialize)]
+struct Tukar {
+    tiket: String,
+}
+
+async fn api_tukar_tiket(State(hub): State<Arc<Hub>>, headers: HeaderMap, Json(t): Json<Tukar>) -> Response {
+    // Hanya server Practice (memegang PIN kelas) yang menukar tiket.
+    let pin = headers.get("x-exact-pin").and_then(|v| v.to_str().ok()).unwrap_or("");
+    if pin != hub.pin {
+        return tolak();
+    }
+    let mut g = TIKET.lock().unwrap_or_else(|e| e.into_inner());
+    let peta = g.get_or_insert_with(std::collections::HashMap::new);
+    match peta.remove(&t.tiket) {
+        Some((v, dibuat)) if dibuat.elapsed().as_secs() < 60 => Json(v).into_response(),
+        _ => (StatusCode::UNAUTHORIZED, "Ticket expired.").into_response(),
     }
 }

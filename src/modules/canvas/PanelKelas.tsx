@@ -18,6 +18,10 @@ import {
   jadikanGuru,
   panggilMurid,
   bukaPermintaan,
+  daftarLaporanNilai,
+  daftarUpdateJadwal,
+  tandaiDibaca,
+  teksJadwal,
   daftarGrup,
   daftarMuridSemua,
   daftarTanya,
@@ -33,7 +37,7 @@ import {
   type Tanya,
 } from '@/lib/kelas'
 
-type Tab = 'antrian' | 'murid' | 'grup' | 'guru'
+type Tab = 'antrian' | 'murid' | 'grup' | 'guru' | 'nilai' | 'jadwal'
 
 /**
  * Panel kelas di rel kanvas: ruangan editor ini, antrian pertanyaan murid,
@@ -51,6 +55,9 @@ export function PanelKelas({
   const [tab, setTab] = useState<Tab>('antrian')
   const [cariMurid, setCariMurid] = useState('')
   const [cariGuru, setCariGuru] = useState('')
+  const { data: laporanNilai } = useData('kelas', daftarLaporanNilai, [])
+  const { data: updateJadwal } = useData('kelas', daftarUpdateJadwal, [])
+  const [semuaLaporan, setSemuaLaporan] = useState(false)
   // window.prompt() tidak menampilkan apa pun di WKWebView (app Mac) — jadi
   // input sandi baru dibuka inline di sini, bukan lewat dialog bawaan browser.
   const [resetId, setResetId] = useState<string | null>(null)
@@ -112,6 +119,8 @@ export function PanelKelas({
             ['antrian', `Queue${menunggu ? ` · ${menunggu}` : ''}`],
             ['murid', `Students · ${semuaMurid.length}`],
             ['grup', `Groups · ${grup.length}`],
+            ['nilai', `Scores${laporanNilai.some((n) => !n.read_at) ? ` · ${laporanNilai.filter((n) => !n.read_at).length}` : ''}`],
+            ['jadwal', `Schedule${updateJadwal.some((n) => !n.read_at) ? ` · ${updateJadwal.filter((n) => !n.read_at).length}` : ''}`],
             // Hanya guru utama yang mengangkat/mencabut guru pembantu.
             ...(pembantu ? [] : ([['guru', `Teachers · ${semuaMurid.filter((m) => m.role === 'guru').length}`]] as [Tab, string][])),
           ] as [Tab, string][]
@@ -429,6 +438,82 @@ export function PanelKelas({
                   </button>
                 </div>
               ))}
+        </div>
+      )}
+
+      {(tab === 'nilai' || tab === 'jadwal') && (
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-1">
+            {(
+              [
+                [false, 'Unread'],
+                [true, 'All'],
+              ] as [boolean, string][]
+            ).map(([v, label]) => (
+              <button
+                key={label}
+                className="ex-btn"
+                data-variant={semuaLaporan === v ? 'accent' : 'ghost'}
+                style={{ padding: '2px 10px', fontSize: 11 }}
+                onClick={() => setSemuaLaporan(v)}
+              >
+                {label}
+              </button>
+            ))}
+            <button
+              className="ex-btn ml-auto"
+              data-variant="ghost"
+              style={{ padding: '2px 8px', fontSize: 11 }}
+              onClick={() => void tandaiDibaca(tab === 'nilai' ? 'score_reports' : 'schedule_updates').catch(toastGalat)}
+            >
+              <Icon nama="centang" ukuran={12} /> Mark all read
+            </button>
+          </div>
+          {tab === 'nilai' &&
+            laporanNilai
+              .filter((n) => semuaLaporan || !n.read_at)
+              .map((n) => (
+                <div key={n.id} className="ex-card flex items-start gap-2 p-2" style={{ opacity: n.read_at ? 0.6 : 1 }}>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate" style={{ fontWeight: 600, fontSize: 'var(--fs-label)' }}>{n.name}</span>
+                      <span className="ex-num" style={{ marginLeft: 'auto', fontWeight: 700, fontSize: 15 }}>{n.score}</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>
+                      {[n.subject, n.test, n.test_date].filter(Boolean).join(' · ') || 'Test score'}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--ink-faint)' }}>sent {new Date(n.created_at).toLocaleString()}</div>
+                  </div>
+                  {!n.read_at && (
+                    <IconButton nama="centang" label="Mark as read" ukuran={12} onClick={() => void tandaiDibaca('score_reports', n.id).catch(toastGalat)} />
+                  )}
+                </div>
+              ))}
+          {tab === 'jadwal' &&
+            updateJadwal
+              .filter((n) => semuaLaporan || !n.read_at)
+              .map((n) => (
+                <div key={n.id} className="ex-card flex items-start gap-2 p-2" style={{ opacity: n.read_at ? 0.6 : 1 }}>
+                  <div className="min-w-0 flex-1">
+                    <div style={{ fontWeight: 600, fontSize: 'var(--fs-label)' }}>{n.name}</div>
+                    <div style={{ fontSize: 12 }}>{teksJadwal(n.schedule)}</div>
+                    {n.previous && (
+                      <div style={{ fontSize: 11, color: 'var(--ink-faint)', textDecoration: 'line-through' }}>{teksJadwal(n.previous)}</div>
+                    )}
+                    <div style={{ fontSize: 10, color: 'var(--ink-faint)' }}>updated {new Date(n.created_at).toLocaleString()}</div>
+                  </div>
+                  {!n.read_at && (
+                    <IconButton nama="centang" label="Mark as read" ukuran={12} onClick={() => void tandaiDibaca('schedule_updates', n.id).catch(toastGalat)} />
+                  )}
+                </div>
+              ))}
+          {(tab === 'nilai' ? laporanNilai : updateJadwal).filter((n) => semuaLaporan || !n.read_at).length === 0 && (
+            <p className="ex-label" style={{ color: 'var(--ink-faint)' }}>
+              {tab === 'nilai'
+                ? 'No new test scores. Students report them when they arrive each day. Scores are kept for the current semester.'
+                : 'No schedule changes. Students confirm their lesson days and times when they arrive each day.'}
+            </p>
+          )}
         </div>
       )}
 

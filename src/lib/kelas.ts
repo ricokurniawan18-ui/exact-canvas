@@ -281,3 +281,57 @@ export function lamaMenunggu(sejak: number): string {
   if (m < 60) return `${m} min`
   return `${Math.floor(m / 60)} h ${m % 60} m`
 }
+
+/* ── Laporan harian murid: nilai ulangan & jadwal les ─────────────── */
+
+export interface LaporanNilai {
+  id: string
+  student_id: string
+  name: string
+  subject: string | null
+  test: string | null
+  score: string
+  test_date: string | null
+  created_at: number
+  read_at: number | null
+}
+
+export interface UpdateJadwal {
+  id: string
+  student_id: string
+  name: string
+  /** JSON {"Mon":"16:00", ...} */
+  schedule: string
+  previous: string | null
+  created_at: number
+  read_at: number | null
+}
+
+export const HARI_LES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
+
+/** {"Mon":"16:00","Thu":"15:30"} → "Mon 16:00 · Thu 15:30" */
+export function teksJadwal(json: string | null): string {
+  if (!json) return '—'
+  try {
+    const j = JSON.parse(json) as Record<string, string>
+    const isi = HARI_LES.filter((h) => h in j).map((h) => `${h} ${j[h] || ''}`.trim())
+    return isi.length ? isi.join(' · ') : 'No lessons'
+  } catch {
+    return '—'
+  }
+}
+
+export async function daftarLaporanNilai(): Promise<LaporanNilai[]> {
+  return q<LaporanNilai>('SELECT * FROM score_reports ORDER BY created_at DESC LIMIT 400')
+}
+
+export async function daftarUpdateJadwal(): Promise<UpdateJadwal[]> {
+  return q<UpdateJadwal>('SELECT * FROM schedule_updates ORDER BY created_at DESC LIMIT 200')
+}
+
+/** Tandai sudah dibaca (satu, atau semua bila id kosong). */
+export async function tandaiDibaca(tabel: 'score_reports' | 'schedule_updates', id?: string): Promise<void> {
+  if (id) await x(`UPDATE ${tabel} SET read_at = ? WHERE id = ?`, [Date.now(), id])
+  else await x(`UPDATE ${tabel} SET read_at = ? WHERE read_at IS NULL`, [Date.now()])
+  await pancarkan('kelas')
+}

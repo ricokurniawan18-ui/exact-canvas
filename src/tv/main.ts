@@ -713,6 +713,8 @@ async function mulai() {
     pasangGestur()
     pasangCoret()
     pasangLayarPenuh()
+    // Masuk pertama hari ini: minta nilai ulangan terbaru & konfirmasi jadwal les.
+    window.setTimeout(() => void bukaHarian(true), 1500)
     // Ditunggu, bukan dilepas: kanvas sendiri/grup harus sudah terpasang
     // sebelum jatuh ke sketsa terakhir kelas di bawah — kalau tidak, muatan
     // sketsa kelas bisa datang belakangan dan menimpa kanvas anak itu.
@@ -1181,6 +1183,7 @@ function pasangBilahMurid() {
     el('judul-lembar').textContent = jenis === 'latihan' ? 'Request practice questions' : jenis === 'print' ? 'Request a printout' : 'Ask the teacher'
     const pilihJenis = el('jenis-minta')
     pilihJenis.hidden = !jenis
+    el('buka-harian').hidden = !jenis
     pilihJenis.querySelectorAll('button').forEach((b) => b.classList.toggle('dipilih', b.dataset.jenis === jenis))
     teks.placeholder =
       jenis === 'latihan'
@@ -1201,6 +1204,10 @@ function pasangBilahMurid() {
     jenisLembar = ''
     aturLembar(jenis)
     lembar.classList.add('tampil')
+  }
+  el('buka-harian').onclick = () => {
+    lembar.classList.remove('tampil')
+    void bukaHarian(false)
   }
   el('jenis-minta').querySelectorAll('button').forEach((b) => {
     ;(b as HTMLButtonElement).onclick = () => aturLembar((b as HTMLButtonElement).dataset.jenis as 'latihan' | 'print')
@@ -2293,6 +2300,122 @@ async function sisipFotoKanvas(berkasTerpilih: File[]) {
   kotorAktif = true
   kirim({ t: 'ubah', idKanvas: idSketsa, hapus: { coretan: [], objek: [] }, tambah: { coretan: [], objek: [], gambar: baru } })
   tampilkanStatus(baru.length > 1 ? `${baru.length} photos added to your canvas.` : 'Photo added to your canvas.')
+}
+
+/* ── Isian harian: nilai ulangan & jadwal les ──────────────────────── */
+
+const HARI = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
+const MAPEL_UMUM = ['Math', 'Physics', 'Chemistry', 'Biology', 'English', 'Indonesian', 'Science', 'Economics']
+
+/** Buka lembar isian harian. `otomatis`: hanya kalau hari ini belum diisi. */
+async function bukaHarian(otomatis: boolean) {
+  if (!sebagaiMurid || !muridId || tertanam) return
+  let info: { perlu: boolean; jadwal: Record<string, string> | null }
+  try {
+    info = await api(`/api/kelas/harian?murid=${encodeURIComponent(muridId)}`)
+  } catch {
+    return
+  }
+  if (otomatis && !info.perlu) return
+  const kotak = el('harian')
+  const isi = el('harian-isi')
+  isi.replaceChildren()
+  const buat = <K extends keyof HTMLElementTagNameMap>(tag: K, teks = '', attr: Record<string, string> = {}) => {
+    const e = document.createElement(tag)
+    if (teks) e.textContent = teks
+    for (const [k, v] of Object.entries(attr)) e.setAttribute(k, v)
+    return e
+  }
+  isi.append(buat('strong', `Hi ${namaSaya.split(' ')[0] || ''}! Quick check-in`))
+  isi.append(buat('span', 'Got a new test score? Did your lesson schedule change? It only takes a moment.', { style: 'font-size:13px;color:var(--ink-soft)' }))
+
+  // Nilai ulangan: baris mapel · nama ulangan · nilai (+ tanggal).
+  isi.append(buat('h4', '📝 New test score'))
+  const daftarMapel = buat('datalist', '', { id: 'mapel-umum' })
+  for (const m of MAPEL_UMUM) daftarMapel.append(buat('option', '', { value: m }))
+  isi.append(daftarMapel)
+  const wadahNilai = buat('div', '', { style: 'display:flex;flex-direction:column;gap:6px' })
+  const barisNilai: { mapel: HTMLInputElement; ujian: HTMLInputElement; nilai: HTMLInputElement; tanggal: HTMLInputElement }[] = []
+  const tambahBaris = () => {
+    const kotakBaris = buat('div', '', { style: 'display:flex;flex-direction:column;gap:6px;padding-bottom:6px;border-bottom:1px dashed var(--line)' })
+    const atas = buat('div', '', { class: 'baris-nilai' })
+    const mapel = buat('input', '', { placeholder: 'Subject', list: 'mapel-umum' }) as HTMLInputElement
+    const ujian = buat('input', '', { placeholder: 'Test (quiz, mid-term…)' }) as HTMLInputElement
+    const nilai = buat('input', '', { placeholder: 'Score', inputmode: 'decimal' }) as HTMLInputElement
+    atas.append(mapel, ujian, nilai)
+    const tanggal = buat('input', '', { type: 'date', 'aria-label': 'Test date' }) as HTMLInputElement
+    tanggal.value = new Date().toISOString().slice(0, 10)
+    kotakBaris.append(atas, tanggal)
+    wadahNilai.append(kotakBaris)
+    barisNilai.push({ mapel, ujian, nilai, tanggal })
+  }
+  tambahBaris()
+  const tambah = buat('button', '+ Add another score', { type: 'button' })
+  tambah.onclick = () => tambahBaris()
+  isi.append(wadahNilai, tambah)
+
+  // Jadwal les: hari yang dipilih + jamnya, diisi dari jadwal tersimpan.
+  isi.append(buat('h4', '📅 Your lesson schedule'))
+  const tersimpan = info.jadwal && typeof info.jadwal === 'object' ? { ...info.jadwal } : null
+  isi.append(
+    buat('span', tersimpan ? 'This is what you chose before — change it if needed.' : 'Choose your lesson days and times.', {
+      style: 'font-size:12px;color:var(--ink-soft)',
+    }),
+  )
+  const jadwal: Record<string, string> = tersimpan ?? {}
+  const wadahHari = buat('div', '', { class: 'hari' })
+  const wadahJam = buat('div', '', { style: 'display:flex;flex-direction:column;gap:6px' })
+  const gambarJam = () => {
+    wadahJam.replaceChildren()
+    for (const h of HARI) {
+      if (!(h in jadwal)) continue
+      const baris = buat('div', '', { class: 'jam' })
+      const masuk = buat('input', '', { type: 'time', 'aria-label': `${h} time` }) as HTMLInputElement
+      masuk.value = jadwal[h] || ''
+      masuk.onchange = () => (jadwal[h] = masuk.value)
+      baris.append(buat('span', h), masuk)
+      wadahJam.append(baris)
+    }
+  }
+  for (const h of HARI) {
+    const b = buat('button', h, { type: 'button' })
+    b.classList.toggle('dipilih', h in jadwal)
+    b.onclick = () => {
+      if (h in jadwal) delete jadwal[h]
+      else jadwal[h] = '16:00'
+      b.classList.toggle('dipilih', h in jadwal)
+      gambarJam()
+    }
+    wadahHari.append(b)
+  }
+  gambarJam()
+  isi.append(wadahHari, wadahJam)
+
+  const kirimHarian = async (simpan: boolean) => {
+    const nilai = simpan
+      ? barisNilai
+          .filter((b) => b.nilai.value.trim())
+          .map((b) => ({ mapel: b.mapel.value, ujian: b.ujian.value, nilai: b.nilai.value, tanggal: b.tanggal.value }))
+      : []
+    try {
+      await api('/api/kelas/harian', {
+        method: 'POST',
+        json: { murid: muridId, nama: namaSaya, nilai, jadwal: simpan ? jadwal : null },
+      })
+      kotak.classList.remove('tampil')
+      if (simpan) tampilkanStatus(nilai.length ? 'Thanks! Your teacher will see your score.' : 'Saved.')
+    } catch (e) {
+      tampilkanStatus(e instanceof Error ? e.message : String(e), true)
+    }
+  }
+  const baris = buat('div', '', { class: 'baris' })
+  const lewati = buat('button', 'Nothing new', { type: 'button' })
+  lewati.onclick = () => void kirimHarian(false)
+  const simpan = buat('button', 'Save', { type: 'button', class: 'utama' })
+  simpan.onclick = () => void kirimHarian(true)
+  baris.append(lewati, simpan)
+  isi.append(baris)
+  kotak.classList.add('tampil')
 }
 
 /** Tombol ⛶ sukarela: hanya tampil di perangkat yang mendukung layar penuh. */
