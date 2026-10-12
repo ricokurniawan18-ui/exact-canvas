@@ -307,14 +307,14 @@ export function PanelKelas({
             const buka = terbuka === m.id
             return (
               <div key={m.id} className="flex flex-col gap-1">
-              <div className="flex items-center gap-2" title={`${judul}${m.phone ? ` · ${m.phone}` : ''}`}>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1" title={`${judul}${m.phone ? ` · ${m.phone}` : ''}`}>
                 <span
                   aria-hidden
                   style={{ width: 9, height: 9, borderRadius: 999, background: warna, flexShrink: 0, boxShadow: k?.fokus ? `0 0 6px ${warna}` : undefined }}
                 />
                 <button
                   type="button"
-                  className="min-w-0 flex-1 truncate"
+                  className="min-w-[8rem] flex-1 truncate"
                   style={{
                     fontSize: 'var(--fs-label)',
                     opacity: k ? 1 : 0.55,

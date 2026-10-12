@@ -278,7 +278,11 @@
 
 /* Tablet: semua bilah kanvas diperbesar. `zoom` ikut menskalakan posisi
    (left/top) dan ikon SVG-nya, jadi tata letaknya tetap utuh. */
-html.ex-sentuh .ex-bilah { zoom: 1.45; }
+/* Skala bilah di layar sentuh: tablet 1.45, HP (≤640px) hanya 1.05 — pada 1.45 rel, panel, dan panel Class
+   memakan seluruh lebar HP dan saling menumpuk. */
+html.ex-sentuh { --z: 1.45; }
+@media (max-width: 640px) { html.ex-sentuh { --z: 1.05; } }
+html.ex-sentuh .ex-bilah { zoom: var(--z); }
 html.ex-sentuh .ex-btn { min-height: 34px; }
 html.ex-sentuh input[type="range"] { height: 28px; }
 
@@ -293,7 +297,7 @@ html.ex-sentuh .ex-rel {
   transform: translateX(-50%);
   flex-direction: row !important;
   align-items: center;
-  max-width: calc(100% / 1.45 - 20px);
+  max-width: calc(100% / var(--z) - 20px);
   flex-wrap: wrap;
   justify-content: center;
 }
@@ -303,8 +307,8 @@ html.ex-sentuh .ex-panel {
   top: auto !important;
   bottom: 64px !important;
   transform: translateX(-50%);
-  max-height: calc(100% / 1.45 - 90px) !important;
-  width: min(460px, calc(100% / 1.45 - 24px)) !important;
+  max-height: calc(100% / var(--z) - 90px) !important;
+  width: min(460px, calc(100% / var(--z) - 24px)) !important;
 }
 html.ex-sentuh .ex-sketsa { bottom: auto !important; top: 12px !important; }
 html.ex-sentuh .ex-tampilkan { top: auto !important; bottom: 10px !important; left: 40% !important; transform: translateX(-50%); }
@@ -326,10 +330,22 @@ html.ex-sentuh .ex-panel-kelas {
   transform: none !important;
   right: 10px !important;
   top: 44px !important;
-  width: min(320px, calc(100% / 1.45 - 24px)) !important;
-  max-height: calc(100% / 1.45 - 60px) !important;
+  width: min(320px, calc(100% / var(--z) - 24px)) !important;
+  max-height: calc(100% / var(--z) - 60px) !important;
 }
 html.ex-sentuh .ex-statusbar { display: none; }
+
+/* HP: rel di tengah bawah, panel selebar layar, panel Class penuh lebar di bawah roda gigi. */
+@media (max-width: 640px) {
+  html.ex-sentuh .ex-rel { left: 50% !important; max-width: calc(100% / var(--z) - 12px); gap: 2px; }
+  html.ex-sentuh .ex-panel { left: 50% !important; width: calc(100% / var(--z) - 16px) !important; bottom: 58px !important; max-height: calc(100% / var(--z) - 84px) !important; }
+  html.ex-sentuh .ex-tampilkan { left: 50% !important; }
+  html.ex-sentuh .ex-panel-kelas {
+    left: 8px !important; right: 8px !important; width: auto !important;
+    transform: none !important; top: 40px !important; bottom: auto !important;
+    max-height: calc(100% / var(--z) - 52px) !important;
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
