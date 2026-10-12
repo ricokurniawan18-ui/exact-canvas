@@ -1220,7 +1220,10 @@ const GEOMETRY_PRESETS = {
   // ditulis — itu justru langkah yang harus dihitung sendiri oleh siswa.
   'segiempat-diagonal': {
     build: (p) => {
-      const kaki1a = numOrDefault(p.kaki1a, 6), kaki1b = numOrDefault(p.kaki1b, 7), kaki2 = numOrDefault(p.kaki2, 9);
+      // kaki boleh berupa akar: kaki2=sqrt(51) atau √51 (bentuk digambar dari nilainya, label ditulis √51)
+      const angkaAkar = (v, def) => { const m = String(v == null ? '' : v).replace(/\s/g, '').match(/^(?:sqrt\(|√\(?)(\d+(?:[.,]\d+)?)\)?$/i); return m ? Math.sqrt(parseFloat(m[1].replace(',', '.'))) : numOrDefault(v, def); };
+      const labelAkar = (v, n) => { const m = String(v == null ? '' : v).replace(/\s/g, '').match(/^(?:sqrt\(|√\(?)(\d+(?:[.,]\d+)?)\)?$/i); return m ? `√${m[1]}` : `${n}`; };
+      const kaki1a = angkaAkar(p.kaki1a, 6), kaki1b = angkaAkar(p.kaki1b, 7), kaki2 = angkaAkar(p.kaki2, 9);
       const dicari = String(p.dicari || 'a').trim();
       const L = Math.hypot(kaki1a, kaki1b) || 1;
       const kaki2b = Math.sqrt(Math.max(0, L * L - kaki2 * kaki2)) || 1;   // dipakai membentuk gambar saja
@@ -1233,8 +1236,8 @@ const GEOMETRY_PRESETS = {
         ],
         polygons: [['A', 'B', 'C', 'D']],
         segments: [
-          { from: 'A', to: 'B', label: `${kaki1a}` }, { from: 'B', to: 'C', label: `${kaki1b}` },
-          { from: 'C', to: 'D', label: `${kaki2}` }, { from: 'D', to: 'A', label: dicari },
+          { from: 'A', to: 'B', label: labelAkar(p.kaki1a, kaki1a) }, { from: 'B', to: 'C', label: labelAkar(p.kaki1b, kaki1b) },
+          { from: 'C', to: 'D', label: labelAkar(p.kaki2, kaki2) }, { from: 'D', to: 'A', label: dicari },
         ],
         bantu: [{ from: 'A', to: 'C', label: '' }],
       };
@@ -1716,8 +1719,11 @@ function renderSebangunSVG(cfg) {
     b.teks(posT.x, posT.y, tinggiTeks, GAYA.teks, posT.anchor);
     // Label luas/volume di tengah bangun (mis. "36 cm²" atau "1.35 l").
     if (labelUkuran) {
-      isi += `<text x="${cx.toFixed(1)}" y="${(cy + s * 0.12).toFixed(1)}" font-size="${GAYA.teks}" text-anchor="middle" fill="${GAYA.hitam}">${escText(labelUkuran)}</text>`;
-      b.teks(cx, cy + s * 0.12, labelUkuran, GAYA.teks, 'middle');
+      // label yang lebih lebar dari bagian tengah bangun ditulis di bawahnya, bukan menembus tepinya
+      const dalam = lebarTeksKira(labelUkuran, GAYA.teks) <= s * 0.42;
+      const ly = dalam ? cy + s * 0.12 : cy + s / 2 + 15;
+      isi += `<text x="${cx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="${GAYA.teks}" text-anchor="middle" fill="${GAYA.hitam}">${escText(labelUkuran)}</text>`;
+      b.teks(cx, ly, labelUkuran, GAYA.teks, 'middle');
     }
     cursor = cx + s / 2 + celah;
   };
@@ -3558,12 +3564,16 @@ function sketsaSikuTinggi(cfg) {
   ];
   for (let i = 0; i < 12; i++) rel.forEach((r) => { const x = r(v); if (x && isFinite(x[1]) && x[1] > 0 && v[x[0]] == null) v[x[0]] = x[1]; });
   if (v.ad == null || v.dc == null || v.bd == null) { v.ad = 4; v.dc = 9; v.bd = 6; v.ac = 13; }
+  // nama=K,L,M,N menamai A (kiri), B (sudut siku), C (kanan), D (kaki garis tinggi) sesuai soalnya
+  const nm = String(cfg.nama || 'A,B,C,D').split(/[,\s]+/).filter(Boolean);
+  const N = (c) => (nm.length >= 4 ? nm['ABCD'.indexOf(c)] || c : c);
+  const ganti = (t) => t.replace(/[ABCD]/g, (c) => N(c));
   const sisi = { ad: 'A-D', dc: 'D-C', bd: 'B-D', ab: 'A-B', bc: 'B-C', ac: 'A-C' };
   return {
-    titik: `A:0:0,C:${v.ad + v.dc}:0,B:${v.ad}:${v.bd},D:${v.ad}:0`,
-    garis: 'A-B-C-A,B-D',
-    siku: 'A-B-C,B-D-A',
-    label: Object.keys(label).filter((k) => sisi[k]).map((k) => `${sisi[k]}:${label[k]}`).join('|'),
+    titik: ganti(`A:0:0,C:${v.ad + v.dc}:0,B:${v.ad}:${v.bd},D:${v.ad}:0`),
+    garis: ganti('A-B-C-A,B-D'),
+    siku: ganti('A-B-C,B-D-A'),
+    label: Object.keys(label).filter((k) => sisi[k]).map((k) => `${ganti(sisi[k])}:${label[k]}`).join('|'),
   };
 }
 
@@ -3698,13 +3708,24 @@ function sketsaBayangan(cfg) {
     return { kaki, puncak, raw, h: h !== null && isFinite(h) ? h : null, s: null };
   });
   const by = {}; benda.forEach((o) => { by[o.kaki] = o; });
+  // Satuan yang dipakai di soal (mis. "m") untuk angka yang ditulis tanpa satuan
+  const satuanSoal = ((benda.map((o) => (o.raw.match(/[a-zA-Z]+\s*$/) || [''])[0]).find(Boolean)) || '').trim();
+  const labelBayangan = {};      // kaki -> teks panjang bayangannya yang DIBERIKAN soal (ditulis di tanah)
+  const tulisBayangan = (kaki, raw) => { const r = String(raw || '').trim(); if (r) labelBayangan[kaki] = /^[\d.,]+$/.test(r) && satuanSoal ? `${r} ${satuanSoal}` : r; };
   String(cfg.bayangan || '').split('|').map((x) => x.trim()).filter(Boolean).forEach((e) => {
     const [k, v] = e.split(':'); const n = meter(v);
-    if (by[(k || '').trim()] && n !== null && isFinite(n)) by[k.trim()].s = n;
+    if (by[(k || '').trim()] && n !== null && isFinite(n)) { by[k.trim()].s = n; tulisBayangan(k.trim(), v); }
   });
-  const jarak = String(cfg.jarak || '').split('|').map((x) => x.trim()).filter(Boolean).map((e) => {
-    const [pr, v] = e.split(':'); const [a, c] = String(pr || '').split('-').map((x) => x.trim()); const dm = meter(v); return { a, c, d: dm === null ? NaN : dm };
-  }).filter((j) => by[j.a] && by[j.c] && isFinite(j.d));
+  const jarakMentah = String(cfg.jarak || '').split('|').map((x) => x.trim()).filter(Boolean).map((e) => {
+    const [pr, v] = e.split(':'); const [a, c] = String(pr || '').split('-').map((x) => x.trim()); const dm = meter(v); return { a, c, d: dm === null ? NaN : dm, v };
+  });
+  // jarak=F-B:6 dengan F bukan kaki benda (mis. ujung bayangan yang diberi huruf lain) = panjang bayangan B
+  jarakMentah.forEach((j) => {
+    if (!isFinite(j.d)) return;
+    if (!by[j.a] && by[j.c]) { by[j.c].s = j.d; tulisBayangan(j.c, j.v); }
+    else if (by[j.a] && !by[j.c]) { by[j.a].s = j.d; tulisBayangan(j.a, j.v); }
+  });
+  const jarak = jarakMentah.filter((j) => by[j.a] && by[j.c] && isFinite(j.d));
   let m = null;
   benda.forEach((o) => { if (m === null && o.h !== null && o.s !== null && o.s > 0) m = o.h / o.s; });
   if (m === null) { const o = benda.find((x) => x.h !== null); if (o) { o.s = o.s !== null ? o.s : o.h / 0.8; m = o.h / o.s; } else m = 0.8; }
@@ -3731,7 +3752,11 @@ function sketsaBayangan(cfg) {
     titik += `,${o.kaki}:${xOf(o).toFixed(3)}:0,${o.puncak}:${xOf(o).toFixed(3)}:${o.h.toFixed(3)}`;
     garis += (garis ? ',' : '') + `${o.kaki}-${o.puncak}`;
     if (o.raw && o.h !== null && /^[\d.,]/.test(o.raw)) label.push(`${o.kaki}-${o.puncak}:~${o.raw}`);
+    else if (o.raw && /^(\?|[A-Za-z])$/.test(o.raw)) label.push(`${o.kaki}-${o.puncak}:~${o.raw}`);   // tinggi yang dicari: ? atau huruf
   });
+  // bayangan terpanjang ditulis satu baris lebih rendah (diawali ^) supaya tidak terbaca sebagai ruas pendeknya
+  const urutBayangan = Object.keys(labelBayangan).filter((k) => by[k]).sort((p, q) => by[p].s - by[q].s);
+  urutBayangan.forEach((k, i) => label.push(`${ujung}-${k}:${i > 0 ? '^' : ''}${labelBayangan[k]}`));
   // tanah dari titik paling kiri sampai paling kanan, sinar dari puncak benda terjauh ke ujung bayangan
   const rantai = [ujung].concat(urut.map((o) => o.kaki)).sort((a, b) => 0);
   const tanah = (kiri ? [ujung].concat(urut.map((o) => o.kaki)) : urut.map((o) => o.kaki).concat([ujung]));
@@ -3743,6 +3768,45 @@ function sketsaBayangan(cfg) {
   return { titik, garis, siku: siku.join('|'), label: label.join('|') };
 }
 
+// Ujung bebas sebuah ruas dalam (mis. titik E pada garis D-E sejajar alas) yang koordinatnya meleset sedikit dari sisi
+// segitiga/bangun diperpanjang atau dipendekkan SEARAH ruasnya sampai tepat menyentuh sisi (jadi tetap sejajar).
+// Hanya bila meleset kurang dari 35% panjang ruas; yang lebih jauh dibiarkan.
+function rapikanTitikSisi(pts, garisRaw) {
+  const sisi = parseSisiSketsa(garisRaw);
+  const peta = {}; pts.forEach((p) => { peta[p.name] = p; });
+  const derajat = {}; sisi.forEach(([a, b]) => { derajat[a] = (derajat[a] || 0) + 1; derajat[b] = (derajat[b] || 0) + 1; });
+  const rangka = sisi.filter(([a, b]) => peta[a] && peta[b] && derajat[a] >= 2 && derajat[b] >= 2);
+  if (rangka.length < 3) return;
+  const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+  const ukuran = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) || 1;
+  const tol = ukuran * 0.015;
+  const jarakSeg = (p, a, b) => {
+    const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
+    return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+  };
+  const diSisi = (p, kecuali) => rangka.some(([a, b]) => a !== kecuali && b !== kecuali && jarakSeg(p, peta[a], peta[b]) <= tol);
+  sisi.forEach(([a, b]) => {
+    const pa = peta[a], pb = peta[b];
+    if (!pa || !pb || derajat[a] > 1 && derajat[b] > 1) return;        // hanya ruas dalam: sedikitnya satu ujung bebas
+    const tepi = (p) => rangka.some(([c, d]) => jarakSeg(p, peta[c], peta[d]) <= tol);
+    let w, z;
+    if (tepi(pa) && !tepi(pb) && derajat[b] === 1) { w = pa; z = pb; } else if (tepi(pb) && !tepi(pa) && derajat[a] === 1) { w = pb; z = pa; } else return;
+    if (/^[._]/.test(z.name)) return;
+    const dx = z.x - w.x, dy = z.y - w.y;
+    let terbaik = null;
+    rangka.forEach(([c, d]) => {
+      const A = peta[c], B = peta[d];
+      if (jarakSeg(w, A, B) <= tol) return;
+      const ex = B.x - A.x, ey = B.y - A.y, den = dx * ey - dy * ex;
+      if (Math.abs(den) < 1e-9) return;
+      const t = ((A.x - w.x) * ey - (A.y - w.y) * ex) / den, u = ((A.x - w.x) * dy - (A.y - w.y) * dx) / den;
+      if (t > 0 && u >= -0.001 && u <= 1.001 && Math.abs(t - 1) <= 0.35 && (!terbaik || Math.abs(t - 1) < Math.abs(terbaik - 1))) terbaik = t;
+    });
+    if (terbaik) { z.x = w.x + terbaik * dx; z.y = w.y + terbaik * dy; }
+  });
+}
+
 function renderSketsaSVG(cfg) {
   if (/siku-?tinggi/i.test(String(cfg.bentuk || ''))) cfg = Object.assign({}, cfg, sketsaSikuTinggi(cfg));
   else if (/^segitiga-?sejajar$/i.test(String(cfg.bentuk || ''))) cfg = gabungSketsa(cfg, sketsaSegitigaSejajar(cfg));
@@ -3750,6 +3814,7 @@ function renderSketsaSVG(cfg) {
   else if (/^bayangan$/i.test(String(cfg.bentuk || ''))) cfg = gabungSketsa(cfg, sketsaBayangan(cfg));
   const semua = parseVertexList(cfg.titik);
   const pts = semua.length ? semua : [{ name: 'A', x: 0, y: 0 }, { name: 'B', x: 10, y: 0 }, { name: 'C', x: 5, y: 8 }];
+  rapikanTitikSisi(pts, cfg.garis);
   const areaW = 230, areaH = 170;
   const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
   // lingkaran=luar (melalui titik-titik) atau lingkaran=O:5 (berpusat di titik O, jari-jari 5 satuan koordinat)
@@ -4007,13 +4072,23 @@ function renderSketsaSVG(cfg) {
     const [a, c] = e.kunci;
     if (!ada(a) || !ada(c) || !e.teks) return;
     const flip = e.teks[0] === '~';
-    const t = flip ? e.teks.slice(1).trim() : e.teks;
+    const rendah = e.teks[0] === '^';        // label di baris kedua di bawah ruasnya, dengan garis ukur tipis
+    const t = flip || rendah ? e.teks.slice(1).trim() : e.teks;
     const [x1, y1] = px[a], [x2, y2] = px[c];
     const mx = (x1 + x2) / 2, my = (y1 + y2) / 2, len = Math.hypot(x2 - x1, y2 - y1) || 1;
     let nx = -(y2 - y1) / len, ny = (x2 - x1) / len;
     const arah = nx * (mx - pusat[0]) + ny * (my - pusat[1]);
     if (arah < 0 || (Math.abs(arah) < 1 && ny > 0)) { nx = -nx; ny = -ny; }
     if (flip) { nx = -nx; ny = -ny; }
+    if (rendah) {
+      const o = 13, gx = nx * o, gy = ny * o;
+      isi += `<line x1="${(x1 + gx).toFixed(1)}" y1="${(y1 + gy).toFixed(1)}" x2="${(x2 + gx).toFixed(1)}" y2="${(y2 + gy).toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="0.9"/>`
+        + `<line x1="${(x1 + gx - nx * 3).toFixed(1)}" y1="${(y1 + gy - ny * 3).toFixed(1)}" x2="${(x1 + gx + nx * 3).toFixed(1)}" y2="${(y1 + gy + ny * 3).toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="0.9"/>`
+        + `<line x1="${(x2 + gx - nx * 3).toFixed(1)}" y1="${(y2 + gy - ny * 3).toFixed(1)}" x2="${(x2 + gx + nx * 3).toFixed(1)}" y2="${(y2 + gy + ny * 3).toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="0.9"/>`;
+      b.titik(x1 + gx, y1 + gy); b.titik(x2 + gx, y2 + gy);
+      taruh([letakTeksLuar(mx, my, nx, ny, 22, 11.5)], t, 11.5, false);
+      return;
+    }
     const cands = [1, -1].map((sg) => letakTeksLuar(mx, my, nx * sg, ny * sg, 7, 11.5));
     taruh(cands, t, 11.5, false);
   });
