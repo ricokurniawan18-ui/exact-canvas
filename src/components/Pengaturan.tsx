@@ -193,6 +193,9 @@ function BagianBerbagi({ buka }: { buka: boolean }) {
   const [publik, setPublik] = useState('')
   const [pinKustom, setPinKustom] = useState('')
   const [sandiAdmin, setSandiAdmin] = useState('')
+  /** Nama guru utama di pilihan "tanya ke siapa" pada HP murid dan Exact Practice. */
+  const [namaGuru, setNamaGuru] = useState('')
+  const [namaGuruTersimpan, setNamaGuruTersimpan] = useState('')
   const [zoomMurid, setZoomMurid] = useState(88)
   const [hapusHari, setHapusHari] = useState(7)
 
@@ -200,6 +203,12 @@ function BagianBerbagi({ buka }: { buka: boolean }) {
     if (!buka) return
     void getSetting('alamat_publik').then((v) => setPublik(v ?? '')).catch(() => {})
     void getSetting('sandi_admin').then((v) => setSandiAdmin(v ?? '')).catch(() => {})
+    void getSetting('nama_guru')
+      .then((v) => {
+        setNamaGuru(v ?? '')
+        setNamaGuruTersimpan(v ?? '')
+      })
+      .catch(() => {})
     void getSetting('murid_zoom')
       .then((v) => setZoomMurid(v ? Math.max(50, Math.min(100, Number(v))) : 88))
       .catch(() => {})
@@ -218,6 +227,17 @@ function BagianBerbagi({ buka }: { buka: boolean }) {
     const bersih = Number.isFinite(hari) ? Math.max(0, Math.min(365, Math.round(hari))) : 7
     setHapusHari(bersih)
     await setSetting('hapus_kanvas_hari', String(bersih))
+  }
+
+  /** Dibaca server di /api/kelas/guru; kosong = "Mr. Rico". */
+  async function simpanNamaGuru(nama: string) {
+    const bersih = nama.trim().slice(0, 40)
+    setNamaGuru(bersih)
+    if (bersih === namaGuruTersimpan) return
+    await setSetting('nama_guru', bersih)
+    setNamaGuruTersimpan(bersih)
+    await pancarkan('kelas')
+    toast(bersih ? `Students now see you as "${bersih}".` : 'Name cleared — students see "Mr. Rico".')
   }
 
   async function simpanSandiAdmin(sandi: string) {
@@ -327,6 +347,24 @@ function BagianBerbagi({ buka }: { buka: boolean }) {
         drawing; a tablet with a pen edits the same sketches. Nothing leaves this Mac.
       </p>
 
+      <label className="flex flex-wrap items-center gap-2">
+        <span className="ex-label" style={{ color: 'var(--ink-soft)', width: '13ch' }}>
+          Your name
+        </span>
+        <input
+          className="ex-input"
+          style={{ flex: 1, minWidth: 200, padding: '5px 8px', fontSize: 'var(--fs-label)' }}
+          placeholder="Mr. Rico"
+          maxLength={40}
+          value={namaGuru}
+          onChange={(e) => setNamaGuru(e.target.value)}
+          onBlur={() => void simpanNamaGuru(namaGuru)}
+          onKeyDown={(e) => e.key === 'Enter' && void simpanNamaGuru(namaGuru)}
+        />
+      </label>
+      <p className="ex-label" style={{ color: 'var(--ink-faint)', fontSize: 11 }}>
+        Shown to students when they choose which teacher to ask (only when you have assistant teachers).
+      </p>
       <label className="flex flex-wrap items-center gap-2">
         <span className="ex-label" style={{ color: 'var(--ink-soft)', width: '13ch' }}>
           Admin password
