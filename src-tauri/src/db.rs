@@ -93,6 +93,12 @@ pub fn migrations() -> Vec<Migration> {
                   ALTER TABLE questions ADD COLUMN for_teacher TEXT;
                   ALTER TABLE questions ADD COLUMN handled_by TEXT;",
         },
+        Migration {
+            version: 14,
+            description: "permintaan murid di antrean yang sama: latihan soal / print",
+            kind: MigrationKind::Up,
+            sql: "ALTER TABLE questions ADD COLUMN kind TEXT;",
+        },
     ]
 }
 

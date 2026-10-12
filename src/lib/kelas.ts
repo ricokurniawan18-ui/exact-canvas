@@ -25,6 +25,8 @@ export interface Tanya {
   for_teacher?: string | null
   /** Guru yang membahasnya ('utama' atau id akun). */
   handled_by?: string | null
+  /** Permintaan murid: 'latihan' (minta soal latihan) atau 'print'; null = pertanyaan. */
+  kind?: 'latihan' | 'print' | null
 }
 
 /** Guru yang bisa dipilih murid: guru utama ('utama') dan akun ber-peran guru. */
@@ -40,6 +42,11 @@ export async function daftarGuru(): Promise<Guru[]> {
   } catch {
     return []
   }
+}
+
+/** Permintaan murid: salin lampirannya ke Desktop Mac lalu buka (Gemini / PDF print). */
+export async function bukaPermintaan(id: string, aksi: 'gemini' | 'print'): Promise<void> {
+  await api('/api/kelas/permintaan/buka', { method: 'POST', json: { id, aksi } })
 }
 
 /** Panggil murid ke meja guru ini: HP-nya berbunyi, pertanyaannya ditutup. */

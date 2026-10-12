@@ -165,7 +165,7 @@ pub async fn api_saya(State(hub): State<Arc<Hub>>, headers: HeaderMap, Query(q):
             .ok();
         let tanya: Option<(String, String, i64, Option<String>)> = c
             .query_row(
-                "SELECT id, status, created_at, text FROM questions WHERE student_id = ?1 AND status != 'selesai' ORDER BY created_at DESC LIMIT 1",
+                "SELECT id, status, created_at, text FROM questions WHERE student_id = ?1 AND status != 'selesai' AND kind IS NULL ORDER BY created_at DESC LIMIT 1",
                 rusqlite::params![murid],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
@@ -689,7 +689,7 @@ fn tulis_coretan_murid(id: &str, ops: &[Value]) -> Result<(), String> {
 /* ── Pertanyaan ────────────────────────────────────────────────────── */
 
 /// Paling banyak sekian lampiran (foto atau satu PDF) per pertanyaan.
-const MAKS_LAMPIRAN: usize = 8;
+const MAKS_LAMPIRAN: usize = 11;
 
 #[derive(Deserialize)]
 pub struct Tanya {
@@ -704,6 +704,10 @@ pub struct Tanya {
     /// Guru yang dituju: 'utama', id akun guru pembantu, atau kosong = siapa saja.
     #[serde(default)]
     pub guru: Option<String>,
+    /// Permintaan, bukan pertanyaan: 'latihan' (minta soal latihan) atau
+    /// 'print'. Kosong = pertanyaan biasa.
+    #[serde(default)]
+    pub jenis: Option<String>,
 }
 
 pub async fn api_tanya(State(hub): State<Arc<Hub>>, headers: HeaderMap, Json(t): Json<Tanya>) -> Response {
@@ -752,7 +756,7 @@ pub async fn api_tanya(State(hub): State<Arc<Hub>>, headers: HeaderMap, Json(t):
         // Sudah antre tanpa membawa hal baru: jangan tambah antrean, cukup katakan posisinya.
         let terbuka: Option<(String, i64)> = c
             .query_row(
-                "SELECT status, created_at FROM questions WHERE student_id = ?1 AND status != 'selesai' ORDER BY created_at DESC LIMIT 1",
+                "SELECT status, created_at FROM questions WHERE student_id = ?1 AND status != 'selesai' AND kind IS NULL ORDER BY created_at DESC LIMIT 1",
                 rusqlite::params![t.murid],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
@@ -784,12 +788,18 @@ pub async fn api_tanya(State(hub): State<Arc<Hub>>, headers: HeaderMap, Json(t):
                 nama_foto.push(nama);
             }
         }
-        let teks = t.teks.trim().chars().take(400).collect::<String>();
+        let teks = t.teks.trim().chars().take(1000).collect::<String>();
         let foto_json = if nama_foto.is_empty() { None } else { Some(serde_json::to_string(&nama_foto).unwrap()) };
         // Satu murid satu pertanyaan terbuka: yang lama ditutup dulu.
+        // Permintaan (latihan/print) dan pertanyaan tidak saling menutup.
+        let jenis: Option<&str> = match t.jenis.as_deref() {
+            Some("latihan") => Some("latihan"),
+            Some("print") => Some("print"),
+            _ => None,
+        };
         let _ = c.execute(
-            "UPDATE questions SET status = 'selesai', handled_at = ?1 WHERE student_id = ?2 AND status != 'selesai'",
-            rusqlite::params![kini, t.murid],
+            "UPDATE questions SET status = 'selesai', handled_at = ?1 WHERE student_id = ?2 AND status != 'selesai' AND COALESCE(kind, '') = COALESCE(?3, '')",
+            rusqlite::params![kini, t.murid, jenis],
         );
         // Tujuan yang tidak dikenal (guru sudah dicabut perannya) jatuh ke "siapa saja".
         let tujuan: Option<String> = match t.guru.as_deref().map(str::trim).filter(|g| !g.is_empty()) {
@@ -800,11 +810,11 @@ pub async fn api_tanya(State(hub): State<Arc<Hub>>, headers: HeaderMap, Json(t):
             None => None,
         };
         c.execute(
-            "INSERT INTO questions (id, student_id, name, room, text, photos, status, created_at, for_teacher) VALUES (?1, ?2, ?3, 1, ?4, ?5, 'menunggu', ?6, ?7)",
-            rusqlite::params![id, t.murid, t.nama.trim().chars().take(40).collect::<String>(), if teks.is_empty() { None } else { Some(teks.clone()) }, foto_json, kini, tujuan],
+            "INSERT INTO questions (id, student_id, name, room, text, photos, status, created_at, for_teacher, kind) VALUES (?1, ?2, ?3, 1, ?4, ?5, 'menunggu', ?6, ?7, ?8)",
+            rusqlite::params![id, t.murid, t.nama.trim().chars().take(40).collect::<String>(), if teks.is_empty() { None } else { Some(teks.clone()) }, foto_json, kini, tujuan, jenis],
         )
         .map_err(|e| e.to_string())?;
-        Ok(json!({ "id": id, "nama": t.nama, "teks": teks, "foto": !nama_foto.is_empty(), "guru": tujuan }))
+        Ok(json!({ "id": id, "nama": t.nama, "teks": teks, "foto": !nama_foto.is_empty(), "guru": tujuan, "jenis": jenis }))
     })
     .await;
     match hasil {
@@ -987,7 +997,7 @@ pub async fn api_paham(State(hub): State<Arc<Hub>>, headers: HeaderMap, Json(p):
     let hasil = tokio::task::spawn_blocking(move || -> Result<usize, String> {
         let c = koneksi()?;
         c.execute(
-            "UPDATE questions SET status = 'selesai', handled_at = ?1 WHERE student_id = ?2 AND status != 'selesai'",
+            "UPDATE questions SET status = 'selesai', handled_at = ?1 WHERE student_id = ?2 AND status != 'selesai' AND kind IS NULL",
             rusqlite::params![sekarang(), murid],
         )
         .map_err(|e| e.to_string())
@@ -1366,6 +1376,96 @@ pub async fn api_panggil(State(hub): State<Arc<Hub>>, headers: HeaderMap, Json(p
             kabari(&hub, "ubah", v.clone());
             Json(v).into_response()
         }
+        Ok(Err(e)) => (StatusCode::BAD_REQUEST, e).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct BukaPermintaan {
+    pub id: String,
+    /// 'gemini' = berkas ke folder Desktop + buka Gemini; 'print' = PDF ke Desktop lalu dibuka.
+    pub aksi: String,
+}
+
+/// Nama berkas yang aman dari nama murid (tanpa / : dan karakter kendali).
+fn nama_aman(s: &str) -> String {
+    let bersih: String = s
+        .chars()
+        .map(|c| if c == '/' || c == ':' || c == '\\' || c.is_control() { ' ' } else { c })
+        .collect();
+    let bersih = bersih.split_whitespace().collect::<Vec<_>>().join(" ");
+    if bersih.is_empty() { "Murid".into() } else { bersih.chars().take(40).collect() }
+}
+
+/// Jalur yang belum dipakai: "x.pdf", lalu "x (2).pdf", "x (3).pdf", ...
+fn jalur_bebas(folder: &std::path::Path, dasar: &str, ext: &str) -> std::path::PathBuf {
+    let mut n = 1;
+    loop {
+        let nama = if n == 1 { format!("{dasar}{ext}") } else { format!("{dasar} ({n}){ext}") };
+        let p = folder.join(nama);
+        if !p.exists() {
+            return p;
+        }
+        n += 1;
+    }
+}
+
+/// Permintaan murid di antrean: salin lampirannya ke Desktop Mac ini dan buka.
+/// Latihan → folder "Nama - tanggal" (foto, PDF, keperluan.txt) dibuka di
+/// Finder dan Gemini dibuka di Chrome; print → "Print - Nama - tanggal.pdf"
+/// dibuka di Preview. Selalu di Mac yang menjalankan Canvas, dari mana pun
+/// tombolnya ditekan.
+pub async fn api_buka_permintaan(State(hub): State<Arc<Hub>>, headers: HeaderMap, Json(b): Json<BukaPermintaan>) -> Response {
+    if !sah(&hub, &headers, None) {
+        return tolak();
+    }
+    if !crate::server::guru_sah(&hub, &headers, None, None) {
+        return (StatusCode::UNAUTHORIZED, "Teacher sign-in required.").into_response();
+    }
+    let hasil = tokio::task::spawn_blocking(move || -> Result<Value, String> {
+        let c = koneksi()?;
+        let (nama, teks, photos): (String, Option<String>, Option<String>) = c
+            .query_row("SELECT name, text, photos FROM questions WHERE id = ?1", rusqlite::params![b.id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .map_err(|_| "Request not found.".to_string())?;
+        let lampiran: Vec<String> = photos.as_deref().and_then(|p| serde_json::from_str(p).ok()).unwrap_or_default();
+        let ada: Vec<std::path::PathBuf> = lampiran.iter().map(|n| vault::tanya_dir().join(n)).filter(|p| p.exists()).collect();
+        let desktop = std::path::PathBuf::from(std::env::var("HOME").map_err(|e| e.to_string())?).join("Desktop");
+        let cap = chrono::Local::now().format("%Y-%m-%d %H.%M").to_string();
+        let nama = nama_aman(&nama);
+        let buka = |args: &[&str]| std::process::Command::new("open").args(args).status().map(|s| s.success()).unwrap_or(false);
+        match b.aksi.as_str() {
+            "print" => {
+                let pdf = ada.iter().find(|p| p.extension().is_some_and(|e| e == "pdf")).ok_or("This request has no PDF to print.")?;
+                let tujuan = jalur_bebas(&desktop, &format!("Print - {nama} - {cap}"), ".pdf");
+                std::fs::copy(pdf, &tujuan).map_err(|e| e.to_string())?;
+                buka(&[tujuan.to_string_lossy().as_ref()]);
+                Ok(json!({ "berkas": tujuan.to_string_lossy() }))
+            }
+            "gemini" => {
+                let folder = jalur_bebas(&desktop, &format!("{nama} - {cap}"), "");
+                std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+                let (mut f, mut d) = (0, 0);
+                for p in &ada {
+                    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("jpg").to_string();
+                    let dasar = if ext == "pdf" { d += 1; format!("Dokumen {d}") } else { f += 1; format!("Foto {f:02}") };
+                    std::fs::copy(p, folder.join(format!("{dasar}.{ext}"))).map_err(|e| e.to_string())?;
+                }
+                if let Some(t) = teks.filter(|t| !t.trim().is_empty()) {
+                    let _ = std::fs::write(folder.join("Keperluan.txt"), format!("{nama}\n\n{t}\n"));
+                }
+                buka(&[folder.to_string_lossy().as_ref()]);
+                if !buka(&["-a", "Google Chrome", "https://gemini.google.com/app"]) {
+                    buka(&["https://gemini.google.com/app"]);
+                }
+                Ok(json!({ "folder": folder.to_string_lossy(), "berkas": ada.len() }))
+            }
+            _ => Err("Unknown action.".into()),
+        }
+    })
+    .await;
+    match hasil {
+        Ok(Ok(v)) => Json(v).into_response(),
         Ok(Err(e)) => (StatusCode::BAD_REQUEST, e).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }

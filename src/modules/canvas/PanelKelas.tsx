@@ -17,6 +17,7 @@ import {
   daftarGuru,
   jadikanGuru,
   panggilMurid,
+  bukaPermintaan,
   daftarGrup,
   daftarMuridSemua,
   daftarTanya,
@@ -487,6 +488,13 @@ function BarisTanya({
       style={{ borderColor: dibahas ? 'var(--accent)' : undefined, background: dibahas ? 'var(--surface-2)' : undefined }}
     >
       <div className="flex items-center gap-2">
+        {t.kind && (
+          <span
+            style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: t.kind === 'print' ? 'var(--accent-2)' : 'var(--accent)', color: '#fff', flexShrink: 0 }}
+          >
+            {t.kind === 'print' ? '🖨️ Print' : '📝 Practice'}
+          </span>
+        )}
         <span className="min-w-0 flex-1 truncate" style={{ fontWeight: 600, fontSize: 'var(--fs-label)' }}>
           {t.name}
         </span>
@@ -525,8 +533,27 @@ function BarisTanya({
           ))}
         </div>
       ) : null}
+      {t.kind && (
+        <button
+          className="ex-btn"
+          data-variant="accent"
+          style={{ padding: '4px 0' }}
+          title={
+            t.kind === 'print'
+              ? 'Save the PDF to the Mac Desktop as "Print - name - date" and open it'
+              : 'Copy the photos/PDF to a Desktop folder with the student\'s name and open Gemini in Chrome'
+          }
+          onClick={() =>
+            void bukaPermintaan(t.id, t.kind === 'print' ? 'print' : 'gemini')
+              .then(() => toast(t.kind === 'print' ? 'PDF opened on the Mac.' : 'Folder and Gemini opened on the Mac.'))
+              .catch(toastGalat)
+          }
+        >
+          {t.kind === 'print' ? '🖨️ Open PDF' : '✨ Make questions in Gemini'}
+        </button>
+      )}
       <div className="flex gap-1">
-        <button className="ex-btn flex-1" data-variant={dibahas ? 'ghost' : 'accent'} style={{ padding: '4px 0' }} onClick={() => onBahas()}>
+        <button className="ex-btn flex-1" data-variant={dibahas || t.kind ? 'ghost' : 'accent'} style={{ padding: '4px 0' }} onClick={() => onBahas()}>
           <Icon nama="pena" ukuran={13} />{' '}
           {dibahas
             ? 'Back to canvas'

@@ -1095,6 +1095,41 @@ const MAKS_FOTO = 8
 
 let fotoDataList: string[] = []
 let pdfData = ''
+/** Lembar sedang dipakai untuk: '' pertanyaan, 'latihan' minta soal, 'print' minta cetak. */
+let jenisLembar: '' | 'latihan' | 'print' = ''
+/** Permintaan soal latihan: paling banyak 10 foto (plus satu PDF). */
+const MAKS_FOTO_LATIHAN = 10
+
+declare global {
+  interface Window {
+    Scan?: { buka: (o: { foto?: File[]; kamera?: boolean; selesai: (f: File | null) => void }) => void }
+  }
+}
+
+/** Alat pindai Exact Print (deteksi sudut, filter hemat tinta, A4/F4 → satu PDF), dimuat saat pertama dipakai. */
+let janjiScan: Promise<void> | null = null
+function muatScan(): Promise<void> {
+  if (window.Scan) return Promise.resolve()
+  janjiScan ??= new Promise<void>((selesai, gagal) => {
+    const css = document.createElement('link')
+    css.rel = 'stylesheet'
+    css.href = '/scan/scan.css'
+    document.head.append(css)
+    const muat = (src: string) =>
+      new Promise<void>((ok, nok) => {
+        const sk = document.createElement('script')
+        sk.src = src
+        sk.onload = () => ok()
+        sk.onerror = () => nok(new Error(`Could not load ${src}`))
+        document.head.append(sk)
+      })
+    muat('/scan/pdf-lib.min.js').then(() => muat('/scan/scan.js')).then(selesai, (e) => {
+      janjiScan = null
+      gagal(e)
+    })
+  })
+  return janjiScan
+}
 
 function pasangBilahMurid() {
   el('bilah').classList.add('tampil')
@@ -1130,25 +1165,82 @@ function pasangBilahMurid() {
     pratinjau.hidden = fotoDataList.length === 0
   }
 
-  el('tombol-tangan').onclick = () => void kirimTanya('', [])
-  el('tombol-tanya').onclick = () => {
+  const tombolFoto = el('tombol-foto')
+  const tombolGaleri = el('tombol-galeri')
+  /** Atur lembar untuk pertanyaan ('') atau permintaan (latihan / print). */
+  function aturLembar(jenis: '' | 'latihan' | 'print') {
+    if (jenis === 'print' && jenisLembar !== 'print') {
+      // Print hanya membawa satu PDF (hasil pindai atau berkas PDF).
+      fotoDataList = []
+      gambarUlangPratinjau()
+    }
+    jenisLembar = jenis
+    el('judul-lembar').textContent = jenis === 'latihan' ? 'Request practice questions' : jenis === 'print' ? 'Request a printout' : 'Ask the teacher'
+    const pilihJenis = el('jenis-minta')
+    pilihJenis.hidden = !jenis
+    pilihJenis.querySelectorAll('button').forEach((b) => b.classList.toggle('dipilih', b.dataset.jenis === jenis))
+    teks.placeholder =
+      jenis === 'latihan'
+        ? 'What do you need today? Topic, chapter, how many questions… Add example questions as photos (max 10) or a PDF.'
+        : jenis === 'print'
+          ? 'Notes for the teacher (how many copies, which pages…)'
+          : 'Type your question (optional)…'
+    tombolFoto.textContent = jenis === 'print' ? '📷 Scan' : '📷 Camera'
+    tombolGaleri.textContent = jenis === 'print' ? '🖼 Scan from gallery' : '🖼 Gallery'
+  }
+  function bukaLembar(jenis: '' | 'latihan' | 'print') {
     void muatPilihanGuru()
     teks.value = ''
     fotoDataList = []
     pdfData = ''
     gambarUlangPratinjau()
     pratinjauPdf.hidden = true
+    jenisLembar = ''
+    aturLembar(jenis)
     lembar.classList.add('tampil')
   }
+  el('jenis-minta').querySelectorAll('button').forEach((b) => {
+    ;(b as HTMLButtonElement).onclick = () => aturLembar((b as HTMLButtonElement).dataset.jenis as 'latihan' | 'print')
+  })
+
+  // Print: foto lewat alat pindai Exact Print, hasilnya satu PDF siap cetak.
+  async function pindai(o: { foto?: File[]; kamera?: boolean }) {
+    try {
+      await muatScan()
+    } catch {
+      tampilkanStatus('Could not open the scanner — check the connection and try again.', true)
+      return
+    }
+    window.Scan?.buka({
+      ...o,
+      selesai: (f) => {
+        if (!f) return
+        const fr = new FileReader()
+        fr.onload = () => {
+          pdfData = String(fr.result)
+          fotoDataList = []
+          gambarUlangPratinjau()
+          pratinjauPdf.textContent = `📄 Scanned PDF · ${(f.size / 1024 / 1024).toFixed(1)} MB`
+          pratinjauPdf.hidden = false
+        }
+        fr.readAsDataURL(f)
+      },
+    })
+  }
+
+  el('tombol-tangan').onclick = () => void kirimTanya('', [])
+  el('tombol-tanya').onclick = () => bukaLembar('')
+  el('tombol-minta').onclick = () => bukaLembar('latihan')
   el('tombol-batal').onclick = () => lembar.classList.remove('tampil')
 
   // Dipakai oleh kamera (satu foto) dan galeri (boleh banyak) — sama-sama
   // berakhir di antrean foto yang sama, siap dikirim bareng.
   async function tambahFoto(berkasTerpilih: File[]) {
     if (!berkasTerpilih.length) return
-    const sisaSlot = MAKS_FOTO - fotoDataList.length
+    const maks = jenisLembar === 'latihan' ? MAKS_FOTO_LATIHAN : MAKS_FOTO
+    const sisaSlot = maks - fotoDataList.length
     if (sisaSlot <= 0) {
-      tampilkanStatus(`You can attach up to ${MAKS_FOTO} photos.`, true)
+      tampilkanStatus(`You can attach up to ${maks} photos.`, true)
       return
     }
     const dipakai = berkasTerpilih.slice(0, sisaSlot)
@@ -1160,16 +1252,19 @@ function pasangBilahMurid() {
         gagal++
       }
     }
-    if (berkasTerpilih.length > dipakai.length) tampilkanStatus(`Only added ${dipakai.length} — max ${MAKS_FOTO} photos.`, true)
+    if (berkasTerpilih.length > dipakai.length) tampilkanStatus(`Only added ${dipakai.length} — max ${maks} photos.`, true)
     else if (gagal) tampilkanStatus(gagal === dipakai.length ? 'Could not read those photos — try again.' : `Could not read ${gagal} of the photos.`, true)
-    pdfData = ''
-    pratinjauPdf.hidden = true
+    // Permintaan latihan boleh foto + PDF sekaligus; pertanyaan biasa satu jenis saja.
+    if (jenisLembar !== 'latihan') {
+      pdfData = ''
+      pratinjauPdf.hidden = true
+    }
     gambarUlangPratinjau()
   }
 
   // Kamera: "capture" di HTML membuka kamera langsung, satu foto tiap ketuk —
   // bisa diketuk berkali-kali untuk menambah lebih dari satu.
-  el('tombol-foto').onclick = () => berkasKamera.click()
+  el('tombol-foto').onclick = () => (jenisLembar === 'print' ? void pindai({ kamera: true }) : berkasKamera.click())
   berkasKamera.onchange = async () => {
     const f = berkasKamera.files?.[0]
     berkasKamera.value = ''
@@ -1180,6 +1275,10 @@ function pasangBilahMurid() {
   berkasGaleri.onchange = async () => {
     const berkasTerpilih = Array.from(berkasGaleri.files ?? [])
     berkasGaleri.value = ''
+    if (jenisLembar === 'print') {
+      if (berkasTerpilih.length) await pindai({ foto: berkasTerpilih })
+      return
+    }
     await tambahFoto(berkasTerpilih)
   }
   // PDF dikirim apa adanya (maks 40 MB); guru membukanya halaman per halaman
@@ -1205,7 +1304,7 @@ function pasangBilahMurid() {
       return
     }
     pdfData = dibaca
-    fotoDataList = []
+    if (jenisLembar !== 'latihan') fotoDataList = []
     gambarUlangPratinjau()
     pratinjauPdf.textContent = `📄 ${f.name} · ${(f.size / 1024 / 1024).toFixed(1)} MB`
     pratinjauPdf.hidden = false
@@ -1215,10 +1314,18 @@ function pasangBilahMurid() {
   tombolKirim.onclick = () => {
     // Lembar (dan foto-fotonya) tetap terbuka kalau gagal — supaya murid
     // tidak perlu memfoto ulang hanya karena Wi-Fi/tunnel sempat tersendat.
+    const lampiran = jenisLembar === 'latihan' ? [...fotoDataList, ...(pdfData ? [pdfData] : [])] : pdfData ? [pdfData] : fotoDataList
+    if (jenisLembar === 'print' && !pdfData) {
+      tampilkanStatus('Scan your pages or choose a PDF to print first.', true)
+      return
+    }
+    if (jenisLembar === 'latihan' && !teks.value.trim() && !lampiran.length) {
+      tampilkanStatus('Tell the teacher what you need, or add example questions.', true)
+      return
+    }
     tombolKirim.disabled = true
     tombolKirim.textContent = 'Sending…'
-    const lampiran = pdfData ? [pdfData] : fotoDataList
-    void kirimTanya(teks.value, lampiran).then((ok) => {
+    void kirimTanya(teks.value, lampiran, jenisLembar || undefined).then((ok) => {
       tombolKirim.disabled = false
       tombolKirim.textContent = labelKirim
       if (ok) lembar.classList.remove('tampil')
@@ -1589,16 +1696,21 @@ async function muatPilihanGuru() {
   wadah.hidden = false
 }
 
-async function kirimTanya(teks: string, fotos: string[]): Promise<boolean> {
+async function kirimTanya(teks: string, fotos: string[], jenis?: 'latihan' | 'print'): Promise<boolean> {
   try {
     // Foto-foto bisa beberapa ratus KB sampai beberapa MB total; lewat
     // Wi-Fi/tunnel yang lemah butuh waktu — 45 s cukup longgar tapi tetap
     // memberi kabar alih-alih menggantung diam.
     await api('/api/kelas/tanya', {
       method: 'POST',
-      json: { murid: muridId, nama: namaSaya, teks, fotos, guru: guruDipilih || null },
+      json: { murid: muridId, nama: namaSaya, teks, fotos, guru: guruDipilih || null, jenis: jenis ?? null },
       timeoutMs: 45000,
     })
+    if (jenis) {
+      tampilkanStatus(jenis === 'print' ? 'Print request sent.' : 'Request sent — the teacher will prepare your questions.')
+      kunciTombol(20)
+      return true
+    }
     tampilkanStatus(
       fotos[0]?.startsWith('data:application/pdf')
         ? 'PDF sent.'

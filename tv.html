@@ -70,6 +70,10 @@
       #lembar .isi { width: 100%; background: var(--surface); border-radius: 16px 16px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 10px; }
       #lembar textarea { font: inherit; font-size: 16px; min-height: 72px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--bg); color: var(--ink); resize: none; }
       #lembar .baris { display: flex; gap: 8px; }
+      /* "Got it" disembunyikan: jarang dipakai; guru yang menutup pertanyaan. */
+      #tombol-paham { display: none !important; }
+      #jenis-minta button { flex: 1; }
+      #jenis-minta button.dipilih { background: var(--accent); border-color: var(--accent); color: #fff; }
       #pilih-guru { flex-wrap: wrap; gap: 6px; }
       #pilih-guru button { flex: 0 0 auto; padding: 6px 12px; border-radius: 999px; font-size: 14px; }
       #pilih-guru button.dipilih { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -164,6 +168,7 @@
       <button id="tombol-latihan" title="Practice questions from the teacher (Exact Practice)">📝 Practice</button>
       <button id="tombol-tangan">✋ Raise hand</button>
       <button id="tombol-tanya" class="utama">❓ Ask</button>
+      <button id="tombol-minta" title="Ask for practice questions or a printout">📝 Request</button>
       <button id="tombol-paham" disabled>✅ Got it</button>
       <button id="tombol-coret" title="Draw on your own canvas" hidden>✏️</button>
       <button id="tombol-sisip-foto" title="Insert a photo onto your canvas" hidden>🖼️</button>
@@ -203,7 +208,12 @@
     </div>
     <div id="lembar">
       <div class="isi">
-        <strong>Ask the teacher</strong>
+        <strong id="judul-lembar">Ask the teacher</strong>
+        <!-- Permintaan: soal latihan (foto ≤ 10 + PDF) atau print (pindai foto / PDF). -->
+        <div id="jenis-minta" class="baris" hidden>
+          <button type="button" data-jenis="latihan">📝 Practice questions</button>
+          <button type="button" data-jenis="print">🖨️ Print</button>
+        </div>
         <!-- Lebih dari satu guru: murid memilih siapa yang ditanya (atau siapa saja). -->
         <div id="pilih-guru" class="baris" hidden></div>
         <textarea id="teks-tanya" placeholder="Type your question (optional)…"></textarea>
