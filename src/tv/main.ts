@@ -818,7 +818,8 @@ let modeTunggu = false
 
 const el = (id: string) => document.getElementById(id) as HTMLElement
 
-type Akun = { id: string; nama: string; hp: string; disetujui?: boolean }
+/** peran 'guru' = guru pembantu: dialihkan ke editor (/admin) dengan sesi yang sama. */
+type Akun = { id: string; nama: string; hp: string; disetujui?: boolean; peran?: string | null }
 
 /**
  * Akun yang belum diterima guru menunggu di sini, bertanya tiap beberapa
@@ -852,6 +853,19 @@ async function tungguPersetujuan(a: Akun): Promise<void> {
 }
 
 /**
+ * Akun guru pembantu yang masuk di halaman murid langsung dibawa ke editor
+ * (/admin); editor membaca sesi yang sama dari penyimpanan browser, jadi tidak
+ * perlu masuk kedua kali. Layar murid yang tertanam di Exact Practice tidak
+ * dialihkan — di sana ia memang layar murid.
+ */
+function keEditorBilaGuru(a: Akun): boolean {
+  if (a.peran !== 'guru' || !a.disetujui || tertanam) return false
+  tampilkanStatus('Teacher account — opening the editor…')
+  location.replace('/admin')
+  return true
+}
+
+/**
  * Layar akun: masuk dengan nomor HP + sandi, atau daftar (nama, HP, sandi,
  * konfirmasi, kode kelas). Sesi yang masih berlaku melewati layar ini.
  */
@@ -859,6 +873,7 @@ async function layarAkun(): Promise<void> {
   if (sesiAktif()) {
     try {
       const a = await api<Akun>('/api/akun/saya')
+      if (keEditorBilaGuru(a)) return new Promise<void>(() => {})
       muridId = a.id
       namaSaya = a.nama
       await tungguPersetujuan(a)
@@ -937,6 +952,7 @@ async function layarAkun(): Promise<void> {
           /* abaikan */
         }
         kotak.classList.remove('tampil')
+        if (keEditorBilaGuru(a)) return
         await tungguPersetujuan(a)
         selesai()
       } catch (err) {

@@ -281,7 +281,12 @@ pub async fn api_masuk_akun(State(_hub): State<Arc<Hub>>, headers: HeaderMap, Js
             return Err((StatusCode::UNAUTHORIZED, "Phone number or password is wrong.".into()));
         }
         let token = buat_sesi(&c, &id, &perangkat).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
-        Ok(json!({ "token": token, "id": id, "nama": nama, "hp": hp, "disetujui": disetujui != 0 }))
+        // Peran ikut dikirim: akun guru pembantu dialihkan langsung ke editor.
+        let peran: Option<String> = c
+            .query_row("SELECT role FROM accounts WHERE id = ?1", rusqlite::params![id], |r| r.get(0))
+            .ok()
+            .flatten();
+        Ok(json!({ "token": token, "id": id, "nama": nama, "hp": hp, "disetujui": disetujui != 0, "peran": peran }))
     })
     .await;
     match hasil {
@@ -354,14 +359,14 @@ pub async fn api_saya_akun(State(_hub): State<Arc<Hub>>, headers: HeaderMap) -> 
     }
     let hasil = tokio::task::spawn_blocking(move || -> Result<Value, String> {
         let c = koneksi()?;
-        let (id, nama, hp, disetujui): (String, String, String, i64) = c
+        let (id, nama, hp, disetujui, peran): (String, String, String, i64, Option<String>) = c
             .query_row(
-                "SELECT a.id, a.name, a.phone, a.approved FROM sessions s JOIN accounts a ON a.id = s.account_id WHERE s.token = ?1",
+                "SELECT a.id, a.name, a.phone, a.approved, a.role FROM sessions s JOIN accounts a ON a.id = s.account_id WHERE s.token = ?1",
                 rusqlite::params![token],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
             )
             .map_err(|_| "Session expired.".to_string())?;
-        Ok(json!({ "id": id, "nama": nama, "hp": hp, "disetujui": disetujui != 0 }))
+        Ok(json!({ "id": id, "nama": nama, "hp": hp, "disetujui": disetujui != 0, "peran": peran }))
     })
     .await;
     match hasil {
