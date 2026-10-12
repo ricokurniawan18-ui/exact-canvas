@@ -889,7 +889,7 @@ function KartuMurid({
   const status = !hadir ? 'Offline' : hadir.tunggu ? 'Waiting (screen dimmed)' : hadir.fokus ? 'On the board' : 'Left the page'
   const baris = (k: string, v: string) => (
     <div className="flex gap-2" style={{ fontSize: 'var(--fs-label)' }}>
-      <span style={{ width: 92, flexShrink: 0, color: 'var(--ink-faint)' }}>{k}</span>
+      <span style={{ width: 120, flexShrink: 0, color: 'var(--ink-faint)' }}>{k}</span>
       <span className="min-w-0 flex-1" style={{ overflowWrap: 'anywhere' }}>{v}</span>
     </div>
   )
@@ -908,7 +908,7 @@ function KartuMurid({
         {baris('Room', String(murid.room))}
         {baris('First seen', waktuLengkap(murid.first_seen))}
         {baris('Last seen', waktuLengkap(murid.last_seen))}
-        {baris('Draw on own canvas', murid.can_draw ? 'allowed' : 'not allowed')}
+        {baris('Draw on canvas', murid.can_draw ? 'allowed' : 'not allowed')}
         {murid.muted_until && murid.muted_until > Date.now() && baris('Muted until', waktuLengkap(murid.muted_until))}
       </div>
       <div className="flex flex-col gap-0.5">
@@ -938,17 +938,28 @@ function KartuMurid({
           </div>
         ))}
       </div>
-      {jadwal.length > 0 && (
-        <div className="flex flex-col gap-0.5">
-          <span className="ex-label" style={{ color: 'var(--ink-faint)' }}>Schedule updates · {jadwal.length}</span>
-          {jadwal.slice(0, 3).map((u) => (
-            <div key={u.id} className="flex gap-2" style={{ fontSize: 11 }}>
-              <span className="ex-num" style={{ width: 92, flexShrink: 0, color: 'var(--ink-faint)' }}>{waktuLengkap(u.created_at)}</span>
-              <span className="min-w-0 flex-1" style={{ overflowWrap: 'anywhere' }}>{teksJadwal(u.schedule)}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="flex flex-col gap-0.5">
+        <span className="ex-label" style={{ color: 'var(--ink-faint)' }}>Lesson schedule</span>
+        {jadwal.length === 0 && <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>No schedule reported yet.</span>}
+        {jadwal.length > 0 && (
+          <div className="flex gap-2" style={{ fontSize: 'var(--fs-label)' }}>
+            <span style={{ width: 92, flexShrink: 0, color: 'var(--ink-faint)' }}>Current</span>
+            <span className="min-w-0 flex-1" style={{ fontWeight: 700, overflowWrap: 'anywhere' }}>{teksJadwal(jadwal[0].schedule)}</span>
+          </div>
+        )}
+        {jadwal.length > 0 && (
+          <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>Updated {waktuLengkap(jadwal[0].created_at)}</span>
+        )}
+        {jadwal.slice(0, 4).map((u) => (
+          <div key={u.id} className="flex gap-2" style={{ fontSize: 11 }}>
+            <span className="ex-num" style={{ width: 92, flexShrink: 0, color: 'var(--ink-faint)' }}>{waktuLengkap(u.created_at)}</span>
+            <span className="min-w-0 flex-1" style={{ overflowWrap: 'anywhere' }}>
+              {teksJadwal(u.schedule)}
+              {u.previous ? <span style={{ color: 'var(--ink-faint)' }}> (was {teksJadwal(u.previous)})</span> : null}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
