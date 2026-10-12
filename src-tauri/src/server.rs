@@ -49,6 +49,9 @@ pub struct Klien {
     pub keluar: i64,
     /// Murid sengaja meredupkan/mengunci HP sambil menunggu giliran — bukan kabur.
     pub tunggu: bool,
+    /// Id akun guru pembantu untuk editor yang masuk lewat akun ber-peran guru;
+    /// kosong untuk guru utama (sandi admin / aplikasi Mac), TV, dan murid.
+    pub guru: String,
 }
 
 pub struct Hub {
@@ -204,6 +207,24 @@ pub fn admin_sah(hub: &Hub, headers: &HeaderMap, q: Option<&str>) -> bool {
     benar
 }
 
+/// Hak mengajar: guru utama (admin) ATAU guru pembantu (akun ber-peran guru).
+/// Dipakai untuk membahas pertanyaan, membuka/menulis kanvas, izin coret, dan
+/// foto pertanyaan. Urusan admin (akun, setelan, hapus) tetap `admin_sah`.
+pub fn guru_sah(hub: &Hub, headers: &HeaderMap, q_admin: Option<&str>, q_sesi: Option<&str>) -> bool {
+    if (headers.contains_key("x-exact-admin") || q_admin.is_some()) && admin_sah(hub, headers, q_admin) {
+        return true;
+    }
+    crate::akun::guru_dari_headers(headers, q_sesi).is_some()
+}
+
+/// Siapa yang menjawab: 'utama' untuk guru utama, id akun untuk guru pembantu.
+pub fn penjawab(hub: &Hub, headers: &HeaderMap) -> Option<String> {
+    if headers.contains_key("x-exact-admin") && admin_sah(hub, headers, None) {
+        return Some("utama".into());
+    }
+    crate::akun::guru_dari_headers(headers, None).map(|(id, _)| id)
+}
+
 fn tolak_admin() -> Response {
     (StatusCode::UNAUTHORIZED, "Admin password required.").into_response()
 }
@@ -212,6 +233,8 @@ fn tolak_admin() -> Response {
 pub struct QueryAdmin {
     pub pin: Option<String>,
     pub admin: Option<String>,
+    /// Sesi guru pembantu untuk <img> yang tidak bisa membawa header.
+    pub sesi: Option<String>,
 }
 
 #[tauri::command]
@@ -354,6 +377,8 @@ fn rute(hub: Arc<Hub>) -> Router {
         .route("/api/akun", get(crate::akun::api_daftar_akun))
         .route("/api/akun/reset", axum::routing::post(crate::akun::api_reset_sandi))
         .route("/api/akun/setujui", axum::routing::post(crate::akun::api_setujui))
+        .route("/api/akun/peran", axum::routing::post(crate::akun::api_peran))
+        .route("/api/kelas/guru", get(crate::kelas::api_daftar_guru))
         .route("/api/akun/{id}", axum::routing::delete(crate::akun::api_hapus_akun))
         .route("/api/kelas/terbaru", get(crate::kelas::api_terbaru))
         .route("/api/kelas/grup/buat", axum::routing::post(crate::kelas::api_grup_buat))
@@ -590,10 +615,13 @@ async fn api_admin_cek(State(hub): State<Arc<Hub>>, headers: HeaderMap, Query(q)
     if !sah(&hub, &headers, q.pin.as_deref()) {
         return tolak();
     }
-    if !admin_sah(&hub, &headers, q.admin.as_deref()) {
-        return tolak_admin();
+    if admin_sah(&hub, &headers, q.admin.as_deref()) {
+        return Json(json!({ "peran": "admin" })).into_response();
     }
-    StatusCode::NO_CONTENT.into_response()
+    if let Some((id, nama)) = crate::akun::guru_dari_headers(&headers, None) {
+        return Json(json!({ "peran": "guru", "id": id, "nama": nama })).into_response();
+    }
+    tolak_admin()
 }
 
 async fn halaman_tv(State(hub): State<Arc<Hub>>) -> Response {
@@ -634,7 +662,7 @@ async fn api_canvas_read(State(hub): State<Arc<Hub>>, headers: HeaderMap, Path(i
         return tolak();
     }
     // Berkas utuh (dengan data gambar) hanya untuk editor; murid memakai /ringan.
-    if !admin_sah(&hub, &headers, None) {
+    if !guru_sah(&hub, &headers, None, None) {
         return tolak_admin();
     }
     match vault::canvas_read(id) {
@@ -655,7 +683,7 @@ async fn api_canvas_write(
     if !sah(&hub, &headers, None) {
         return tolak();
     }
-    if !admin_sah(&hub, &headers, None) {
+    if !guru_sah(&hub, &headers, None, None) {
         return tolak_admin();
     }
     match vault::canvas_write(id, body) {
@@ -821,6 +849,58 @@ async fn api_canvas_gambar(
 
 /* ── API SQL ───────────────────────────────────────────────────────── */
 
+enum SaringSql {
+    Boleh,
+    Abaikan,
+    Tolak(&'static str),
+}
+
+/// Penjaga SQL untuk guru pembantu (lihat api_sql).
+fn saring_sql_guru(sql: &str, params: &[Value]) -> SaringSql {
+    let s = sql.to_ascii_lowercase();
+    let s = s.trim_start();
+    let kata: Vec<&str> = s.split(|c: char| !c.is_ascii_alphanumeric() && c != '_').filter(|k| !k.is_empty()).collect();
+    let ada = |k: &str| kata.iter().any(|x| *x == k);
+    if ada("sessions") || ada("pass_hash") || ada("salt") || ada("attach") || ada("pragma") || ada("drop") || ada("alter") {
+        return SaringSql::Tolak("Not allowed for assistant teachers.");
+    }
+    let tulis = ["insert", "update", "delete", "replace", "create"].iter().any(|k| s.starts_with(k));
+    if !tulis {
+        // Akun: hanya dua kueri daftar murid editor (nomor HP + peran). Kueri
+        // bebas ("SELECT * FROM accounts") akan ikut membawa hash sandi.
+        if ada("accounts") {
+            let pola = s.split_whitespace().collect::<Vec<_>>().join(" ");
+            const DAFTAR_MURID: [&str; 2] = [
+                "select s.*, a.phone, a.role from students s left join accounts a on a.id = s.id where s.last_seen > ? order by s.room, s.name collate nocase",
+                "select s.*, a.phone, a.role from students s left join accounts a on a.id = s.id order by s.name collate nocase",
+            ];
+            if !DAFTAR_MURID.contains(&pola.as_str()) {
+                return SaringSql::Tolak("Not allowed for assistant teachers.");
+            }
+        }
+        // Setelan menyimpan sandi admin: hanya baca per kunci (pola getSetting),
+        // dan kunci sandi tidak pernah diberikan.
+        if ada("settings") {
+            let pola = s.split_whitespace().collect::<Vec<_>>().join(" ");
+            let rahasia = params.iter().any(|p| p.as_str() == Some("sandi_admin")) || s.contains("sandi_admin");
+            if pola != "select value from settings where key = ?" || rahasia {
+                return SaringSql::Tolak("Not allowed for assistant teachers.");
+            }
+        }
+        return SaringSql::Boleh;
+    }
+    if ada("accounts") {
+        return SaringSql::Tolak("Only the main teacher can change accounts.");
+    }
+    if ada("settings") {
+        return SaringSql::Abaikan;
+    }
+    if s.starts_with("delete") && ada("canvases") {
+        return SaringSql::Tolak("Only the main teacher can delete canvases.");
+    }
+    SaringSql::Boleh
+}
+
 #[derive(Deserialize)]
 struct PermintaanSql {
     sql: String,
@@ -896,8 +976,19 @@ async fn api_sql(State(hub): State<Arc<Hub>>, headers: HeaderMap, Json(req): Jso
         return tolak();
     }
     // SQL bebas hanya untuk editor: murid tidak boleh membaca, apalagi menulis, database.
-    if !admin_sah(&hub, &headers, None) {
-        return tolak_admin();
+    if !(headers.contains_key("x-exact-admin") && admin_sah(&hub, &headers, None)) {
+        if crate::akun::guru_dari_headers(&headers, None).is_none() {
+            return tolak_admin();
+        }
+        // Guru pembantu: hanya pekerjaan mengajar. Sesi & sandi tidak pernah
+        // tersentuh, akun hanya dibaca, kanvas tidak dihapus, dan tulisan ke
+        // setelan diabaikan diam-diam supaya setelan guru utama tidak berubah
+        // tanpa membuat layar editor si guru pembantu galat.
+        match saring_sql_guru(&req.sql, &req.params) {
+            SaringSql::Boleh => {}
+            SaringSql::Abaikan => return Json(json!({ "rows": [] })).into_response(),
+            SaringSql::Tolak(alasan) => return (StatusCode::FORBIDDEN, alasan).into_response(),
+        }
     }
     match tokio::task::spawn_blocking(move || jalankan_sql(req)).await {
         Ok(Ok(v)) => Json(v).into_response(),
@@ -930,18 +1021,31 @@ async fn ws_masuk(
     }
     // Peran editor menyiarkan pandangan dan goresan ke semua layar; itu hak
     // admin. Yang tidak punya sandinya diturunkan jadi pengikut biasa.
-    let mut peran = q.role.unwrap_or_else(|| "editor".into());
+    let peran_minta = q.role.clone().unwrap_or_else(|| "editor".into());
+    let mut peran = peran_minta.clone();
     if peran == "editor" && !admin_sah(&hub, &headers, q.admin.as_deref()) {
         peran = "tv".into();
     }
+    // Guru pembantu masuk sebagai editor lewat sesi akunnya; namanya di
+    // daftar klien diambil dari akun supaya murid melihat siapa yang membahas.
+    let mut guru = String::new();
+    let mut nama = q.name.clone().unwrap_or_else(|| "Device".into());
+    if peran_minta == "editor" && peran == "tv" {
+        if let Some((id, n)) = crate::akun::guru_dari_headers(&headers, q.sesi.as_deref()) {
+            peran = "editor".into();
+            guru = id;
+            nama = n;
+        }
+    }
     let klien = Klien {
         id: q.id.unwrap_or_else(|| format!("k{}", pin_acak())),
-        nama: q.name.unwrap_or_else(|| "Device".into()),
+        nama,
         peran,
         murid: q.murid.unwrap_or_default(),
         fokus: true,
         keluar: 0,
         tunggu: false,
+        guru,
     };
     ws.on_upgrade(move |soket| layani(soket, hub, klien))
 }
@@ -1154,4 +1258,46 @@ async fn layani(soket: WebSocket, hub: Arc<Hub>, klien: Klien) {
         k.retain(|x| x.id != id);
     }
     siarkan_klien(&hub);
+}
+
+#[cfg(test)]
+mod uji_guru {
+    use super::{saring_sql_guru as saring_p, SaringSql};
+    use serde_json::{json, Value};
+
+    fn saring_sql_guru(s: &str) -> SaringSql {
+        saring_p(s, &[])
+    }
+    fn boleh(s: &str) -> bool {
+        matches!(saring_sql_guru(s), SaringSql::Boleh)
+    }
+
+    #[test]
+    fn penjaga_sql_guru_pembantu() {
+        // Pekerjaan mengajar tetap jalan.
+        assert!(boleh("SELECT s.*, a.phone, a.role FROM students s LEFT JOIN accounts a ON a.id = s.id ORDER BY s.name COLLATE NOCASE"));
+        assert!(!boleh("SELECT * FROM accounts"));
+        assert!(!boleh("SELECT s.*, x.* FROM students s JOIN accounts x ON x.id = s.id"));
+        assert!(boleh("SELECT * FROM questions WHERE status != 'selesai'"));
+        assert!(boleh("UPDATE students SET can_draw = 1 WHERE id = ?"));
+        assert!(boleh("INSERT INTO canvases (id, title, updated_at) VALUES (?, ?, ?)"));
+        assert!(boleh("  update groups set name = ? where id = ?"));
+        // Sesi dan sandi tidak pernah tersentuh, bahkan dibaca.
+        assert!(matches!(saring_sql_guru("SELECT token FROM sessions"), SaringSql::Tolak(_)));
+        assert!(matches!(saring_sql_guru("SELECT pass_hash, salt FROM accounts"), SaringSql::Tolak(_)));
+        // Akun hanya dibaca; peran tidak bisa dinaikkan sendiri.
+        assert!(matches!(saring_sql_guru("UPDATE accounts SET role = 'guru'"), SaringSql::Tolak(_)));
+        assert!(matches!(saring_sql_guru("DELETE FROM accounts WHERE id = ?"), SaringSql::Tolak(_)));
+        // Hapus kanvas hanya guru utama; setelan diabaikan diam-diam.
+        assert!(matches!(saring_sql_guru("DELETE FROM canvases WHERE id = ?"), SaringSql::Tolak(_)));
+        assert!(matches!(saring_sql_guru("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)"), SaringSql::Abaikan));
+        assert!(matches!(saring_sql_guru("DROP TABLE questions"), SaringSql::Tolak(_)));
+        assert!(matches!(saring_sql_guru("PRAGMA journal_mode = DELETE"), SaringSql::Tolak(_)));
+        // Setelan: hanya baca per kunci, dan sandi admin tidak pernah keluar.
+        let q = "SELECT value FROM settings WHERE key = ?";
+        assert!(matches!(saring_p(q, &[json!("theme")]), SaringSql::Boleh));
+        assert!(matches!(saring_p(q, &[json!("sandi_admin")]), SaringSql::Tolak(_)));
+        assert!(matches!(saring_p("SELECT * FROM settings", &[] as &[Value]), SaringSql::Tolak(_)));
+        assert!(matches!(saring_p("SELECT value FROM settings WHERE key = 'sandi_admin'", &[]), SaringSql::Tolak(_)));
+    }
 }

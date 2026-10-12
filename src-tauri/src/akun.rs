@@ -113,6 +113,35 @@ pub fn akun_dari_sesi(token: &str) -> Option<String> {
     Some(akun)
 }
 
+/// Guru pembantu di balik sebuah sesi: (id akun, nama) bila akunnya disetujui
+/// DAN berperan 'guru'. Tidak di-cache: peran bisa dicabut kapan saja dan
+/// harus langsung berlaku.
+pub fn guru_dari_sesi(token: &str) -> Option<(String, String)> {
+    let id = akun_dari_sesi(token)?;
+    let c = koneksi().ok()?;
+    c.query_row(
+        "SELECT id, name FROM accounts WHERE id = ?1 AND role = 'guru' AND approved = 1",
+        rusqlite::params![id],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .ok()
+}
+
+/// Token sesi dari header x-exact-sesi atau parameter URL.
+pub fn sesi_dari(headers: &HeaderMap, q_sesi: Option<&str>) -> Option<String> {
+    headers
+        .get("x-exact-sesi")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+        .or_else(|| q_sesi.map(|s| s.to_string()))
+        .filter(|s| !s.is_empty())
+}
+
+/// Guru pembantu yang mengirim permintaan ini, kalau ada.
+pub fn guru_dari_headers(headers: &HeaderMap, q_sesi: Option<&str>) -> Option<(String, String)> {
+    guru_dari_sesi(&sesi_dari(headers, q_sesi)?)
+}
+
 fn kosongkan_cache_sesi() {
     if let Ok(mut g) = CACHE_SESI.lock() {
         if let Some(p) = g.as_mut() {
@@ -356,6 +385,37 @@ pub async fn api_keluar(State(_hub): State<Arc<Hub>>, headers: HeaderMap) -> Res
 }
 
 /* ── Admin ─────────────────────────────────────────────────────────── */
+
+#[derive(Deserialize)]
+pub struct UbahPeran {
+    pub id: String,
+    pub guru: bool,
+}
+
+/// Hanya guru utama (admin): jadikan akun guru pembantu, atau cabut lagi.
+pub async fn api_peran(State(hub): State<Arc<Hub>>, headers: HeaderMap, Json(u): Json<UbahPeran>) -> Response {
+    if !sah(&hub, &headers, None) || !admin_sah(&hub, &headers, None) {
+        return (StatusCode::UNAUTHORIZED, "Admin password required.").into_response();
+    }
+    let hasil = tokio::task::spawn_blocking(move || -> Result<usize, String> {
+        let c = koneksi()?;
+        c.execute(
+            "UPDATE accounts SET role = ?1 WHERE id = ?2 AND approved = 1",
+            rusqlite::params![if u.guru { Some("guru") } else { None }, u.id],
+        )
+        .map_err(|e| e.to_string())
+    })
+    .await;
+    match hasil {
+        Ok(Ok(0)) => (StatusCode::NOT_FOUND, "Account not found or not approved yet.").into_response(),
+        Ok(Ok(_)) => {
+            crate::server::siarkan(json!({ "t": "data", "kanal": "kelas" }).to_string());
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(Err(e)) => (StatusCode::BAD_REQUEST, e).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
 
 pub async fn api_daftar_akun(State(hub): State<Arc<Hub>>, headers: HeaderMap) -> Response {
     if !sah(&hub, &headers, None) || !admin_sah(&hub, &headers, None) {

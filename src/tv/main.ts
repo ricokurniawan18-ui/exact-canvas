@@ -486,6 +486,12 @@ let melihatRiwayat = false
 function bolehIkuti(src: string | undefined): boolean {
   if (!src) return false
   if (src === sumberPaksa) return true
+  // TV kelas (bukan HP murid) hanya mengikuti guru utama: guru pembantu yang
+  // sedang membahas pertanyaan seorang anak tidak merebut layar kelas.
+  if (!sebagaiMurid && !arah?.startsWith('editor:')) {
+    const k = useSinkron.getState().klien.find((x) => x.id === src)
+    if (k?.guru) return false
+  }
   if (arah?.startsWith('sketsa:')) return false
   if (arah?.startsWith('editor:')) return src === arah.slice(7)
   return true
@@ -1106,6 +1112,7 @@ function pasangBilahMurid() {
 
   el('tombol-tangan').onclick = () => void kirimTanya('', [])
   el('tombol-tanya').onclick = () => {
+    void muatPilihanGuru()
     teks.value = ''
     fotoDataList = []
     pdfData = ''
@@ -1507,12 +1514,71 @@ function kunciTombol(detik: number) {
   timerKunci = window.setInterval(tik, 1000)
 }
 
+/* ── Pilih guru ───────────────────────────────────────────────────── */
+
+const KUNCI_GURU = 'exact-canvas-guru'
+/** '' = siapa saja; 'utama' = guru utama; selain itu id akun guru pembantu. */
+let guruDipilih = (() => {
+  try {
+    return localStorage.getItem(KUNCI_GURU) ?? ''
+  } catch {
+    return ''
+  }
+})()
+
+/** Isi deretan pilihan guru di lembar tanya — hanya kalau gurunya lebih dari satu. */
+async function muatPilihanGuru() {
+  const wadah = el('pilih-guru')
+  let daftar: { id: string; nama: string; online: boolean }[] = []
+  try {
+    daftar = await api('/api/kelas/guru')
+  } catch {
+    daftar = []
+  }
+  if (daftar.length <= 1) {
+    wadah.hidden = true
+    guruDipilih = ''
+    return
+  }
+  if (guruDipilih && !daftar.some((g) => g.id === guruDipilih)) guruDipilih = ''
+  wadah.replaceChildren()
+  const pilihan: { id: string; nama: string; online?: boolean }[] = [{ id: '', nama: 'Anyone' }, ...daftar]
+  for (const g of pilihan) {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.textContent = g.nama
+    if (g.online) {
+      const titik = document.createElement('span')
+      titik.className = 'titik'
+      titik.title = 'Online now'
+      b.append(titik)
+    }
+    b.classList.toggle('dipilih', g.id === guruDipilih)
+    b.onclick = () => {
+      guruDipilih = g.id
+      try {
+        localStorage.setItem(KUNCI_GURU, g.id)
+      } catch {
+        /* penyimpanan diblokir */
+      }
+      wadah.querySelectorAll('button').forEach((x) => x.classList.remove('dipilih'))
+      b.classList.add('dipilih')
+    }
+    wadah.append(b)
+  }
+  wadah.hidden = false
+}
+
 async function kirimTanya(teks: string, fotos: string[]): Promise<boolean> {
   try {
     // Foto-foto bisa beberapa ratus KB sampai beberapa MB total; lewat
     // Wi-Fi/tunnel yang lemah butuh waktu — 45 s cukup longgar tapi tetap
     // memberi kabar alih-alih menggantung diam.
-    await api('/api/kelas/tanya', { method: 'POST', json: { murid: muridId, nama: namaSaya, teks, fotos }, timeoutMs: 45000 })
+    await api('/api/kelas/tanya', {
+      method: 'POST',
+      json: { murid: muridId, nama: namaSaya, teks, fotos, guru: guruDipilih || null },
+      timeoutMs: 45000,
+    })
     tampilkanStatus(
       fotos[0]?.startsWith('data:application/pdf')
         ? 'PDF sent.'

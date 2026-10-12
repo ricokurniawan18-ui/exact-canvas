@@ -89,6 +89,28 @@ export function simpanSesi(token: string): void {
   }
 }
 
+/**
+ * Peran editor di browser: guru utama (sandi admin) atau guru pembantu (akun
+ * ber-peran guru, masuk dengan nomor HP + sandi). Aplikasi Mac selalu utama.
+ * Guru pembantu tidak melihat urusan admin (setelan, akun, hapus kanvas) —
+ * server juga menolaknya; ini hanya supaya tombolnya tidak menggoda.
+ */
+export interface PeranEditor {
+  peran: 'admin' | 'guru'
+  id?: string
+  nama?: string
+}
+let peranEditor: PeranEditor = { peran: 'admin' }
+export function setPeranEditor(p: PeranEditor | null | undefined): void {
+  peranEditor = p && p.peran === 'guru' ? p : { peran: 'admin' }
+}
+export function peranEditorIni(): PeranEditor {
+  return peranEditor
+}
+export function guruPembantu(): boolean {
+  return peranEditor.peran === 'guru'
+}
+
 export function setAlamatServer(alamat: string, pin?: string, admin?: string): void {
   alamatDasar = alamat.replace(/\/$/, '')
   if (pin) pinMemori = pin

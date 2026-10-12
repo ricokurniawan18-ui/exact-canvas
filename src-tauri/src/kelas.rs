@@ -19,7 +19,7 @@ use axum::{
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::server::{admin_sah, sah, tolak, Hub, QueryPin};
+use crate::server::{sah, tolak, Hub, QueryPin};
 use crate::vault;
 
 const UMUR_FOTO_MS: i64 = 24 * 60 * 60 * 1000;
@@ -499,7 +499,7 @@ pub async fn api_izin(State(hub): State<Arc<Hub>>, headers: HeaderMap, Json(z): 
     if !sah(&hub, &headers, None) {
         return tolak();
     }
-    if !admin_sah(&hub, &headers, None) {
+    if !crate::server::guru_sah(&hub, &headers, None, None) {
         return (StatusCode::UNAUTHORIZED, "Admin password required.").into_response();
     }
     let murid = z.murid.clone();
@@ -701,6 +701,9 @@ pub struct Tanya {
     /// PDF); boleh kosong (angkat tangan), boleh beberapa (galeri, pilih banyak).
     #[serde(default)]
     pub fotos: Vec<String>,
+    /// Guru yang dituju: 'utama', id akun guru pembantu, atau kosong = siapa saja.
+    #[serde(default)]
+    pub guru: Option<String>,
 }
 
 pub async fn api_tanya(State(hub): State<Arc<Hub>>, headers: HeaderMap, Json(t): Json<Tanya>) -> Response {
@@ -788,12 +791,20 @@ pub async fn api_tanya(State(hub): State<Arc<Hub>>, headers: HeaderMap, Json(t):
             "UPDATE questions SET status = 'selesai', handled_at = ?1 WHERE student_id = ?2 AND status != 'selesai'",
             rusqlite::params![kini, t.murid],
         );
+        // Tujuan yang tidak dikenal (guru sudah dicabut perannya) jatuh ke "siapa saja".
+        let tujuan: Option<String> = match t.guru.as_deref().map(str::trim).filter(|g| !g.is_empty()) {
+            Some("utama") => Some("utama".into()),
+            Some(g) => c
+                .query_row("SELECT id FROM accounts WHERE id = ?1 AND role = 'guru'", rusqlite::params![g], |r| r.get(0))
+                .ok(),
+            None => None,
+        };
         c.execute(
-            "INSERT INTO questions (id, student_id, name, room, text, photos, status, created_at) VALUES (?1, ?2, ?3, 1, ?4, ?5, 'menunggu', ?6)",
-            rusqlite::params![id, t.murid, t.nama.trim().chars().take(40).collect::<String>(), if teks.is_empty() { None } else { Some(teks.clone()) }, foto_json, kini],
+            "INSERT INTO questions (id, student_id, name, room, text, photos, status, created_at, for_teacher) VALUES (?1, ?2, ?3, 1, ?4, ?5, 'menunggu', ?6, ?7)",
+            rusqlite::params![id, t.murid, t.nama.trim().chars().take(40).collect::<String>(), if teks.is_empty() { None } else { Some(teks.clone()) }, foto_json, kini, tujuan],
         )
         .map_err(|e| e.to_string())?;
-        Ok(json!({ "id": id, "nama": t.nama, "teks": teks, "foto": !nama_foto.is_empty() }))
+        Ok(json!({ "id": id, "nama": t.nama, "teks": teks, "foto": !nama_foto.is_empty(), "guru": tujuan }))
     })
     .await;
     match hasil {
@@ -830,19 +841,28 @@ pub async fn api_ubah_tanya(State(hub): State<Arc<Hub>>, headers: HeaderMap, Jso
     if !sah(&hub, &headers, None) {
         return tolak();
     }
-    if !admin_sah(&hub, &headers, None) {
+    if !crate::server::guru_sah(&hub, &headers, None, None) {
         return (StatusCode::UNAUTHORIZED, "Admin password required.").into_response();
     }
     if u.status != "dibahas" && u.status != "selesai" {
         return (StatusCode::BAD_REQUEST, "Unknown status.").into_response();
     }
+    // Siapa yang membahas — supaya antrean guru lain tahu pertanyaan ini sudah diambil.
+    let oleh = crate::server::penjawab(&hub, &headers);
     let hasil = tokio::task::spawn_blocking(move || -> Result<Value, String> {
         let c = koneksi()?;
         let kini = sekarang();
-        c.execute(
-            "UPDATE questions SET status = ?1, handled_at = ?2 WHERE id = ?3",
-            rusqlite::params![u.status, kini, u.id],
-        )
+        if u.status == "dibahas" {
+            c.execute(
+                "UPDATE questions SET status = ?1, handled_at = ?2, handled_by = COALESCE(?4, handled_by) WHERE id = ?3",
+                rusqlite::params![u.status, kini, u.id, oleh],
+            )
+        } else {
+            c.execute(
+                "UPDATE questions SET status = ?1, handled_at = ?2 WHERE id = ?3",
+                rusqlite::params![u.status, kini, u.id],
+            )
+        }
         .map_err(|e| e.to_string())?;
         let (murid, nama): (String, String) = c
             .query_row("SELECT student_id, name FROM questions WHERE id = ?1", rusqlite::params![u.id], |r| Ok((r.get(0)?, r.get(1)?)))
@@ -885,7 +905,7 @@ pub async fn api_foto(State(hub): State<Arc<Hub>>, headers: HeaderMap, Query(q):
         return tolak();
     }
     // Foto pertanyaan anak hanya untuk guru.
-    if !admin_sah(&hub, &headers, q.admin.as_deref()) {
+    if !crate::server::guru_sah(&hub, &headers, q.admin.as_deref(), q.sesi.as_deref()) {
         return (StatusCode::UNAUTHORIZED, "Admin password required.").into_response();
     }
     let Ok(p) = vault::resolve_within(&vault::tanya_dir(), &nama) else {
@@ -925,7 +945,7 @@ pub async fn api_foto_data(State(hub): State<Arc<Hub>>, headers: HeaderMap, Json
     if !sah(&hub, &headers, None) {
         return tolak();
     }
-    if !admin_sah(&hub, &headers, None) {
+    if !crate::server::guru_sah(&hub, &headers, None, None) {
         return (StatusCode::UNAUTHORIZED, "Admin password required.").into_response();
     }
     let hasil = tokio::task::spawn_blocking(move || -> Vec<Value> {
@@ -1252,6 +1272,49 @@ pub async fn api_grup_keluar(State(hub): State<Arc<Hub>>, headers: HeaderMap, Js
             kabari(&hub, "grup", Value::Null);
             StatusCode::NO_CONTENT.into_response()
         }
+        Ok(Err(e)) => (StatusCode::BAD_REQUEST, e).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// Daftar guru yang bisa dipilih murid saat bertanya: guru utama, lalu semua
+/// akun ber-peran guru. `online` = sedang membuka editor sekarang.
+pub async fn api_daftar_guru(State(hub): State<Arc<Hub>>, headers: HeaderMap) -> Response {
+    if !sah(&hub, &headers, None) {
+        return tolak();
+    }
+    let (utama_online, online): (bool, Vec<String>) = {
+        let k = hub.klien.lock().unwrap_or_else(|e| e.into_inner());
+        (
+            k.iter().any(|x| x.peran == "editor" && x.guru.is_empty()),
+            k.iter().filter(|x| x.peran == "editor" && !x.guru.is_empty()).map(|x| x.guru.clone()).collect(),
+        )
+    };
+    let hasil = tokio::task::spawn_blocking(move || -> Result<Value, String> {
+        let c = koneksi()?;
+        let nama_utama: String = c
+            .query_row("SELECT value FROM settings WHERE key = 'nama_guru'", [], |r| r.get::<_, Option<String>>(0))
+            .ok()
+            .flatten()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "Mr. Rico".into());
+        let mut daftar = vec![json!({ "id": "utama", "nama": nama_utama, "online": utama_online })];
+        let mut st = c
+            .prepare("SELECT id, name FROM accounts WHERE role = 'guru' AND approved = 1 ORDER BY name COLLATE NOCASE")
+            .map_err(|e| e.to_string())?;
+        for b in st
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+            .map_err(|e| e.to_string())?
+            .flatten()
+        {
+            let on = online.contains(&b.0);
+            daftar.push(json!({ "id": b.0, "nama": b.1, "online": on }));
+        }
+        Ok(Value::Array(daftar))
+    })
+    .await;
+    match hasil {
+        Ok(Ok(v)) => Json(v).into_response(),
         Ok(Err(e)) => (StatusCode::BAD_REQUEST, e).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }

@@ -18,6 +18,8 @@ export interface Klien {
   fokus: boolean
   keluar: number
   tunggu: boolean
+  /** Id akun guru pembantu (editor yang masuk lewat akun); kosong untuk guru utama. */
+  guru?: string
 }
 
 export interface PesanLangsung {

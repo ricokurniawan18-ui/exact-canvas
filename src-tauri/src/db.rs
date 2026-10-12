@@ -85,6 +85,14 @@ pub fn migrations() -> Vec<Migration> {
             sql: "ALTER TABLE canvases ADD COLUMN student_id TEXT;
                   CREATE INDEX IF NOT EXISTS idx_canvases_murid ON canvases(student_id);",
         },
+        Migration {
+            version: 13,
+            description: "guru pembantu: peran akun, tujuan & penjawab pertanyaan",
+            kind: MigrationKind::Up,
+            sql: "ALTER TABLE accounts ADD COLUMN role TEXT;
+                  ALTER TABLE questions ADD COLUMN for_teacher TEXT;
+                  ALTER TABLE questions ADD COLUMN handled_by TEXT;",
+        },
     ]
 }
 

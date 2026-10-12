@@ -70,6 +70,10 @@
       #lembar .isi { width: 100%; background: var(--surface); border-radius: 16px 16px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 10px; }
       #lembar textarea { font: inherit; font-size: 16px; min-height: 72px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--bg); color: var(--ink); resize: none; }
       #lembar .baris { display: flex; gap: 8px; }
+      #pilih-guru { flex-wrap: wrap; gap: 6px; }
+      #pilih-guru button { flex: 0 0 auto; padding: 6px 12px; border-radius: 999px; font-size: 14px; }
+      #pilih-guru button.dipilih { background: var(--accent); border-color: var(--accent); color: #fff; }
+      #pilih-guru .titik { display: inline-block; width: 7px; height: 7px; border-radius: 999px; background: #22c55e; margin-left: 5px; vertical-align: middle; }
       #lembar button { flex: 1; font: inherit; font-size: 15px; padding: 11px 8px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--surface-2); color: var(--ink); }
       #lembar button.utama { background: var(--accent); color: #fff; border-color: var(--accent); }
       #lembar img { max-height: 160px; width: auto; max-width: 100%; border-radius: 8px; border: 1px solid var(--line); align-self: flex-start; }
@@ -200,6 +204,8 @@
     <div id="lembar">
       <div class="isi">
         <strong>Ask the teacher</strong>
+        <!-- Lebih dari satu guru: murid memilih siapa yang ditanya (atau siapa saja). -->
+        <div id="pilih-guru" class="baris" hidden></div>
         <textarea id="teks-tanya" placeholder="Type your question (optional)…"></textarea>
         <div id="pratinjau-foto" hidden></div>
         <div id="pratinjau-pdf" hidden style="font-size:14px;color:var(--ink-soft)"></div>

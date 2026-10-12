@@ -21,6 +21,30 @@ export interface Tanya {
   status: 'menunggu' | 'dibahas' | 'selesai'
   created_at: number
   handled_at: number | null
+  /** Guru yang dituju murid: 'utama', id akun guru pembantu, atau null = siapa saja. */
+  for_teacher?: string | null
+  /** Guru yang membahasnya ('utama' atau id akun). */
+  handled_by?: string | null
+}
+
+/** Guru yang bisa dipilih murid: guru utama ('utama') dan akun ber-peran guru. */
+export interface Guru {
+  id: string
+  nama: string
+  online: boolean
+}
+
+export async function daftarGuru(): Promise<Guru[]> {
+  try {
+    return await api<Guru[]>('/api/kelas/guru')
+  } catch {
+    return []
+  }
+}
+
+/** Hanya guru utama: jadikan akun ini guru pembantu, atau cabut. */
+export async function jadikanGuru(id: string, guru: boolean): Promise<void> {
+  await api('/api/akun/peran', { method: 'POST', json: { id, guru } })
 }
 
 /** Baris mentah dari SQLite: `photos` masih JSON, belum diurai. */
@@ -49,6 +73,8 @@ export interface Murid {
   can_draw: number
   /** Nomor HP dari akunnya (null untuk murid lama tanpa akun). */
   phone?: string | null
+  /** 'guru' = akun ini guru pembantu. */
+  role?: string | null
 }
 
 /** Akun murid (nomor HP + sandi) — identitas yang mengikuti anak ke perangkat mana pun. */
@@ -99,14 +125,14 @@ export async function ubahTanya(id: string, status: 'dibahas' | 'selesai', edito
 /** Murid yang terlihat dalam 10 jam terakhir — satu hari mengajar. */
 export async function daftarMurid(): Promise<Murid[]> {
   return q<Murid>(
-    'SELECT s.*, a.phone FROM students s LEFT JOIN accounts a ON a.id = s.id WHERE s.last_seen > ? ORDER BY s.room, s.name COLLATE NOCASE',
+    'SELECT s.*, a.phone, a.role FROM students s LEFT JOIN accounts a ON a.id = s.id WHERE s.last_seen > ? ORDER BY s.room, s.name COLLATE NOCASE',
     [Date.now() - 10 * 3600_000],
   )
 }
 
 /** Semua murid yang pernah masuk — untuk menyusun anggota tetap grup. */
 export async function daftarMuridSemua(): Promise<Murid[]> {
-  return q<Murid>('SELECT s.*, a.phone FROM students s LEFT JOIN accounts a ON a.id = s.id ORDER BY s.name COLLATE NOCASE')
+  return q<Murid>('SELECT s.*, a.phone, a.role FROM students s LEFT JOIN accounts a ON a.id = s.id ORDER BY s.name COLLATE NOCASE')
 }
 
 export async function daftarAkun(): Promise<Akun[]> {

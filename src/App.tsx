@@ -5,7 +5,7 @@ import { useApp } from '@/lib/appStore'
 import { getSetting, lipatWal } from '@/lib/db'
 import { dengarkan } from '@/lib/events'
 import { bukaJendelaBaru } from '@/lib/layar'
-import { adminAktif, api, namaPerangkat, pinAktif, setAlamatServer, simpanAdmin } from '@/lib/api'
+import { adminAktif, api, guruPembantu, namaPerangkat, pinAktif, sesiAktif, setAlamatServer, setPeranEditor, simpanAdmin, simpanSesi, type PeranEditor } from '@/lib/api'
 import { hentikanSinkron, mulaiSinkron } from '@/lib/sinkron'
 import { Toast } from '@/components/Toast'
 import { Pengaturan } from '@/components/Pengaturan'
@@ -52,8 +52,11 @@ export default function App() {
         .catch((e: unknown) => setGalat(e instanceof Error ? e.message : String(e)))
       return
     }
-    void api('/api/admin/cek')
-      .then(() => setSiap(true))
+    void api<PeranEditor | undefined>('/api/admin/cek')
+      .then((p) => {
+        setPeranEditor(p)
+        setSiap(true)
+      })
       .catch((e: unknown) => {
         const status = (e as { status?: number }).status
         if (status === 401) setPerluAdmin(true)
@@ -73,13 +76,33 @@ export default function App() {
         onMasuk={async (sandi) => {
           simpanAdmin(sandi)
           try {
-            await api('/api/admin/cek')
+            setPeranEditor(await api<PeranEditor | undefined>('/api/admin/cek'))
             setPerluAdmin(false)
             setSiap(true)
             return true
           } catch {
             simpanAdmin('')
             return false
+          }
+        }}
+        onMasukGuru={async (hp, sandi) => {
+          // Guru pembantu: akun biasa (nomor HP + sandi) yang diberi peran guru.
+          try {
+            const r = await api<{ token: string }>('/api/akun/masuk', { method: 'POST', json: { hp, sandi } })
+            simpanAdmin('')
+            simpanSesi(r.token)
+            const p = await api<PeranEditor | undefined>('/api/admin/cek')
+            if (p?.peran !== 'guru') {
+              simpanSesi('')
+              return 'This account is not a teacher yet — ask the main teacher to make it one.'
+            }
+            setPeranEditor(p)
+            setPerluAdmin(false)
+            setSiap(true)
+            return null
+          } catch (e) {
+            simpanSesi('')
+            return e instanceof Error ? e.message : String(e)
           }
         }}
       />
@@ -91,12 +114,14 @@ export default function App() {
     <>
       <div className="ex-texture relative h-full w-full">
         <KanvasLayar />
-        <IconButton
-          nama="atur"
-          label="Settings (⌘,)"
-          className="ex-card absolute right-3 top-3 z-10"
-          onClick={() => useApp.getState().setPengaturan(true)}
-        />
+        {!guruPembantu() && (
+          <IconButton
+            nama="atur"
+            label="Settings (⌘,)"
+            className="ex-card absolute right-3 top-3 z-10"
+            onClick={() => useApp.getState().setPengaturan(true)}
+          />
+        )}
       </div>
       <Pengaturan />
       <Toast />
@@ -152,7 +177,7 @@ function useBerbagi(siap: boolean) {
     if (!siap) return
     if (!inTauri) {
       const ws = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
-      mulaiSinkron({ url: ws, pin: pinAktif(), peran: 'editor', nama: namaPerangkat(), admin: adminAktif() })
+      mulaiSinkron({ url: ws, pin: pinAktif(), peran: 'editor', nama: namaPerangkat(), admin: adminAktif(), sesi: sesiAktif() || undefined })
       return () => hentikanSinkron()
     }
     const terapkan = async () => {
@@ -316,10 +341,62 @@ function LayarGalat({ pesan }: { pesan: string }) {
 }
 
 /** Gerbang kata sandi admin: editor hanya untuk guru, PIN saja tidak cukup. */
-function LayarAdmin({ onMasuk }: { onMasuk: (sandi: string) => Promise<boolean> }) {
+function LayarAdmin({
+  onMasuk,
+  onMasukGuru,
+}: {
+  onMasuk: (sandi: string) => Promise<boolean>
+  /** null = berhasil, teks = pesan galat. */
+  onMasukGuru: (hp: string, sandi: string) => Promise<string | null>
+}) {
   const [sandi, setSandi] = useState('')
   const [salah, setSalah] = useState(false)
   const [sibuk, setSibuk] = useState(false)
+  const [modeGuru, setModeGuru] = useState(false)
+  const [hp, setHp] = useState('')
+  const [sandiGuru, setSandiGuru] = useState('')
+  const [galatGuru, setGalatGuru] = useState<string | null>(null)
+  if (modeGuru) {
+    return (
+      <div className="grid h-full place-items-center p-8">
+        <form
+          className="ex-card flex w-full max-w-[380px] flex-col gap-3 p-6"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (!hp || !sandiGuru) return
+            setSibuk(true)
+            void onMasukGuru(hp, sandiGuru).then((g) => {
+              setSibuk(false)
+              setGalatGuru(g)
+            })
+          }}
+        >
+          <h1 className="ex-module-title flex items-center gap-2">
+            <Icon nama="gembok" ukuran={15} /> Assistant teacher sign-in
+          </h1>
+          <p style={{ color: 'var(--ink-soft)' }}>
+            Sign in with your class account (phone number and password). The main teacher has to mark the account as a
+            teacher first.
+          </p>
+          <input className="ex-input" inputMode="tel" autoFocus placeholder="Phone number" value={hp}
+            onChange={(e) => { setGalatGuru(null); setHp(e.target.value) }} aria-label="Phone number" />
+          <input className="ex-input" type="password" placeholder="Password" value={sandiGuru}
+            onChange={(e) => { setGalatGuru(null); setSandiGuru(e.target.value) }} aria-label="Password" />
+          {galatGuru && (
+            <p className="ex-label" style={{ color: 'var(--down)' }}>
+              {galatGuru}
+            </p>
+          )}
+          <button className="ex-btn" data-variant="accent" disabled={!hp || !sandiGuru || sibuk} type="submit">
+            Open the editor
+          </button>
+          <button className="ex-btn" data-variant="ghost" type="button" onClick={() => setModeGuru(false)}>
+            Main teacher? Use the admin password
+          </button>
+        </form>
+      </div>
+    )
+  }
   return (
     <div className="grid h-full place-items-center p-8">
       <form
@@ -359,6 +436,9 @@ function LayarAdmin({ onMasuk }: { onMasuk: (sandi: string) => Promise<boolean> 
         )}
         <button className="ex-btn" data-variant="accent" disabled={!sandi || sibuk} type="submit">
           Open the editor
+        </button>
+        <button className="ex-btn" data-variant="ghost" type="button" onClick={() => setModeGuru(true)}>
+          Assistant teacher? Sign in with your account
         </button>
       </form>
     </div>

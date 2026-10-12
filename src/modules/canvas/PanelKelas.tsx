@@ -3,7 +3,7 @@ import { Icon } from '@/components/ui/Icon'
 import { IconButton } from '@/components/ui/Button'
 import { useData } from '@/lib/useData'
 import { useSinkron } from '@/lib/sinkron'
-import { urlDenganPin } from '@/lib/api'
+import { guruPembantu, peranEditorIni, urlDenganPin } from '@/lib/api'
 import { toast, toastGalat } from '@/lib/toast'
 import { TeksRumus } from '@/components/TeksRumus'
 import { daftarKanvas } from './data'
@@ -14,6 +14,8 @@ import {
   buatGrup,
   kosongkanAntrean,
   daftarAkun,
+  daftarGuru,
+  jadikanGuru,
   daftarGrup,
   daftarMuridSemua,
   daftarTanya,
@@ -56,6 +58,13 @@ export function PanelKelas({
   const qGrup = useData('kelas', daftarGrup, [])
   const qAnggota = useData('kelas', anggotaGrup, [])
   const qAkun = useData('kelas', daftarAkun, [])
+  const { data: daftarPengajar } = useData('kelas', daftarGuru, [])
+  /** Saya di antrean: 'utama' untuk guru utama, id akun untuk guru pembantu. */
+  const pembantu = guruPembantu()
+  const idSaya = pembantu ? peranEditorIni().id ?? '' : 'utama'
+  const namaGuru = (id: string | null | undefined) => (id ? daftarPengajar.find((g) => g.id === id)?.nama ?? null : null)
+  // Guru pembantu mulai dari "untuk saya"; guru utama melihat semuanya.
+  const [hanyaSaya, setHanyaSaya] = useState(pembantu)
   // Daftar SEMUA murid yang pernah bergabung, bukan cuma yang terlihat 10 jam
   // terakhir: murid yang lupa sandi (justru yang paling butuh direset) tidak
   // akan pernah "terlihat" karena dia tidak pernah berhasil masuk — kalau
@@ -86,6 +95,11 @@ export function PanelKelas({
   const hadir = useMemo(() => new Map(klien.filter((k) => k.murid).map((k) => [k.murid, k])), [klien])
   const editorLain = klien.filter((k) => k.peran === 'editor')
   const menunggu = antrian.filter((t) => t.status === 'menunggu').length
+  /** Untuk saya: ditujukan ke saya, ke siapa saja dan belum diambil, atau sedang saya bahas. */
+  const untukSaya = (t: Tanya) =>
+    t.handled_by === idSaya || t.for_teacher === idSaya || (!t.for_teacher && t.status === 'menunggu')
+  const antrianTampil = hanyaSaya ? antrian.filter(untukSaya) : antrian
+  const adaGuruLain = daftarPengajar.length > 1
 
   return (
     <>
@@ -128,7 +142,27 @@ export function PanelKelas({
 
       {tab === 'antrian' && (
         <div className="flex flex-col gap-1">
-          {antrian.length > 1 && (
+          {adaGuruLain && (
+            <div className="flex gap-1">
+              {(
+                [
+                  [true, `For me · ${antrian.filter(untukSaya).length}`],
+                  [false, `All · ${antrian.length}`],
+                ] as [boolean, string][]
+              ).map(([v, label]) => (
+                <button
+                  key={label}
+                  className="ex-btn flex-1 justify-center"
+                  data-variant={hanyaSaya === v ? 'accent' : 'ghost'}
+                  style={{ padding: '3px 0', fontSize: 11 }}
+                  onClick={() => setHanyaSaya(v)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          {antrian.length > 1 && !pembantu && (
             <button
               className="ex-btn self-end"
               data-variant="ghost"
@@ -144,10 +178,12 @@ export function PanelKelas({
               No one is waiting. Students raise a hand or send a question from their phone.
             </p>
           )}
-          {antrian.map((t) => (
+          {antrianTampil.map((t) => (
             <BarisTanya
               key={t.id}
               t={t}
+              tujuan={adaGuruLain ? (t.for_teacher ? namaGuru(t.for_teacher) ?? 'a teacher' : 'anyone') : null}
+              penjawab={t.status === 'dibahas' && t.handled_by && t.handled_by !== idSaya ? namaGuru(t.handled_by) ?? 'another teacher' : null}
               grup={grup.find((g) => g.id === petaGrupMurid.get(t.student_id)) ?? null}
               onBahas={(paksaTempel) => onBahas(t, t.photos.length ? t.photos : null, paksaTempel)}
               onSelesai={() => void ubahTanya(t.id, 'selesai').catch(() => toastGalat('Could not close it.'))}
@@ -262,7 +298,22 @@ export function PanelKelas({
                     />
                   </form>
                 )}
-                {m.phone && resetId !== m.id && (
+                {m.phone && !pembantu && (
+                  <button
+                    className="ex-btn"
+                    data-variant={m.role === 'guru' ? 'accent' : 'ghost'}
+                    style={{ padding: '1px 6px', fontSize: 10 }}
+                    title={m.role === 'guru' ? 'Assistant teacher — tap to make a regular student again' : 'Make this account an assistant teacher'}
+                    onClick={() =>
+                      jadikanGuru(m.id, m.role !== 'guru')
+                        .then(() => toast(m.role === 'guru' ? `${m.name} is a student again.` : `${m.name} is now an assistant teacher.`))
+                        .catch(toastGalat)
+                    }
+                  >
+                    {m.role === 'guru' ? 'Teacher' : '+ Teacher'}
+                  </button>
+                )}
+                {m.phone && resetId !== m.id && !pembantu && (
                   <IconButton
                     nama="gembok"
                     label="Reset this student's password"
@@ -341,11 +392,17 @@ export function PanelKelas({
 
 function BarisTanya({
   t,
+  tujuan,
+  penjawab,
   grup,
   onBahas,
   onSelesai,
 }: {
   t: Tanya
+  /** Nama guru yang dituju (atau 'anyone'); null bila hanya ada satu guru. */
+  tujuan: string | null
+  /** Nama guru LAIN yang sedang membahasnya. */
+  penjawab: string | null
   grup: Grup | null
   onBahas: (paksaTempel?: boolean) => void
   onSelesai: () => void
@@ -371,9 +428,12 @@ function BarisTanya({
           </span>
         )}
         <span style={{ fontSize: 11, color: dibahas ? 'var(--accent)' : 'var(--ink-faint)' }}>
-          {dibahas ? 'discussing' : lamaMenunggu(t.created_at)}
+          {dibahas ? (penjawab ? `${penjawab} is on it` : 'discussing') : lamaMenunggu(t.created_at)}
         </span>
       </div>
+      {tujuan && (
+        <span style={{ fontSize: 10, color: 'var(--ink-faint)' }}>→ {tujuan}</span>
+      )}
       {t.text && (
         /* div, bukan p: diagram di dalam teks adalah blok (<div>), dan <p>
            tidak boleh memuatnya. */
