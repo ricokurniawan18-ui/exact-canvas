@@ -1415,7 +1415,11 @@ pub async fn api_daftar_guru(State(hub): State<Arc<Hub>>, headers: HeaderMap) ->
 #[derive(Deserialize)]
 pub struct Panggil {
     /// Id pertanyaan yang dijawab dengan memanggil muridnya ke meja guru.
+    #[serde(default)]
     pub id: String,
+    /// Panggil seorang murid langsung (tanpa pertanyaan), dari kartu datanya di panel Class.
+    #[serde(default)]
+    pub murid: Option<String>,
 }
 
 /// Guru memanggil murid ke mejanya: HP murid berbunyi dan menampilkan nama
@@ -1441,6 +1445,14 @@ pub async fn api_panggil(State(hub): State<Arc<Hub>>, headers: HeaderMap, Json(p
                 .filter(|s| !s.trim().is_empty())
                 .unwrap_or_else(|| "Mr. Rico".into()),
         };
+        if p.id.is_empty() {
+            // Panggilan langsung dari kartu murid: tidak ada pertanyaan yang ditutup.
+            let id_murid = p.murid.clone().filter(|m| !m.is_empty()).ok_or_else(|| "Student not specified.".to_string())?;
+            let nama: String = c
+                .query_row("SELECT name FROM students WHERE id = ?1", rusqlite::params![id_murid], |r| r.get(0))
+                .map_err(|_| "Student not found.".to_string())?;
+            return Ok(json!({ "id": "", "murid": id_murid, "nama": nama, "guru": nama_guru, "status": "dipanggil" }));
+        }
         let (murid, nama): (String, String) = c
             .query_row("SELECT student_id, name FROM questions WHERE id = ?1", rusqlite::params![p.id], |r| Ok((r.get(0)?, r.get(1)?)))
             .map_err(|_| "Question not found.".to_string())?;

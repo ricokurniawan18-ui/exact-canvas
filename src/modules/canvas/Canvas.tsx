@@ -388,6 +388,51 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
   }
 
   /**
+   * Buka kanvas seorang murid tanpa pertanyaan (dari kartu datanya di panel Class): kanvas grupnya
+   * hari ini kalau ia anggota grup, kalau tidak kanvas pribadinya hari ini — dibuat bila belum ada.
+   * Sama dengan tujuan `bahasTanya`, tetapi tidak mengubah pertanyaan apa pun dan tidak memaku HP murid.
+   */
+  async function bukaKanvasMurid(idMurid: string, nama: string) {
+    const hari = kunciTanggal()
+    let idTujuan: string | null = null
+    let judulTujuan = `Tanya · ${nama} · ${tanggalPendek(new Date())}`
+    try {
+      const grup = await q1<{ id: string; name: string; sketch_id: string | null; sketch_day: string | null }>(
+        'SELECT g.id, g.name, g.sketch_id, g.sketch_day FROM groups g JOIN group_members m ON m.group_id = g.id WHERE m.student_id = ? ORDER BY g.sort_order LIMIT 1',
+        [idMurid],
+      )
+      const adaSketsa = async (id: string | null) => (id ? !!(await q1('SELECT id FROM canvases WHERE id = ?', [id])) : false)
+      if (grup) {
+        judulTujuan = `Grup · ${grup.name} · ${tanggalPendek(new Date())}`
+        idTujuan = grup.sketch_day === hari && (await adaSketsa(grup.sketch_id)) ? grup.sketch_id : null
+        if (!idTujuan) {
+          idTujuan = await buatKanvas(judulTujuan, grup.id)
+          await x('UPDATE groups SET sketch_id = ?, sketch_day = ? WHERE id = ?', [idTujuan, hari, grup.id])
+        }
+      } else {
+        const baris = await q1<{ sketch_id: string | null; sketch_day: string | null }>(
+          'SELECT sketch_id, sketch_day FROM students WHERE id = ?',
+          [idMurid],
+        )
+        idTujuan = baris?.sketch_day === hari && (await adaSketsa(baris.sketch_id)) ? baris.sketch_id : null
+        if (!idTujuan) {
+          idTujuan = await buatKanvas(judulTujuan)
+          await x('UPDATE students SET sketch_id = ?, sketch_day = ? WHERE id = ?', [idTujuan, hari, idMurid])
+        }
+      }
+    } catch (e) {
+      beriTahu(e instanceof Error ? e.message : String(e))
+      return
+    }
+    if (idTujuan === idKanvas) {
+      keCoretanTerakhir()
+      return
+    }
+    useApp.getState().setTempelanTertunda({ idKanvas: idTujuan, nama })
+    useApp.getState().mintaBukaSketsa(idTujuan, judulTujuan)
+  }
+
+  /**
    * Tempel foto-foto/PDF pertanyaan (kalau ada) ke halaman baru, lalu siap menulis.
    *
    * Foto dibaca dan dikodekan di server (`/api/kelas/foto-data`), bukan
@@ -4560,7 +4605,12 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
             </>
           )}
 
-          {panelAlat === 'kelas' && <PanelKelas onBahas={(t, lampiran, paksaTempel) => void bahasTanya(t, lampiran, paksaTempel)} />}
+          {panelAlat === 'kelas' && (
+            <PanelKelas
+              onBahas={(t, lampiran, paksaTempel) => void bahasTanya(t, lampiran, paksaTempel)}
+              onBukaKanvas={(idMurid, nama) => void bukaKanvasMurid(idMurid, nama)}
+            />
+          )}
 
           {panelAlat === 'ekspor' && (
             <>

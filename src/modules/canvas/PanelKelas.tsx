@@ -17,6 +17,7 @@ import {
   daftarGuru,
   jadikanGuru,
   panggilMurid,
+  panggilMuridLangsung,
   bukaPermintaan,
   daftarLaporanNilai,
   daftarUpdateJadwal,
@@ -47,7 +48,10 @@ type Tab = 'antrian' | 'murid' | 'grup' | 'guru' | 'nilai' | 'jadwal'
  */
 export function PanelKelas({
   onBahas,
+  onBukaKanvas,
 }: {
+  /** Buka kanvas murid ini (kanvas grupnya, atau kanvas pribadinya hari ini) tanpa pertanyaan. */
+  onBukaKanvas: (idMurid: string, nama: string) => void
   /** Guru membuka pertanyaan: nama berkas tiap lampiran (kalau ada, bukan URL —
    *  server yang membaca/mengkodekannya) untuk ditempel ke kanvas. `paksaTempel`
    *  menempel ulang meski pertanyaan ini sudah pernah "dibahas" — jalan keluar
@@ -422,6 +426,12 @@ export function PanelKelas({
                   tanya={antrian.filter((t) => t.student_id === m.id)}
                   nilai={laporanNilai.filter((n) => n.student_id === m.id)}
                   jadwal={updateJadwal.filter((u) => u.student_id === m.id)}
+                  onPanggil={() =>
+                    panggilMuridLangsung(m.id)
+                      .then(() => toast(`Calling ${m.name} to your desk.`))
+                      .catch(toastGalat)
+                  }
+                  onBukaKanvas={() => onBukaKanvas(m.id, m.name)}
                   onTutup={() => setTerbuka(null)}
                 />
               )}
@@ -876,6 +886,8 @@ function KartuMurid({
   tanya,
   nilai,
   jadwal,
+  onPanggil,
+  onBukaKanvas,
   onTutup,
 }: {
   murid: Murid
@@ -884,6 +896,8 @@ function KartuMurid({
   tanya: Tanya[]
   nilai: LaporanNilai[]
   jadwal: UpdateJadwal[]
+  onPanggil: () => void
+  onBukaKanvas: () => void
   onTutup: () => void
 }) {
   const status = !hadir ? 'Offline' : hadir.tunggu ? 'Waiting (screen dimmed)' : hadir.fokus ? 'On the board' : 'Left the page'
@@ -900,6 +914,27 @@ function KartuMurid({
       <div className="flex items-center justify-between gap-2">
         <span className="ex-label" style={{ color: 'var(--accent)' }}>{murid.name}</span>
         <IconButton nama="silang" label="Close" ukuran={12} onClick={onTutup} />
+      </div>
+      <div className="flex flex-wrap gap-1">
+        <button
+          className="ex-btn flex-1 justify-center"
+          data-variant="accent"
+          style={{ padding: '4px 8px', fontSize: 'var(--fs-label)', whiteSpace: 'nowrap' }}
+          onClick={onBukaKanvas}
+          title="Open this student's canvas (their group's canvas, or their own for today)"
+        >
+          Open canvas
+        </button>
+        <button
+          className="ex-btn flex-1 justify-center"
+          data-variant="ghost"
+          style={{ padding: '4px 8px', fontSize: 'var(--fs-label)', whiteSpace: 'nowrap' }}
+          onClick={onPanggil}
+          disabled={!hadir}
+          title={hadir ? 'Call this student to your desk — their phone rings' : 'Offline — the phone cannot ring'}
+        >
+          🙋 Call
+        </button>
       </div>
       <div className="flex flex-col gap-0.5">
         {baris('Status', `${status}${hadir && hadir.keluar > 0 ? ` · left the page ${hadir.keluar}×` : ''}`)}

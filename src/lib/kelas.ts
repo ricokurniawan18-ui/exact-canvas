@@ -56,6 +56,11 @@ export async function panggilMurid(idTanya: string): Promise<void> {
   await api('/api/kelas/panggil', { method: 'POST', json: { id: idTanya } })
 }
 
+/** Panggil seorang murid langsung ke meja guru (HP-nya berbunyi), tanpa pertanyaan. */
+export async function panggilMuridLangsung(idMurid: string): Promise<void> {
+  await api('/api/kelas/panggil', { method: 'POST', json: { murid: idMurid } })
+}
+
 /** Hanya guru utama: jadikan akun ini guru pembantu, atau cabut. */
 export async function jadikanGuru(id: string, guru: boolean): Promise<void> {
   await api('/api/akun/peran', { method: 'POST', json: { id, guru } })
