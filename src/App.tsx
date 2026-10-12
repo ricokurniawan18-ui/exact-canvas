@@ -35,8 +35,10 @@ export interface InfoBerbagi {
   klien: { id: string; nama: string; peran: string }[]
 }
 
-/** Alamat publik Exact Practice (ruang guru: kunci jawaban + pemantauan). */
-const ALAMAT_PRACTICE = 'https://practice2.exactprintsolution.com'
+/** Alamat publik Exact Practice (ruang guru: kunci jawaban + pemantauan). Sama dengan layar murid: ditetapkan
+ *  saat build (VITE_PRACTICE_URL) — tiket hanya bisa ditukar oleh Practice yang bertaut ke Canvas Mac ini,
+ *  jadi alamat yang salah (mis. Practice di Mac lain) membuat "Tiket sudah kedaluwarsa". */
+const ALAMAT_PRACTICE = (import.meta.env.VITE_PRACTICE_URL as string | undefined) || 'https://practice2.exactprintsolution.com'
 
 /**
  * Buka ruang guru Exact Practice tanpa login: editor meminta tiket sekali
