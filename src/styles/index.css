@@ -276,79 +276,32 @@
 
 .ex-dimmable { transition: filter 4s linear; }
 
-/* Tablet: semua bilah kanvas diperbesar. `zoom` ikut menskalakan posisi
-   (left/top) dan ikon SVG-nya, jadi tata letaknya tetap utuh. */
-/* Skala bilah di layar sentuh: tablet 1.45, HP (≤640px) hanya 1.05 — pada 1.45 rel, panel, dan panel Class
-   memakan seluruh lebar HP dan saling menumpuk. */
-html.ex-sentuh { --z: 1.45; }
-@media (max-width: 640px) { html.ex-sentuh { --z: 1.05; } }
-html.ex-sentuh .ex-bilah { zoom: var(--z); }
+/* HP dan tablet memakai tata letak yang SAMA dengan Mac: rel alat tegak di kiri, pemilih sketsa kiri bawah, daftar
+   halaman kanan bawah, Practice + roda gigi kanan atas. Yang khusus layar sentuh hanya ukuran sasaran jari. */
 html.ex-sentuh .ex-btn { min-height: 34px; }
 html.ex-sentuh input[type="range"] { height: 28px; }
+html.ex-sentuh .ex-statusbar { display: none; }
 
-/* Tablet: rel alat mendatar di tengah bawah — dijangkau ibu jari kiri maupun
-   kanan tanpa menyeberangi layar — dan panelnya membuka ke atas. Pemilih
-   sketsa naik ke kiri atas supaya tidak berebut tempat dengan rel. */
-html.ex-sentuh .ex-rel {
-  left: 40% !important;
-  right: auto !important;
-  top: auto !important;
-  bottom: 10px !important;
-  transform: translateX(-50%);
-  flex-direction: row !important;
-  align-items: center;
-  max-width: calc(100% / var(--z) - 20px);
-  flex-wrap: wrap;
-  justify-content: center;
-}
-html.ex-sentuh .ex-rel .ex-pemisah { width: 1px; height: 22px; margin: 0 2px !important; }
-html.ex-sentuh .ex-panel {
-  left: 40% !important;
-  top: auto !important;
-  bottom: 64px !important;
-  transform: translateX(-50%);
-  max-height: calc(100% / var(--z) - 90px) !important;
-  width: min(460px, calc(100% / var(--z) - 24px)) !important;
-}
-html.ex-sentuh .ex-sketsa { bottom: auto !important; top: 12px !important; }
-html.ex-sentuh .ex-tampilkan { top: auto !important; bottom: 10px !important; left: 40% !important; transform: translateX(-50%); }
-/* Tablet: daftar halaman tidak dipakai — gulir jari sudah cukup. */
-html.ex-sentuh .ex-halaman { display: none !important; }
-
-/* Panel Class menetap di pojok kanan atas, di bawah roda gigi, di semua
-   perangkat: guru melirik antrian dan lampu murid tanpa menutupi kanvas kerja. */
+/* Panel Class menetap di pojok kanan atas, di bawah roda gigi, di semua perangkat: guru melirik antrian dan
+   lampu murid tanpa menutupi kanvas kerja. Lebarnya tidak pernah melebihi layar. */
 .ex-panel-kelas {
   left: auto !important;
   right: 12px !important;
   top: 52px !important;
   bottom: auto !important;
   transform: none !important;
+  max-width: calc(100% - 24px) !important;
   max-height: calc(100% - 64px) !important;
 }
-html.ex-sentuh .ex-panel-kelas {
-  left: auto !important;
-  transform: none !important;
-  right: 10px !important;
-  top: 44px !important;
-  width: min(320px, calc(100% / var(--z) - 24px)) !important;
-  max-height: calc(100% / var(--z) - 60px) !important;
-}
-html.ex-sentuh .ex-statusbar { display: none; }
 
-/* HP: baris atas = Practice + roda gigi (kanan); di bawahnya pemilih sketsa selebar layar; rel alat di tengah bawah
-   (width: max-content supaya tidak dibatasi 50% lebar akibat left:50% — itu yang membuatnya patah jadi tiga baris);
-   panel alat membuka di atas rel; panel Class penuh lebar di bawah pemilih sketsa. */
+/* Layar sempit (HP): rel tegak bisa digulir bila lebih tinggi dari layar, panel alat tidak lebih lebar dari sisa
+   layar di samping rel, daftar halaman disembunyikan (gulir jari cukup), pemilih sketsa boleh membungkus. */
 @media (max-width: 640px) {
-  html.ex-sentuh .ex-rel { left: 50% !important; width: max-content !important; max-width: calc(100% / var(--z) - 12px); gap: 2px; padding: 4px; }
-  html.ex-sentuh .ex-panel { left: 50% !important; width: calc(100% / var(--z) - 16px) !important; bottom: 96px !important; max-height: calc(100% / var(--z) - 176px) !important; }
-  html.ex-sentuh .ex-tampilkan { left: 50% !important; }
-  html.ex-sentuh .ex-sketsa { top: 54px !important; left: 8px !important; right: 8px !important; width: auto !important; flex-wrap: wrap; }
-  html.ex-sentuh .ex-sketsa .ex-input { width: auto !important; flex: 1 1 8rem; min-width: 0; }
-  html.ex-sentuh .ex-panel-kelas {
-    left: 8px !important; right: 8px !important; width: auto !important;
-    transform: none !important; top: 108px !important; bottom: auto !important;
-    max-height: calc(100% / var(--z) - 190px) !important;
-  }
+  .ex-rel { max-height: calc(100% - 24px); overflow-y: auto; }
+  .ex-panel:not(.ex-panel-kelas) { max-width: calc(100% - 74px); }
+  .ex-halaman { display: none !important; }
+  .ex-sketsa { flex-wrap: wrap; max-width: calc(100% - 32px); }
+  .ex-sketsa .ex-input { max-width: 52vw; }
 }
 
 @media (prefers-reduced-motion: reduce) {
