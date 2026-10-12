@@ -2449,6 +2449,11 @@ function pisahKolom(teks) {
 function renderSolidSVG(cfg) {
   const preset = SOLID_PRESETS[cfg.bentuk] || SOLID_PRESETS.kubus;
   const shape = preset(cfg);
+  // bahasa=inggris: label rusuk memakai huruf Inggris — t (tinggi) jadi h, p (panjang) jadi l, l (lebar) jadi w.
+  if (/^(ing|en)/i.test(String(cfg.bahasa || ''))) {
+    const peta = { t: 'h', p: 'l', l: 'w' };
+    (shape.labels || []).forEach((lb) => { if (typeof lb.text === 'string') lb.text = lb.text.replace(/^([ptl]) =/, (m, c) => `${peta[c]} =`); });
+  }
   const edges = shape.edges || [];
   const ellipses = shape.ellipses || [];
   const areaW = 250, areaH = 200;
