@@ -342,3 +342,67 @@ export async function tandaiDibaca(tabel: 'score_reports' | 'schedule_updates', 
   else await x(`UPDATE ${tabel} SET read_at = ? WHERE read_at IS NULL`, [Date.now()])
   await pancarkan('kelas')
 }
+
+/* ── Agenda & catatan ──────────────────────────────────────────────── */
+
+export interface Agenda {
+  id: string
+  student_id: string | null
+  group_id: string | null
+  date: string
+  kind: 'ulangan' | 'tugas' | 'lain'
+  subject: string | null
+  text: string | null
+  created_by: 'murid' | 'guru'
+  author_name: string | null
+  created_at: number
+  /** Nama murid atau nama grup tujuan (hasil JOIN). */
+  untuk: string | null
+}
+
+export interface Catatan {
+  id: string
+  student_id: string
+  author: 'murid' | 'guru'
+  author_name: string | null
+  text: string
+  created_at: number
+  /** Nama murid (hasil JOIN). */
+  murid: string | null
+}
+
+/** Agenda semua murid & grup, dari seminggu lalu ke depan. */
+export async function daftarAgenda(): Promise<Agenda[]> {
+  const d = new Date()
+  d.setDate(d.getDate() - 7)
+  const sejak = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return q<Agenda>(
+    `SELECT a.*, COALESCE(s.name, g.name) AS untuk FROM agenda a
+     LEFT JOIN students s ON s.id = a.student_id LEFT JOIN groups g ON g.id = a.group_id
+     WHERE a.date >= ? ORDER BY a.date ASC, a.created_at ASC LIMIT 500`,
+    [sejak],
+  )
+}
+
+/** Lewat server, bukan SQL langsung: HP murid yang membuka My info ikut segar. */
+export async function tambahAgenda(a: { murid?: string; grup?: string; tanggal: string; jenis: string; mapel: string; teks: string }): Promise<void> {
+  await api('/api/kelas/agenda', { method: 'POST', json: a })
+}
+
+export async function hapusAgenda(id: string): Promise<void> {
+  await api('/api/kelas/agenda/hapus', { method: 'POST', json: { id } })
+}
+
+export async function daftarCatatan(): Promise<Catatan[]> {
+  return q<Catatan>(
+    'SELECT n.*, s.name AS murid FROM notes n LEFT JOIN students s ON s.id = n.student_id ORDER BY n.created_at DESC LIMIT 500',
+  )
+}
+
+export async function tambahCatatan(murid: string, teks: string): Promise<void> {
+  await api('/api/kelas/catatan', { method: 'POST', json: { murid, teks } })
+}
+
+export async function hapusCatatan(id: string): Promise<void> {
+  await api('/api/kelas/catatan/hapus', { method: 'POST', json: { id } })
+}

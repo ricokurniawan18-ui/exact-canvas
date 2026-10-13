@@ -83,6 +83,20 @@
       #harian .hari button.dipilih { background: var(--accent); color: #fff; border-color: var(--accent); }
       #harian .jam { display: grid; grid-template-columns: 56px 1fr; gap: 6px; align-items: center; }
       #harian h4 { margin: 4px 0 0; font-size: 15px; }
+      #harian textarea { font: inherit; font-size: 16px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--bg); color: var(--ink); min-height: 70px; resize: vertical; }
+      #harian .tab-info { display: flex; gap: 6px; overflow-x: auto; }
+      #harian .tab-info button { flex: 1 0 auto; padding: 8px 10px; font-size: 14px; }
+      #harian .tab-info button.dipilih { background: var(--accent); color: #fff; border-color: var(--accent); }
+      #harian .kartu-info { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); }
+      #harian .kartu-info .utama-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+      #harian .kartu-info small { color: var(--ink-soft); font-size: 12px; }
+      #harian .kartu-info button.hapus-info { flex: 0 0 auto; padding: 4px 8px; font-size: 13px; }
+      #harian .lampau { opacity: .55; }
+      #harian .lencana { font-size: 11px; padding: 1px 7px; border-radius: 999px; color: #fff; background: var(--accent); align-self: flex-start; }
+      #harian .lencana.tugas { background: var(--accent-2); }
+      #harian .lencana.lain { background: var(--ink-soft); }
+      #harian .form-agenda { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+      #harian .form-agenda .penuh { grid-column: 1 / -1; }
       #lembar .isi, #harian .isi { width: 100%; background: var(--surface); border-radius: 16px 16px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 10px; }
       #lembar textarea { font: inherit; font-size: 16px; min-height: 72px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--bg); color: var(--ink); resize: none; }
       #lembar .baris, #harian .baris { display: flex; gap: 8px; }
@@ -166,7 +180,7 @@
         font: inherit; font-size: 15px; font-weight: 600; box-shadow: 0 6px 18px rgba(0,0,0,0.25); }
       .hp #aktif { touch-action: none; }
       /* Tertanam di Exact Practice: tombol Practice tidak ada gunanya di dalam Practice sendiri. */
-      html.embed #tombol-latihan { display: none; }
+      html.embed #tombol-latihan, html.embed #tombol-info, html.embed #tombol-notif { display: none !important; }
     </style>
   </head>
   <body>
@@ -184,6 +198,7 @@
       <button id="tombol-kanvas" title="Switch between your own canvas and your group's canvas" hidden>👤 Mine</button>
       <button id="tombol-grup" title="Study group">👥 Group</button>
       <button id="tombol-ekspor" title="Export your canvas as a PDF">📄 PDF</button>
+      <button id="tombol-info" title="Your lesson schedule, test scores, agenda and notes">📒 My info</button>
       <button id="tombol-latihan" title="Practice questions from the teacher (Exact Practice)">📝 Practice</button>
       <button id="tombol-tangan">✋ Raise hand</button>
       <button id="tombol-tanya" class="utama">❓ Ask</button>

@@ -6,6 +6,7 @@ mod db;
 mod kelas;
 mod menu;
 mod office;
+mod info;
 mod push;
 mod server;
 mod vault;

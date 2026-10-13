@@ -581,7 +581,11 @@ function gantiSumber(p: PesanLangsung) {
 function terima(p: PesanLangsung) {
   if (p.t === 'data') {
     if (p.kanal === 'canvas') jadwalkanMuatUlang()
-    if (p.kanal === 'kelas') void segarkanSaya()
+    if (p.kanal === 'kelas') {
+      void segarkanSaya()
+      const apa = (p.payload as { apa?: string } | undefined)?.apa
+      if (tabInfo && (apa === 'agenda' || apa === 'catatan' || apa === 'notes')) void bukaInfo(tabInfo)
+    }
     return
   }
   if (p.t === 'bahas') {
@@ -802,6 +806,12 @@ async function mulai() {
     // Masuk pertama hari ini: minta nilai ulangan terbaru & konfirmasi jadwal les.
     window.setTimeout(() => void bukaHarian(true), 1500)
     pasangNotif()
+    el('tombol-info').onclick = () => void bukaInfo('agenda')
+    // Dari notifikasi agenda/catatan: langsung buka tabnya.
+    {
+      const t = params.get('info')
+      if (t === 'agenda' || t === 'catatan') window.setTimeout(() => void bukaInfo(t), 1800)
+    }
     // Ditunggu, bukan dilepas: kanvas sendiri/grup harus sudah terpasang
     // sebelum jatuh ke sketsa terakhir kelas di bawah — kalau tidak, muatan
     // sketsa kelas bisa datang belakangan dan menimpa kanvas anak itu.
@@ -2466,7 +2476,7 @@ async function bukaHarian(otomatis: boolean) {
   } catch {
     return
   }
-  if (otomatis && !info.perlu) return
+  if (otomatis && (!info.perlu || tabInfo)) return
   const kotak = el('harian')
   const isi = el('harian-isi')
   isi.replaceChildren()
@@ -2565,6 +2575,210 @@ async function bukaHarian(otomatis: boolean) {
   simpan.onclick = () => void kirimHarian(true)
   baris.append(lewati, simpan)
   isi.append(baris)
+  kotak.classList.add('tampil')
+}
+
+/* ── My info: jadwal, nilai, agenda, catatan ───────────────────────── */
+
+type TabInfo = 'jadwal' | 'nilai' | 'agenda' | 'catatan'
+interface InfoSaya {
+  jadwal: Record<string, string> | null
+  nilai: { mapel: string | null; ujian: string | null; nilai: string; tanggal: string | null; dibuat: number }[]
+  agenda: { id: string; tanggal: string; jenis: 'ulangan' | 'tugas' | 'lain'; mapel: string | null; teks: string | null; oleh: string; penulis: string | null; grup: string | null }[]
+  catatan: { id: string; oleh: 'guru' | 'murid'; penulis: string | null; teks: string; dibuat: number }[]
+}
+/** Tab yang sedang terbuka; null = lembar My info tertutup. */
+let tabInfo: TabInfo | null = null
+
+function buatEl<K extends keyof HTMLElementTagNameMap>(tag: K, teks = '', attr: Record<string, string> = {}): HTMLElementTagNameMap[K] {
+  const e = document.createElement(tag)
+  if (teks) e.textContent = teks
+  for (const [k, v] of Object.entries(attr)) e.setAttribute(k, v)
+  return e
+}
+
+const LABEL_JENIS: Record<string, string> = { ulangan: 'Test', tugas: 'Homework', lain: 'Other' }
+const NAMA_HARI: Record<string, string> = { Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday', Sun: 'Sunday' }
+
+function tanggalLokal(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`)
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
+}
+
+function hariIniIso(tambahHari = 0): string {
+  const d = new Date()
+  d.setDate(d.getDate() + tambahHari)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** Buka (atau segarkan) lembar My info pada satu tab. */
+async function bukaInfo(tab: TabInfo) {
+  if (!sebagaiMurid || !muridId || tertanam) return
+  let info: InfoSaya
+  try {
+    info = await api<InfoSaya>(`/api/kelas/info?murid=${encodeURIComponent(muridId)}`)
+  } catch (e) {
+    tampilkanStatus(`Could not load your info: ${e instanceof Error ? e.message : e}`, true)
+    return
+  }
+  tabInfo = tab
+  const kotak = el('harian')
+  const isi = el('harian-isi')
+  isi.replaceChildren()
+  const kepala = buatEl('div', '', { class: 'baris', style: 'align-items:center' })
+  kepala.append(buatEl('strong', '📒 My info', { style: 'flex:1' }))
+  const tutup = buatEl('button', 'Close', { type: 'button', style: 'flex:0 0 auto;padding:6px 12px' })
+  tutup.onclick = () => {
+    tabInfo = null
+    kotak.classList.remove('tampil')
+  }
+  kepala.append(tutup)
+  isi.append(kepala)
+
+  const besok = hariIniIso(1)
+  const hariIni = hariIniIso()
+  const akanDatang = info.agenda.filter((a) => a.tanggal >= hariIni).length
+  const tabs = buatEl('div', '', { class: 'tab-info' })
+  for (const [id, label] of [
+    ['jadwal', '📅 Schedule'],
+    ['nilai', '📝 Scores'],
+    ['agenda', `📌 Agenda${akanDatang ? ` · ${akanDatang}` : ''}`],
+    ['catatan', '🗒️ Notes'],
+  ] as [TabInfo, string][]) {
+    const b = buatEl('button', label, { type: 'button' })
+    b.classList.toggle('dipilih', id === tab)
+    b.onclick = () => void bukaInfo(id)
+    tabs.append(b)
+  }
+  isi.append(tabs)
+  const kosong = (teks: string) => isi.append(buatEl('span', teks, { style: 'font-size:13px;color:var(--ink-soft);padding:8px 2px' }))
+
+  if (tab === 'jadwal') {
+    const hari = HARI.filter((h) => info.jadwal && h in info.jadwal)
+    if (!hari.length) kosong('No lesson schedule yet.')
+    for (const h of hari) {
+      const k = buatEl('div', '', { class: 'kartu-info' })
+      const u = buatEl('div', '', { class: 'utama-info' })
+      u.append(buatEl('strong', NAMA_HARI[h] ?? h), buatEl('small', info.jadwal?.[h] ? `at ${info.jadwal[h]}` : 'time not set'))
+      k.append(u)
+      isi.append(k)
+    }
+    const ubah = buatEl('button', '✏️ Change my schedule', { type: 'button' })
+    ubah.onclick = () => {
+      tabInfo = null
+      void bukaHarian(false)
+    }
+    isi.append(ubah)
+  }
+
+  if (tab === 'nilai') {
+    if (!info.nilai.length) kosong('No test scores this semester yet.')
+    for (const n of info.nilai) {
+      const k = buatEl('div', '', { class: 'kartu-info' })
+      const u = buatEl('div', '', { class: 'utama-info' })
+      u.append(buatEl('strong', [n.mapel, n.ujian].filter(Boolean).join(' · ') || 'Test'))
+      u.append(buatEl('small', n.tanggal ? tanggalLokal(n.tanggal) : new Date(n.dibuat).toLocaleDateString()))
+      k.append(u, buatEl('strong', n.nilai, { style: 'font-size:20px' }))
+      isi.append(k)
+    }
+    const tambah = buatEl('button', '+ Report a new score', { type: 'button' })
+    tambah.onclick = () => {
+      tabInfo = null
+      void bukaHarian(false)
+    }
+    isi.append(tambah)
+  }
+
+  if (tab === 'agenda') {
+    // Formulir: tanggal, jenis, mapel, keterangan.
+    const form = buatEl('div', '', { class: 'form-agenda' })
+    const tanggal = buatEl('input', '', { type: 'date', 'aria-label': 'Date' })
+    tanggal.value = besok
+    const jenis = buatEl('select', '', { 'aria-label': 'Type' })
+    for (const [v, l] of [['ulangan', '📝 Test'], ['tugas', '📚 Homework'], ['lain', '📌 Other']]) jenis.append(buatEl('option', l, { value: v }))
+    const daftarMapel = buatEl('datalist', '', { id: 'mapel-agenda' })
+    for (const m of MAPEL_UMUM) daftarMapel.append(buatEl('option', '', { value: m }))
+    const mapel = buatEl('input', '', { placeholder: 'Subject', list: 'mapel-agenda', class: 'penuh' })
+    const teks = buatEl('input', '', { placeholder: 'What is it? (chapter, pages…)', class: 'penuh', maxlength: '300' })
+    const simpan = buatEl('button', '+ Add to agenda', { type: 'button', class: 'utama penuh' })
+    simpan.onclick = async () => {
+      if (!mapel.value.trim() && !teks.value.trim()) {
+        tampilkanStatus('Write the subject or what it is about.', true)
+        return
+      }
+      try {
+        await api('/api/kelas/agenda', { method: 'POST', json: { murid: muridId, tanggal: tanggal.value, jenis: jenis.value, mapel: mapel.value, teks: teks.value } })
+        tampilkanStatus('Added — you will get a reminder the evening before.')
+        void bukaInfo('agenda')
+      } catch (e) {
+        tampilkanStatus(e instanceof Error ? e.message : String(e), true)
+      }
+    }
+    form.append(tanggal, jenis, mapel, teks, simpan)
+    isi.append(daftarMapel, form)
+
+    if (!info.agenda.length) kosong('Nothing on your agenda. Add upcoming tests and homework so you get a reminder.')
+    for (const a of info.agenda) {
+      const k = buatEl('div', '', { class: `kartu-info${a.tanggal < hariIni ? ' lampau' : ''}` })
+      const u = buatEl('div', '', { class: 'utama-info' })
+      const kapan = a.tanggal === hariIni ? 'Today' : a.tanggal === besok ? 'Tomorrow' : tanggalLokal(a.tanggal)
+      u.append(buatEl('span', LABEL_JENIS[a.jenis] ?? 'Other', { class: `lencana ${a.jenis}` }))
+      u.append(buatEl('strong', `${kapan}${a.mapel ? ` · ${a.mapel}` : ''}`))
+      if (a.teks) u.append(buatEl('span', a.teks, { style: 'font-size:14px' }))
+      if (a.oleh === 'guru') u.append(buatEl('small', `from ${a.penulis || 'your teacher'}${a.grup ? ` · group ${a.grup}` : ''}`))
+      k.append(u)
+      if (a.oleh === 'murid') {
+        const hapus = buatEl('button', '✕', { type: 'button', class: 'hapus-info', 'aria-label': 'Delete' })
+        hapus.onclick = async () => {
+          try {
+            await api('/api/kelas/agenda/hapus', { method: 'POST', json: { id: a.id, murid: muridId } })
+            void bukaInfo('agenda')
+          } catch (e) {
+            tampilkanStatus(e instanceof Error ? e.message : String(e), true)
+          }
+        }
+        k.append(hapus)
+      }
+      isi.append(k)
+    }
+  }
+
+  if (tab === 'catatan') {
+    const teks = buatEl('textarea', '', { placeholder: 'Write a note for yourself — your teacher can read it too.', maxlength: '1000' })
+    const simpan = buatEl('button', 'Save note', { type: 'button', class: 'utama' })
+    simpan.onclick = async () => {
+      if (!teks.value.trim()) return
+      try {
+        await api('/api/kelas/catatan', { method: 'POST', json: { murid: muridId, teks: teks.value } })
+        void bukaInfo('catatan')
+      } catch (e) {
+        tampilkanStatus(e instanceof Error ? e.message : String(e), true)
+      }
+    }
+    isi.append(teks, simpan)
+    if (!info.catatan.length) kosong('No notes yet. Notes from your teacher appear here too.')
+    for (const n of info.catatan) {
+      const k = buatEl('div', '', { class: 'kartu-info' })
+      if (n.oleh === 'guru') k.style.borderColor = 'var(--accent)'
+      const u = buatEl('div', '', { class: 'utama-info' })
+      u.append(buatEl('small', `${n.oleh === 'guru' ? `👩‍🏫 ${n.penulis || 'Teacher'}` : '🙂 Me'} · ${new Date(n.dibuat).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`))
+      u.append(buatEl('span', n.teks, { style: 'white-space:pre-wrap;font-size:15px' }))
+      k.append(u)
+      if (n.oleh === 'murid') {
+        const hapus = buatEl('button', '✕', { type: 'button', class: 'hapus-info', 'aria-label': 'Delete' })
+        hapus.onclick = async () => {
+          try {
+            await api('/api/kelas/catatan/hapus', { method: 'POST', json: { id: n.id, murid: muridId } })
+            void bukaInfo('catatan')
+          } catch (e) {
+            tampilkanStatus(e instanceof Error ? e.message : String(e), true)
+          }
+        }
+        k.append(hapus)
+      }
+      isi.append(k)
+    }
+  }
   kotak.classList.add('tampil')
 }
 

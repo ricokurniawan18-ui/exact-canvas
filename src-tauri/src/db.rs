@@ -137,6 +137,34 @@ pub fn migrations() -> Vec<Migration> {
                   CREATE INDEX IF NOT EXISTS idx_push_murid ON push_subscriptions(student_id);
                   CREATE TABLE IF NOT EXISTS push_sent (key TEXT PRIMARY KEY, sent_at INTEGER NOT NULL);",
         },
+        Migration {
+            version: 18,
+            description: "agenda (ulangan/tugas bertanggal, dari murid atau guru) dan catatan murid–guru",
+            kind: MigrationKind::Up,
+            sql: "CREATE TABLE IF NOT EXISTS agenda (
+                    id TEXT PRIMARY KEY,
+                    student_id TEXT,
+                    group_id TEXT,
+                    date TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    subject TEXT,
+                    text TEXT,
+                    created_by TEXT NOT NULL,
+                    author_name TEXT,
+                    created_at INTEGER NOT NULL
+                  );
+                  CREATE INDEX IF NOT EXISTS idx_agenda_tanggal ON agenda(date);
+                  CREATE INDEX IF NOT EXISTS idx_agenda_murid ON agenda(student_id);
+                  CREATE TABLE IF NOT EXISTS notes (
+                    id TEXT PRIMARY KEY,
+                    student_id TEXT NOT NULL,
+                    author TEXT NOT NULL,
+                    author_name TEXT,
+                    text TEXT NOT NULL,
+                    created_at INTEGER NOT NULL
+                  );
+                  CREATE INDEX IF NOT EXISTS idx_notes_murid ON notes(student_id, created_at);",
+        },
     ]
 }
 

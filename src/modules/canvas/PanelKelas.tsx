@@ -7,6 +7,7 @@ import { guruPembantu, peranEditorIni, urlDenganPin } from '@/lib/api'
 import { toast, toastGalat } from '@/lib/toast'
 import { TeksRumus } from '@/components/TeksRumus'
 import { daftarKanvas } from './data'
+import { TabAgenda, TabCatatan } from './PanelAgenda'
 import {
   anggotaGrup,
   bisukanMurid,
@@ -40,7 +41,7 @@ import {
   type UpdateJadwal,
 } from '@/lib/kelas'
 
-type Tab = 'antrian' | 'murid' | 'grup' | 'guru' | 'nilai' | 'jadwal'
+type Tab = 'antrian' | 'murid' | 'grup' | 'guru' | 'nilai' | 'jadwal' | 'agenda' | 'catatan'
 
 /**
  * Panel kelas di rel kanvas: ruangan editor ini, antrian pertanyaan murid,
@@ -131,6 +132,8 @@ export function PanelKelas({
             ['grup', `Groups · ${grup.length}`],
             ['nilai', `Scores${laporanNilai.some((n) => !n.read_at) ? ` · ${laporanNilai.filter((n) => !n.read_at).length}` : ''}`],
             ['jadwal', `Schedule${updateJadwal.some((n) => !n.read_at) ? ` · ${updateJadwal.filter((n) => !n.read_at).length}` : ''}`],
+            ['agenda', 'Agenda'],
+            ['catatan', 'Notes'],
             // Hanya guru utama yang mengangkat/mencabut guru pembantu.
             ...(pembantu ? [] : ([['guru', `Teachers · ${semuaMurid.filter((m) => m.role === 'guru').length}`]] as [Tab, string][])),
           ] as [Tab, string][]
@@ -518,6 +521,9 @@ export function PanelKelas({
               ))}
         </div>
       )}
+
+      {tab === 'agenda' && !pembantu && <TabAgenda murid={semuaMurid} grup={grup} />}
+      {tab === 'catatan' && !pembantu && <TabCatatan murid={semuaMurid} />}
 
       {(tab === 'nilai' || tab === 'jadwal') && (
         <div className="flex flex-col gap-1">

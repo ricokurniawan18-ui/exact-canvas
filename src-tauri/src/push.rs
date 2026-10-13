@@ -285,6 +285,39 @@ const HARI: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const SEBELUM_MENIT: i64 = 60;
 /// Ringkasan untuk guru: sejak jam ini, sekali sehari.
 const JAM_RINGKASAN: u32 = 7;
+/// Pengingat agenda (ulangan/tugas) H-1: sejak jam ini.
+const JAM_AGENDA: u32 = 18;
+
+/// Agenda pada satu tanggal, satu baris per murid penerima (agenda grup
+/// dipecah ke anggotanya): (id agenda, murid, judul, isi, untuk-siapa).
+/// `untuk-siapa` = nama murid, atau nama grup untuk agenda grup.
+fn agenda_pada(c: &rusqlite::Connection, tanggal: &str) -> Vec<(String, String, String, String, String)> {
+    let Ok(mut st) = c.prepare(
+        "SELECT a.id, s.id, s.name, a.kind, a.subject, a.text FROM agenda a
+           JOIN students s ON s.id = a.student_id WHERE a.date = ?1
+         UNION ALL
+         SELECT a.id, s.id, g.name, a.kind, a.subject, a.text FROM agenda a
+           JOIN groups g ON g.id = a.group_id
+           JOIN group_members gm ON gm.group_id = a.group_id
+           JOIN students s ON s.id = gm.student_id WHERE a.date = ?1",
+    ) else {
+        return Vec::new();
+    };
+    st.query_map(rusqlite::params![tanggal], |r| {
+        let (id, murid, untuk, jenis): (String, String, String, String) = (r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?);
+        let (mapel, teks): (Option<String>, Option<String>) = (r.get(4)?, r.get(5)?);
+        let label = match jenis.as_str() {
+            "ulangan" => "Ulangan",
+            "tugas" => "Tugas",
+            _ => "Agenda",
+        };
+        let judul = format!("{label} {}", mapel.unwrap_or_default()).trim().to_string();
+        let isi = teks.filter(|t| !t.trim().is_empty()).unwrap_or_else(|| "Jangan lupa disiapkan ya!".into());
+        Ok((id, murid, judul, isi, untuk))
+    })
+    .map(|it| it.flatten().collect())
+    .unwrap_or_default()
+}
 
 /// "16:00" / "16.00" / "4:30" → menit sejak tengah malam.
 fn menit_dari(teks: &str) -> Option<i64> {
@@ -325,13 +358,43 @@ fn periksa_jadwal() {
         }
     }
 
-    // Ringkasan guru: sekali sehari, sejak 07:00 dan sebelum les pertama selesai dimulai.
-    hari_ini.sort();
-    if let Some((pertama, _)) = hari_ini.first() {
-        if menit_kini >= (JAM_RINGKASAN * 60) as i64 && menit_kini < *pertama && tandai_sekali(&c, &format!("ringkasan|{tanggal}")) {
-            let daftar: Vec<String> = hari_ini.iter().map(|(m, n)| format!("{n} {:02}:{:02}", m / 60, m % 60)).collect();
-            kirim(None, &format!("📚 Les hari ini: {} murid", daftar.len()), &daftar.join(", "), "ringkasan-les", "/admin");
+    // Agenda (ulangan/tugas) BESOK: diingatkan sejak 18:00, sekali per murid.
+    let besok = (kini.date_naive() + chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
+    if menit_kini >= (JAM_AGENDA * 60) as i64 {
+        for (id, murid, judul, isi, _) in agenda_pada(&c, &besok) {
+            if tandai_sekali(&c, &format!("agenda|{id}|{murid}")) {
+                kirim(Some(&murid), &format!("📌 Besok: {judul}"), &isi, &format!("agenda-{id}"), "/tv?murid=1&info=agenda");
+            }
         }
+    }
+
+    // Ringkasan guru: sekali sehari sejak 07:00 (sebelum les pertama dimulai) —
+    // les hari ini dan ulangan/tugas murid yang jatuh hari ini.
+    hari_ini.sort();
+    let agenda_kini: Vec<String> = {
+        let mut terlihat = std::collections::HashSet::new();
+        agenda_pada(&c, &tanggal)
+            .into_iter()
+            .filter(|(id, ..)| terlihat.insert(id.clone()))
+            .map(|(_, _, judul, _, untuk)| format!("{judul} ({untuk})"))
+            .collect()
+    };
+    let sebelum_les = hari_ini.first().map(|(m, _)| menit_kini < *m).unwrap_or(true);
+    if (!hari_ini.is_empty() || !agenda_kini.is_empty())
+        && menit_kini >= (JAM_RINGKASAN * 60) as i64
+        && menit_kini < 20 * 60
+        && sebelum_les
+        && tandai_sekali(&c, &format!("ringkasan|{tanggal}"))
+    {
+        let mut bagian: Vec<String> = Vec::new();
+        if !hari_ini.is_empty() {
+            let les: Vec<String> = hari_ini.iter().map(|(m, n)| format!("{n} {:02}:{:02}", m / 60, m % 60)).collect();
+            bagian.push(format!("Les: {}", les.join(", ")));
+        }
+        if !agenda_kini.is_empty() {
+            bagian.push(format!("Hari ini: {}", agenda_kini.join("; ")));
+        }
+        kirim(None, &format!("📚 Hari ini: {} les, {} agenda", hari_ini.len(), agenda_kini.len()), &bagian.join(" · "), "ringkasan-les", "/admin");
     }
     // Catatan kiriman lebih dari 3 hari dibuang.
     let _ = c.execute("DELETE FROM push_sent WHERE sent_at < ?1", rusqlite::params![chrono::Utc::now().timestamp_millis() - 3 * 86_400_000]);
