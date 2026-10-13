@@ -12439,6 +12439,7 @@ const DIAGRAM_TYPE_ALIASES = {
   aliranenergi: 'aliranenergi', transferenergi: 'aliranenergi', energyflow: 'aliranenergi', sankey: 'aliranenergi',
   jodohkan: 'jodohkan', menjodohkan: 'jodohkan', matching: 'jodohkan', pasangkan: 'jodohkan',
   tabelcentang: 'tabelcentang', tickbox: 'tabelcentang', kotakcentang: 'tabelcentang',
+  inersia: 'inersia', momeninersia: 'inersia', inertia: 'inersia',
   kartu: 'kartu', kartuhuruf: 'kartu', cards: 'kartu',
   toples: 'toples', jar: 'toples', stoples: 'toples',
   grafiksketsa: 'grafiksketsa', sketsagrafik: 'grafiksketsa', grafiktanpaskala: 'grafiksketsa',
@@ -14764,10 +14765,104 @@ function renderTegarSVG(cfg) {
     isi += garis(0, 0, 0, 40);
     tulis(6, 24, 'T3', 'start', 11.5, true);
     kotakBeban(0, 40, String(cfg.beban || 'W'), 32);
+  } else if (jenis === 'ember') {
+    // Batang berengsel di A; ujung B diikat tali tegak ke atas, melewati katrol licin, ujung tali lain menahan ember.
+    // panjang=4 (m, untuk label); beban=m (label ember, boleh ? kg); berat=80 N (berat batang di tengah); ukur=ya
+    const L = angka(cfg.panjang, 4), xB = 240, rP = 14, cx = xB + rP, cy = -96;
+    isi += `<rect x="0" y="-5" width="${xB}" height="10" fill="#ececec" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
+    isi += `<circle cx="4" cy="0" r="4" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    isi += `<path d="M4 4 L-8 24 L16 24 Z" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.4"/>` + arsirLantai(-24, 28, 24, 1);
+    isi += garis(xB, -5, xB, cy, 1.4);
+    isi += `<circle cx="${cx}" cy="${cy}" r="${rP}" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.5"/><circle cx="${cx}" cy="${cy}" r="2" fill="${GAYA.hitam}"/>`;
+    isi += garis(cx, cy, cx, cy - 26, 1.4) + arsirLantai(cx - 26, cx + 26, cy - 26, -1);
+    const xe = cx + rP;
+    isi += garis(xe, cy, xe, -36, 1.4);
+    isi += `<path d="M${xe - 18} -36 L${xe + 18} -36 L${xe + 12} -6 L${xe - 12} -6 Z" fill="#d9d9d9" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+    isi += `<path d="M${xe - 18} -36 Q${xe} -50 ${xe + 18} -36" fill="none" stroke="${GAYA.hitam}" stroke-width="1.1"/>`;
+    tulis(xe, -17, String(cfg.beban || 'm'), 'middle', 11);
+    tulis(-10, 16, 'A', 'end', 12.5, true); tulis(xB - 2, 20, 'B', 'middle', 12.5, true);
+    if (cfg.berat) panahGaya(xB / 2, 5, 0, 1, 40, String(cfg.berat));
+    if (ya(cfg.ukur)) {
+      const yU = 84;
+      isi += garisDimensiDuaPanahSVG(0, yU, xB, yU);
+      tulis(xB / 2, yU - 5, String(cfg.label || L + ' m'), 'middle', 11);
+      isi += garis(0, 6, 0, yU + 4, 0.6, true) + garis(xB, 6, xB, yU + 4, 0.6, true);
+      b.titik(0, yU + 8);
+    }
+    b.titik(-30, cy - 34); b.titik(xe + 30, 30);
   } else {
-    throw new Error('tegar: jenis "' + cfg.jenis + '" tidak dikenal (penyangga, jungkat, engsel, tangga, duatali, simpul)');
+    throw new Error('tegar: jenis "' + cfg.jenis + '" tidak dikenal (penyangga, jungkat, engsel, tangga, duatali, simpul, ember)');
   }
   return bungkusGambarSVG(isi, b, false);
+}
+
+
+// ---------------------------------------------------------------------
+// Momen inersia (SMA): batang dengan poros (ujung / tengah / posisi 0-1), dua partikel pada batang ringan, cakram.
+//   bentuk=batang; panjang=2 m; massa=3 kg; poros=ujung|tengah|0.25
+//   bentuk=partikel; massa=2 kg|3 kg; jarak=1 m|1 m (jarak tiap massa dari poros; 0 = massa tepat di poros)
+//   bentuk=cakram; jari=0.5 m; massa=4 kg      Nilai yang DICARI (I) tidak pernah ditulis.
+// ---------------------------------------------------------------------
+function renderInersiaSVG(cfg) {
+  const bentuk = String(cfg.bentuk || 'batang').toLowerCase();
+  const b = kotakBatas();
+  let isi = '';
+  const T = (x, y, t, anchor, size, miring) => {
+    isi += `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${size || 12}"${miring ? ' font-style="italic"' : ''} text-anchor="${anchor || 'middle'}" fill="${GAYA.hitam}" stroke="${GAYA.putih}" stroke-width="3" paint-order="stroke">${escText(t)}</text>`;
+    b.teks(x, y, t, size || 12, anchor || 'middle');
+  };
+  const garis = (x1, y1, x2, y2, w, putus) => `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${putus ? GAYA.abu : GAYA.hitam}" stroke-width="${w || 1.4}"${putus ? ` stroke-dasharray="${GAYA.putus}"` : ''}/>`;
+  const poros = (x, y0, y1) => { isi += garis(x, y0, x, y1, 1.6, true); T(x, y0 - 6, 'poros', 'middle', 11.5, true); b.titik(x, y0 - 14); b.titik(x, y1); };
+  const angka = (v) => { const n = parseFloat(String(v == null ? '' : v).replace(',', '.')); return isFinite(n) ? n : null; };
+  if (bentuk === 'batang') {
+    const W = 240, h = 16;
+    isi += `<rect x="0" y="0" width="${W}" height="${h}" fill="#ececec" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
+    b.titik(0, 0); b.titik(W, h);
+    const pz = String(cfg.poros || 'ujung').toLowerCase();
+    const f = /tengah|pusat/.test(pz) ? 0.5 : /ujung/.test(pz) ? 0 : Math.max(0, Math.min(1, angka(pz) == null ? 0 : angka(pz)));
+    poros(f * W, -22, h + 34);
+    if (cfg.massa) T(W / 2 + (f === 0.5 ? 40 : 0), -8, 'M = ' + String(cfg.massa), 'middle', 12, false);
+    const yU = h + 28;
+    isi += garisDimensiDuaPanahSVG(0, yU, W, yU);
+    T(f === 0.5 ? W * 0.25 : W / 2, yU - 5, String(cfg.panjang || 'L'), 'middle', 11.5);
+    b.titik(0, yU + 8);
+  } else if (bentuk === 'partikel') {
+    const m = String(cfg.massa || 'm₁|m₂').split('|').map((t) => t.trim());
+    const r = String(cfg.jarak || 'r₁|r₂').split('|').map((t) => t.trim());
+    const rn = r.map(angka);
+    const maks = Math.max(1, ...rn.filter((v) => v != null));
+    const sk = rn.every((v) => v != null) ? 110 / maks : 100;
+    const xA = 150;
+    const pos = [xA - (rn[0] != null ? rn[0] * sk : 100), xA + (rn[1] != null ? rn[1] * sk : 100)];
+    isi += garis(pos[0], 0, pos[1], 0, 2.2);
+    pos.forEach((x, i) => {
+      isi += `<circle cx="${x.toFixed(1)}" cy="0" r="11" fill="#d9d9d9" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
+      T(x, -20, m[i] || '', 'middle', 11.5);
+      b.titik(x - 12, -12); b.titik(x + 12, 12);
+    });
+    poros(xA, -34, 46);
+    const yU = 30;
+    pos.forEach((x, i) => {
+      const num = rn[i];
+      if (num === 0) return;
+      const x1 = Math.min(x, xA), x2 = Math.max(x, xA);
+      isi += garisDimensiDuaPanahSVG(x1, yU, x2, yU);
+      T((x1 + x2) / 2, yU - 5, r[i] || '', 'middle', 11);
+    });
+    b.titik(xA - 140, 40); b.titik(xA + 140, 40);
+  } else if (bentuk === 'cakram' || bentuk === 'silinder') {
+    const R = 56;
+    isi += `<circle cx="0" cy="0" r="${R}" fill="#ececec" stroke="${GAYA.hitam}" stroke-width="1.6"/>`;
+    isi += `<circle cx="0" cy="0" r="3.4" fill="${GAYA.hitam}"/>`;
+    isi += garis(0, 0, R * 0.8, -R * 0.6, 1.2);
+    T(R * 0.45 + 6, -R * 0.4 - 6, String(cfg.jari || 'R'), 'start', 12, true);
+    T(0, R + 18, 'poros melalui pusat, tegak lurus bidang gambar', 'middle', 10.5);
+    if (cfg.massa) T(0, -R - 10, 'M = ' + String(cfg.massa), 'middle', 12);
+    b.titik(-R - 4, -R - 22); b.titik(R + 4, R + 26);
+  } else {
+    throw new Error('inersia: bentuk "' + cfg.bentuk + '" tidak dikenal (batang, partikel, cakram)');
+  }
+  return bungkusGambarSVG(isi, b, true);
 }
 
 // ---------------------------------------------------------------------
@@ -17056,6 +17151,7 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'aliranenergi') svg = renderEnergyFlowSVG(params);
     else if (type === 'jodohkan') svg = renderMatchingSVG(params);
     else if (type === 'tabelcentang') svg = renderTabelCentangSVG(params);
+    else if (type === 'inersia') svg = renderInersiaSVG(params);
     else if (type === 'kartu') svg = renderKartuSVG(params);
     else if (type === 'toples') svg = renderToplesSVG(params);
     else if (type === 'grafiksketsa') svg = renderGrafikSketsaSVG(params);
