@@ -122,6 +122,21 @@ pub fn migrations() -> Vec<Migration> {
             kind: MigrationKind::Up,
             sql: "ALTER TABLE questions ADD COLUMN target_canvas TEXT;",
         },
+        Migration {
+            version: 17,
+            description: "notifikasi web push: langganan per perangkat dan catatan kiriman (anti-dobel)",
+            kind: MigrationKind::Up,
+            sql: "CREATE TABLE IF NOT EXISTS push_subscriptions (
+                    endpoint TEXT PRIMARY KEY,
+                    student_id TEXT,
+                    role TEXT NOT NULL DEFAULT 'murid',
+                    p256dh TEXT NOT NULL,
+                    auth TEXT NOT NULL,
+                    created_at INTEGER NOT NULL
+                  );
+                  CREATE INDEX IF NOT EXISTS idx_push_murid ON push_subscriptions(student_id);
+                  CREATE TABLE IF NOT EXISTS push_sent (key TEXT PRIMARY KEY, sent_at INTEGER NOT NULL);",
+        },
     ]
 }
 

@@ -18,6 +18,8 @@ import { getSetting, setSetting } from '@/lib/db'
 import { pancarkan } from '@/lib/events'
 import { useSinkron } from '@/lib/sinkron'
 import { BAGIAN, UKURAN, useTampilan } from '@/lib/tampilan'
+import { api } from '@/lib/api'
+import { aktifkanPush, matikanPush, pushDidukung, statusIzin, type StatusPush } from '@/lib/push'
 import type { InfoBerbagi } from '@/App'
 
 /**
@@ -103,6 +105,7 @@ export function Pengaturan() {
         </section>
 
         <BagianPerangkat />
+        <BagianNotif />
 
         {inTauri && <BagianBerbagi buka={buka} />}
 
@@ -540,6 +543,55 @@ function Tautan({
 
 
 /** Tampilan perangkat ini: ukuran bilah dan bagian yang boleh tampil. Disimpan di perangkat ini saja. */
+/** Notifikasi di perangkat guru (tablet/HP lewat browser atau PWA): ringkasan les hari ini. */
+function BagianNotif() {
+  const [status, setStatus] = useState<StatusPush>(() => statusIzin())
+  const [sibuk, setSibuk] = useState(false)
+  useEffect(() => {
+    if (statusIzin() === 'aktif') void aktifkanPush(api, 'guru', null, false).catch(() => undefined)
+  }, [])
+  if (inTauri || !pushDidukung()) return null
+  const nyalakan = async () => {
+    setSibuk(true)
+    try {
+      const s = await aktifkanPush(api, 'guru', null, true)
+      setStatus(s)
+      if (s === 'aktif') toast('Notifications on for this device.')
+    } catch (e) {
+      toastGalat(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSibuk(false)
+    }
+  }
+  const matikan = async () => {
+    setSibuk(true)
+    await matikanPush(api).catch((e) => toastGalat(e instanceof Error ? e.message : String(e)))
+    setSibuk(false)
+    toast('Notifications off for this device.')
+  }
+  return (
+    <section className="flex flex-col gap-2">
+      <h3 className="ex-module-title">This device: notifications</h3>
+      <p className="ex-label" style={{ color: 'var(--ink-soft)' }}>
+        A morning summary of today&apos;s lessons (who, what time), even when this tablet is locked. The Mac must be on.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {status === 'aktif' ? (
+          <button className="ex-btn" data-variant="ghost" disabled={sibuk} onClick={() => void matikan()}>
+            🔕 Turn off on this device
+          </button>
+        ) : status === 'ditolak' ? (
+          <span className="ex-label">Blocked — allow notifications for this site in the browser settings.</span>
+        ) : (
+          <button className="ex-btn" data-variant="accent" disabled={sibuk} onClick={() => void nyalakan()}>
+            🔔 Turn on notifications
+          </button>
+        )}
+      </div>
+    </section>
+  )
+}
+
 function BagianPerangkat() {
   const skala = useTampilan((s) => s.skala)
   const sembunyi = useTampilan((s) => s.sembunyi)

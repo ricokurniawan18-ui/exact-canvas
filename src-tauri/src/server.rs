@@ -284,6 +284,8 @@ pub async fn share_start(app: AppHandle, pin: Option<String>) -> Result<InfoBerb
     let router = rute(hub.clone());
     let listener = tokio::net::TcpListener::from_std(listener).map_err(|e| e.to_string())?;
 
+    // Pengingat les (Web Push) diperiksa tiap menit.
+    crate::push::mulai_pengingat();
     // Foto pertanyaan kemarin dibuang saat server menyala dan tiap jam.
     tauri::async_runtime::spawn(async {
         loop {
@@ -382,6 +384,9 @@ fn rute(hub: Arc<Hub>) -> Router {
         .route("/api/kelas/panggil", axum::routing::post(crate::kelas::api_panggil))
         .route("/api/kelas/permintaan/buka", axum::routing::post(crate::kelas::api_buka_permintaan))
         .route("/api/kelas/harian", get(crate::kelas::api_harian).post(crate::kelas::api_isi_harian))
+        .route("/api/push/kunci", get(crate::push::api_kunci))
+        .route("/api/push/daftar", axum::routing::post(crate::push::api_daftar))
+        .route("/api/push/hapus", axum::routing::post(crate::push::api_hapus))
         .route("/api/guru/tiket", axum::routing::post(api_buat_tiket))
         .route("/api/guru/tiket/tukar", axum::routing::post(api_tukar_tiket))
         .route("/api/akun/{id}", axum::routing::delete(crate::akun::api_hapus_akun))
@@ -870,7 +875,7 @@ fn saring_sql_guru(sql: &str, params: &[Value]) -> SaringSql {
     let s = s.trim_start();
     let kata: Vec<&str> = s.split(|c: char| !c.is_ascii_alphanumeric() && c != '_').filter(|k| !k.is_empty()).collect();
     let ada = |k: &str| kata.iter().any(|x| *x == k);
-    if ada("sessions") || ada("pass_hash") || ada("salt") || ada("attach") || ada("pragma") || ada("drop") || ada("alter") {
+    if ada("push_") || ada("sessions") || ada("pass_hash") || ada("salt") || ada("attach") || ada("pragma") || ada("drop") || ada("alter") {
         return SaringSql::Tolak("Not allowed for assistant teachers.");
     }
     let tulis = ["insert", "update", "delete", "replace", "create"].iter().any(|k| s.starts_with(k));

@@ -44,6 +44,7 @@ import {
 } from '@/modules/canvas/instrumen'
 import { AMBANG_DIAM, JEDA_TAHAN, kenaliBentuk } from '@/modules/canvas/bentuk'
 import { newId } from '@/lib/id'
+import { aktifkanPush, statusIzin } from '@/lib/push'
 
 /**
  * HP murid sering di Wi-Fi lemah atau tunnel yang goyah. Tanpa batas waktu,
@@ -800,6 +801,7 @@ async function mulai() {
     pasangLayarPenuh()
     // Masuk pertama hari ini: minta nilai ulangan terbaru & konfirmasi jadwal les.
     window.setTimeout(() => void bukaHarian(true), 1500)
+    pasangNotif()
     // Ditunggu, bukan dilepas: kanvas sendiri/grup harus sudah terpasang
     // sebelum jatuh ke sketsa terakhir kelas di bawah — kalau tidak, muatan
     // sketsa kelas bisa datang belakangan dan menimpa kanvas anak itu.
@@ -2024,6 +2026,33 @@ function terimaBahas(t: { murid: string; nama: string; anggota?: string[]; grup?
   timerKabar = window.setTimeout(() => kabar.classList.remove('tampil'), 6000)
   if (punyaku) void segarkanSaya()
   if (kanvasSaya && kanvasSaya !== idSketsa) void muatSketsa(kanvasSaya)
+}
+
+/* ── Notifikasi (pengingat les, dipanggil, dibahas) ─────────────────── */
+
+/**
+ * Tombol 🔔 muncul selama notifikasi belum diizinkan di HP ini. Yang sudah
+ * mengizinkan didaftarkan ulang diam-diam tiap kali masuk, supaya server
+ * selalu tahu HP ini milik murid yang mana. Di iPhone hanya tersedia setelah
+ * Exact Canvas dipasang ke layar utama.
+ */
+function pasangNotif() {
+  if (tertanam) return
+  const tombol = el('tombol-notif') as HTMLButtonElement
+  const perbarui = () => {
+    tombol.hidden = statusIzin() !== 'belum'
+  }
+  perbarui()
+  if (statusIzin() === 'aktif') void aktifkanPush(api, 'murid', muridId, false).catch(() => undefined)
+  tombol.onclick = () => {
+    void aktifkanPush(api, 'murid', muridId, true)
+      .then((s) => {
+        perbarui()
+        if (s === 'aktif') tampilkanStatus('Reminders on — you will get a notification 1 hour before your lesson.')
+        else if (s === 'ditolak') tampilkanStatus('Notifications are blocked — allow them in the phone settings.', true)
+      })
+      .catch((e) => tampilkanStatus(`Could not turn on reminders: ${e instanceof Error ? e.message : e}`, true))
+  }
 }
 
 /* ── Menjelajah sendiri (HP) ───────────────────────────────────────── */

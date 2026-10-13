@@ -982,6 +982,9 @@ pub async fn api_ubah_tanya(State(hub): State<Arc<Hub>>, headers: HeaderMap, Jso
         Ok(Ok(v)) => {
             if v["status"] == "dibahas" {
                 let _ = hub.tx.send(json!({ "t": "bahas", "tanya": v }).to_string());
+                if let (Some(m), Some(id)) = (v["murid"].as_str(), v["id"].as_str()) {
+                    crate::push::kirim_bahas(m.to_string(), id.to_string());
+                }
             }
             kabari(&hub, "ubah", v.clone());
             Json(v).into_response()
@@ -1467,6 +1470,11 @@ pub async fn api_panggil(State(hub): State<Arc<Hub>>, headers: HeaderMap, Json(p
     match hasil {
         Ok(Ok(v)) => {
             let _ = hub.tx.send(json!({ "t": "panggil", "murid": v["murid"], "guru": v["guru"] }).to_string());
+            // HP terkunci pun tahu: notifikasi push.
+            if let Some(m) = v["murid"].as_str() {
+                let guru = v["guru"].as_str().unwrap_or("the teacher").to_string();
+                crate::push::kirim_latar(Some(m.to_string()), "🙋 Dipanggil ke meja guru".into(), format!("{guru} memanggilmu — datang ke mejanya ya."), "panggil".into(), "/tv?murid=1".into());
+            }
             kabari(&hub, "ubah", v.clone());
             Json(v).into_response()
         }

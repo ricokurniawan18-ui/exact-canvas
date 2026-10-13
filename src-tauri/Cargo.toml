@@ -38,6 +38,10 @@ sha2 = "0.10"
 hmac = "0.12"
 getrandom = "0.2"
 chrono = "0.4"
+# Notifikasi Web Push (pengingat les, dipanggil, dibahas): enkripsi RFC 8291 + VAPID.
+p256 = { version = "0.13", features = ["ecdh", "ecdsa"] }
+aes-gcm = "0.10"
+hkdf = "0.12"
 
 [profile.release]
 codegen-units = 1
