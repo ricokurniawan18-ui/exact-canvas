@@ -588,6 +588,10 @@ fn balas_aset(app: &AppHandle, path: &str) -> Response {
             // aplikasi langsung terlihat di TV tanpa membersihkan cache.
             let cache = if path.ends_with(".html") || path == "/" || path.is_empty() {
                 "no-cache"
+            } else if !path.starts_with("/assets/") {
+                // Manifest PWA, ikon, dan berkas public/ lain tidak berhash:
+                // jangan dibekukan setahun.
+                "public, max-age=3600"
             } else {
                 "public, max-age=31536000, immutable"
             };

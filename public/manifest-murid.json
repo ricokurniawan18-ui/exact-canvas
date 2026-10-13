@@ -1,0 +1,15 @@
+{
+  "id": "/tv?murid=1",
+  "name": "Exact Canvas",
+  "short_name": "Exact Canvas",
+  "description": "Papan kelas Exact Course: ikuti guru, bertanya, dan mencoret di kanvasmu.",
+  "start_url": "/tv?murid=1",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f2f0ea",
+  "theme_color": "#1c2a4a",
+  "icons": [
+    { "src": "/pwa/ikon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/pwa/ikon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
