@@ -12438,6 +12438,10 @@ const DIAGRAM_TYPE_ALIASES = {
   lorentz: 'lorentz', gayalorentz: 'lorentz', tangankanan: 'lorentz', kaidahtangankanan: 'lorentz', sumbu3d: 'lorentz',
   aliranenergi: 'aliranenergi', transferenergi: 'aliranenergi', energyflow: 'aliranenergi', sankey: 'aliranenergi',
   jodohkan: 'jodohkan', menjodohkan: 'jodohkan', matching: 'jodohkan', pasangkan: 'jodohkan',
+  tabelcentang: 'tabelcentang', tickbox: 'tabelcentang', kotakcentang: 'tabelcentang',
+  kartu: 'kartu', kartuhuruf: 'kartu', cards: 'kartu',
+  toples: 'toples', jar: 'toples', stoples: 'toples',
+  grafiksketsa: 'grafiksketsa', sketsagrafik: 'grafiksketsa', grafiktanpaskala: 'grafiksketsa',
   venn: 'venn',
   statistik: 'statistik', stat: 'statistik',
   pohonfaktor: 'pohonfaktor', faktor: 'pohonfaktor',
@@ -16633,6 +16637,129 @@ function renderMatchingSVG(cfg) {
   return bungkusGambarSVG(isi, b, false);
 }
 
+
+// ---------------------------------------------------------------------
+// Soal ala Cambridge Checkpoint: tabel kotak centang, kartu bertanda huruf, toples berisi teks,
+// dan sketsa grafik tanpa skala (grafik yang menyesatkan).
+// ---------------------------------------------------------------------
+
+// tabelcentang: kolom=True,False,Cannot tell; baris=pernyataan 1|pernyataan 2  -> tabel dengan kotak kosong untuk dicentang.
+function renderTabelCentangSVG(cfg) {
+  const kolom = String(cfg.kolom || 'True,False,Cannot tell').split(',').map((t) => t.trim()).filter(Boolean);
+  const baris = String(cfg.baris || '').split('|').map((t) => t.trim()).filter(Boolean);
+  if (!baris.length) throw new Error('tabelcentang perlu baris= (pisah |)');
+  const ukuran = GAYA.teks, wLabel = 240, tinggiBaris = 46, kotak = 22;
+  const wKol = Math.max(74, ...kolom.map((k) => lebarTeksKira(k, ukuran) + 18));
+  const b = kotakBatas();
+  let isi = '';
+  kolom.forEach((k, i) => {
+    const cx = wLabel + i * wKol + wKol / 2;
+    isi += `<text x="${cx.toFixed(1)}" y="14" font-size="${ukuran}" font-weight="700" text-anchor="middle" fill="${GAYA.hitam}">${escText(k)}</text>`;
+    b.teks(cx, 14, k, ukuran, 'middle');
+  });
+  baris.forEach((t, r) => {
+    const yc = 34 + r * tinggiBaris + tinggiBaris / 2;
+    const garis = pecahBarisTeks(texKeTeks(t), 32);
+    garis.forEach((ln, li) => {
+      const y = yc + (li - (garis.length - 1) / 2) * (ukuran + 3) + 4;
+      isi += `<text x="0" y="${y.toFixed(1)}" font-size="${ukuran}" fill="${GAYA.hitam}">${escText(ln)}</text>`;
+      b.teks(0, y, ln, ukuran, 'start');
+    });
+    kolom.forEach((_, i) => {
+      const cx = wLabel + i * wKol + wKol / 2;
+      isi += `<rect x="${(cx - kotak / 2).toFixed(1)}" y="${(yc - kotak / 2).toFixed(1)}" width="${kotak}" height="${kotak}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+      b.titik(cx - kotak / 2, yc - kotak / 2); b.titik(cx + kotak / 2, yc + kotak / 2);
+    });
+  });
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// kartu: isi=A:7 \times 6|B:7^5 \times 7|C:...  (huruf otomatis A, B, C bila tanpa "H:"): deretan kartu bersudut bulat.
+function renderKartuSVG(cfg) {
+  const item = String(cfg.isi || '').split('|').map((t, i) => {
+    const m = t.match(/^\s*([A-Za-z0-9]{1,2})\s*:\s*([\s\S]+)$/);
+    return m ? { h: m[1], t: texKeTeks(m[2].trim()) } : { h: String.fromCharCode(65 + i), t: texKeTeks(t.trim()) };
+  }).filter((x) => x.t);
+  if (!item.length) throw new Error('kartu perlu isi= (pisah |)');
+  const ukuran = GAYA.teks + 1;
+  const w = Math.max(104, ...item.map((x) => lebarTeksKira(x.t, ukuran) + 34)), h = 58, celah = 22;
+  const b = kotakBatas();
+  let isi = '';
+  item.forEach((x, i) => {
+    const x0 = i * (w + celah);
+    isi += `<rect x="${x0.toFixed(1)}" y="0" width="${w.toFixed(1)}" height="${h}" rx="22" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    isi += `<text x="${(x0 + w / 2).toFixed(1)}" y="22" font-size="${ukuran}" font-weight="700" text-anchor="middle" fill="${GAYA.hitam}">${escText(x.h)}</text>`;
+    isi += `<text x="${(x0 + w / 2).toFixed(1)}" y="44" font-size="${ukuran}" text-anchor="middle" fill="${GAYA.hitam}">${escText(x.t)}</text>`;
+    b.titik(x0, 0); b.titik(x0 + w, h);
+  });
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// toples: isi=Oliver's jar@Total number of counters = 42#green : red = 3 : 4|Angelique's jar@Total number of counters = ?#green : red = 5 : 2
+// Toples bertutup dengan judul tebal dan baris teks di dalamnya (angka yang dicari boleh "?").
+function renderToplesSVG(cfg) {
+  const toples = String(cfg.isi || '').split('|').map((t) => {
+    const [judul, sisa] = t.split('@');
+    return { judul: (judul || '').trim(), baris: String(sisa || '').split('#').map((x) => x.trim()).filter(Boolean) };
+  }).filter((x) => x.judul || x.baris.length);
+  if (!toples.length) throw new Error('toples perlu isi= (judul@baris#baris|judul@baris)');
+  const ukuran = GAYA.teks;
+  const lebarTeks = Math.max(...toples.map((x) => Math.max(lebarTeksKira(x.judul, ukuran + 1), ...x.baris.map((r) => lebarTeksKira(r, ukuran)))));
+  const w = Math.max(170, lebarTeks + 34), celah = 34;
+  const tinggiIsi = 40 + 30 * Math.max(...toples.map((x) => x.baris.length)) + 36;
+  const b = kotakBatas();
+  let isi = '';
+  toples.forEach((x, i) => {
+    const x0 = i * (w + celah), yTutup = 0, yBadan = 16;
+    isi += `<rect x="${(x0 + 8).toFixed(1)}" y="${yTutup}" width="${(w - 16).toFixed(1)}" height="9" rx="4" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    isi += `<rect x="${(x0 + 12).toFixed(1)}" y="9" width="${(w - 24).toFixed(1)}" height="7" rx="3" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    isi += `<path d="M${(x0 + 14).toFixed(1)} ${yBadan} Q${x0.toFixed(1)} ${yBadan + 8} ${x0.toFixed(1)} ${yBadan + 34} L${x0.toFixed(1)} ${yBadan + tinggiIsi - 14} Q${x0.toFixed(1)} ${yBadan + tinggiIsi} ${(x0 + 14).toFixed(1)} ${yBadan + tinggiIsi} L${(x0 + w - 14).toFixed(1)} ${yBadan + tinggiIsi} Q${(x0 + w).toFixed(1)} ${yBadan + tinggiIsi} ${(x0 + w).toFixed(1)} ${yBadan + tinggiIsi - 14} L${(x0 + w).toFixed(1)} ${yBadan + 34} Q${(x0 + w).toFixed(1)} ${yBadan + 8} ${(x0 + w - 14).toFixed(1)} ${yBadan}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    isi += `<text x="${(x0 + w / 2).toFixed(1)}" y="${yBadan + 40}" font-size="${ukuran + 1}" font-weight="700" text-anchor="middle" fill="${GAYA.hitam}">${escText(x.judul)}</text>`;
+    x.baris.forEach((r, k) => { isi += `<text x="${(x0 + w / 2).toFixed(1)}" y="${yBadan + 40 + 30 * (k + 1)}" font-size="${ukuran}" text-anchor="middle" fill="${GAYA.hitam}">${escText(r)}</text>`; });
+    b.titik(x0, 0); b.titik(x0 + w, yBadan + tinggiIsi);
+  });
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// grafiksketsa: kurva=eksponen|linear|turun|datar; judul=...; sumbuy=...; sumbux=...; tebal=ya
+// Sketsa grafik TANPA skala dan angka (soal "mengapa grafik ini menyesatkan"): sumbu berpanah, satu kurva, judul, nama sumbu.
+function renderGrafikSketsaSVG(cfg) {
+  const W = 230, H = 150;
+  const jenis = String(cfg.kurva || 'eksponen').toLowerCase();
+  const tebal = !/^(tidak|no|false)$/i.test(String(cfg.tebal || 'ya'));
+  const f = (t) => {
+    if (/linear|lurus/.test(jenis)) return 0.12 + 0.76 * t;
+    if (/turun/.test(jenis)) return 0.9 - 0.75 * t;
+    if (/datar|konstan/.test(jenis)) return 0.45;
+    return 0.1 + 0.88 * (Math.exp(3.6 * t) - 1) / (Math.exp(3.6) - 1);
+  };
+  const b = kotakBatas();
+  let isi = '';
+  isi += arrowSVG(0, H, 0, -12, { headLen: 8, strokeWidth: 1.4 }) + arrowSVG(0, H, W + 12, H, { headLen: 8, strokeWidth: 1.4 });
+  b.titik(-4, -16); b.titik(W + 16, H + 4);
+  const pts = [];
+  for (let i = 0; i <= 60; i++) { const t = i / 60; pts.push(`${(12 + t * (W - 40)).toFixed(1)},${(H - 8 - f(t) * (H - 24)).toFixed(1)}`); }
+  isi += `<polyline points="${pts.join(' ')}" fill="none" stroke="${GAYA.hitam}" stroke-width="${tebal ? 6 : 2}" stroke-linejoin="round"/>`;
+  if (cfg.judul) {
+    const posJ = { x: W / 2, y: -26, anchor: 'middle' };
+    isi += teksGeoSVG(posJ, String(cfg.judul), GAYA.teks + 1, false, false);
+    b.teks(posJ.x, posJ.y, String(cfg.judul), GAYA.teks + 1, 'middle');
+  }
+  if (cfg.sumbuy) {
+    const ln = pecahBarisTeks(String(cfg.sumbuy), 11);
+    ln.forEach((t, i) => {
+      const y = H / 2 - ((ln.length - 1) / 2) * (GAYA.teks + 3) + i * (GAYA.teks + 3);
+      isi += `<text x="-12" y="${y.toFixed(1)}" font-size="${GAYA.teks}" text-anchor="end" fill="${GAYA.hitam}">${escText(t)}</text>`;
+      b.teks(-12, y, t, GAYA.teks, 'end');
+    });
+  }
+  if (cfg.sumbux) {
+    isi += `<text x="${(W / 2).toFixed(1)}" y="${H + 20}" font-size="${GAYA.teks}" text-anchor="middle" fill="${GAYA.hitam}">${escText(String(cfg.sumbux))}</text>`;
+    b.teks(W / 2, H + 20, String(cfg.sumbux), GAYA.teks, 'middle');
+  }
+  return bungkusGambarSVG(isi, b, false);
+}
+
 // ---------------------------------------------------------------------
 // Hitung besaran dari diagram, untuk dicocokkan dengan kunci/pembahasan
 // (validator Worksheet). Mengembalikan { nilai: [{nama, nilai, satuan}],
@@ -16928,6 +17055,10 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'alatoptik') svg = renderAlatOptikSVG(params);
     else if (type === 'aliranenergi') svg = renderEnergyFlowSVG(params);
     else if (type === 'jodohkan') svg = renderMatchingSVG(params);
+    else if (type === 'tabelcentang') svg = renderTabelCentangSVG(params);
+    else if (type === 'kartu') svg = renderKartuSVG(params);
+    else if (type === 'toples') svg = renderToplesSVG(params);
+    else if (type === 'grafiksketsa') svg = renderGrafikSketsaSVG(params);
     else if (type === 'statistik') svg = renderStatSVG(params);
     else if (type === 'pohonfaktor') svg = renderFactorTreeSVG(params);
     else if (type === 'pembagian') svg = renderLongDivisionSVG(params);
