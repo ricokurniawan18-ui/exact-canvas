@@ -14658,12 +14658,16 @@ function renderTegarSVG(cfg) {
     isi += `<rect x="0" y="${-H / 2}" width="${X(L).toFixed(1)}" height="${H}" fill="#ececec" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
     b.titik(0, -H / 2); b.titik(X(L), H / 2);
     const penting = [0, L];
-    const tumpu = String(cfg.tumpuan || (jenis === 'jungkat' ? 'O:' + L / 2 : 'A:0,B:' + L)).split(',').map((t) => t.split(':').map((x) => x.trim())).filter((t) => t.length >= 2);
+    const sat = String(cfg.satuan || 'm');
+    const tumpu = String(cfg.tumpuan === '-' ? '' : (cfg.tumpuan || (jenis === 'jungkat' ? 'O:' + L / 2 : 'A:0,B:' + L))).split(',').map((t) => t.split(':').map((x) => x.trim())).filter((t) => t.length >= 2);
     tumpu.forEach(([nm, pos]) => {
       const x = X(angka(pos, 0)); penting.push(angka(pos, 0));
       isi += `<path d="M${x} ${H / 2} L${x - 11} ${H / 2 + 20} L${x + 11} ${H / 2 + 20} Z" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
       isi += arsirLantai(x - 16, x + 16, H / 2 + 20, 1);
       if (nm) tulis(x, H / 2 + 42, nm, 'middle', 12.5, true);
+    });
+    String(cfg.titik || '').split(',').map((t) => t.split(':').map((x) => x.trim())).filter((t) => t.length >= 2 && t[0]).forEach(([nm, pos]) => {
+      penting.push(angka(pos, 0)); tulis(X(angka(pos, 0)) + 7, H / 2 + 16, nm, 'start', 12.5, true);
     });
     String(cfg.benda || '').split('|').map((t) => t.trim()).filter(Boolean).forEach((t) => {
       const [nm, pos, lab] = t.split(':').map((x) => x.trim());
@@ -14682,11 +14686,11 @@ function renderTegarSVG(cfg) {
     if (cfg.berat) { const x = X(L / 2); penting.push(L / 2); panahGaya(x, H / 2, 0, 1, 40, String(cfg.berat)); }
     if (ya(cfg.ukur)) {
       const titik = [...new Set(penting.map((v) => Math.round(v * 1000) / 1000))].sort((a, c) => a - c);
-      const yU = H / 2 + 96;
+      const yU = H / 2 + 100;
       for (let i = 0; i + 1 < titik.length; i++) {
         const x1 = X(titik[i]), x2 = X(titik[i + 1]); if (x2 - x1 < 8) continue;
         isi += garisDimensiDuaPanahSVG(x1, yU, x2, yU);
-        tulis((x1 + x2) / 2, yU - 5, Math.round((titik[i + 1] - titik[i]) * 100) / 100 + ' m', 'middle', 11);
+        tulis((x1 + x2) / 2, yU - 5, Math.round((titik[i + 1] - titik[i]) * 100) / 100 + ' ' + sat, 'middle', 11);
       }
       titik.forEach((v) => { isi += garis(X(v), H / 2 + 2, X(v), yU + 4, 0.6, true); });
       b.titik(0, yU + 8);
