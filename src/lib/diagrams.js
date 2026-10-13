@@ -2923,6 +2923,9 @@ function renderDiagramMolekulSVG(cfg) {
   let badan = '', xKiri = 0;
   const sub = (f) => f.replace(/(\d+)/g, (d) => d.split('').map((c) => SUBSKRIP[c]).join(''));
   const judul = cfg.judul != null ? String(cfg.judul).split(',').map((s) => s.trim()) : null;
+  // Nama di bawah diagram ditulis di bawah atom terbawah dan huruf unsurnya (NH3 dan CH4 punya atom H di bawah),
+  // satu garis dasar untuk semua molekul.
+  const bawahMaks = Math.max(0, ...rumus.map((f) => { const at = MOLEKUL_PRESET[f.toUpperCase()] || MOLEKUL_PRESET[f]; return at ? Math.max(...at.map((q) => q[2] + (JARI_UNSUR[q[0]] || 18))) : 0; }));
 
   rumus.forEach((f, idx) => {
     const atom = MOLEKUL_PRESET[f.toUpperCase()] || MOLEKUL_PRESET[f];
@@ -2939,15 +2942,22 @@ function renderDiagramMolekulSVG(cfg) {
     if (tampilHuruf) atom.forEach((a) => {
       const r = JARI_UNSUR[a[0]] || 18;
       let dx = a[1] - pusat[0], dy = a[2] - pusat[1], L = Math.hypot(dx, dy);
-      if (L < 4) { dx = 0; dy = 1; L = 1; }
+      if (L < 4) {
+        // atom pusat: molekul mendatar (semua atom sejajar) -> huruf di bawahnya; molekul bercabang (NH3, CH4) ->
+        // di celah diagonal supaya tidak menimpa atom di bawahnya
+        const datar = atom.every((q) => Math.abs(q[2] - a[2]) < 6);
+        if (datar) { dx = 0; dy = 1; } else { dx = -0.707; dy = -0.707; }
+        L = 1;
+      }
       const pos = letakTeksLuar(ox + a[1], oy + a[2], dx / L, dy / L, r + 8, 11);
       badan += teksGeoSVG(pos, a[0], 11, true, true);
       b.teks(pos.x, pos.y, a[0], 11, pos.anchor);
     });
     const nama = judul ? judul[idx] : null;
     if (nama) {
-      badan += `<text x="${(xKiri + lebar / 2).toFixed(1)}" y="${(oy + 52).toFixed(1)}" text-anchor="middle" font-size="${GAYA.teks}" font-weight="700" fill="${GAYA.hitam}">${escText(sub(nama))}</text>`;
-      b.teks(xKiri + lebar / 2, oy + 52, sub(nama), GAYA.teks, 'middle');
+      const yNama = Math.max(oy + 52, oy + bawahMaks + (tampilHuruf ? 30 : 18));
+      badan += `<text x="${(xKiri + lebar / 2).toFixed(1)}" y="${yNama.toFixed(1)}" text-anchor="middle" font-size="${GAYA.teks}" font-weight="700" fill="${GAYA.hitam}">${escText(sub(nama))}</text>`;
+      b.teks(xKiri + lebar / 2, yNama, sub(nama), GAYA.teks, 'middle');
     }
     xKiri += lebar;
   });
