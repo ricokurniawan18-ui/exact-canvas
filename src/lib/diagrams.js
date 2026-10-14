@@ -1808,7 +1808,7 @@ function renderSectorSVG(cfg) {
   const sudutGambar = Math.min(300, Math.max(20, sb ? (sb.rad * 180) / Math.PI : numOrDefault(cfg.sudut, 90)));
   let labelSudut = sb ? sb.teks : String(cfg.sudut ?? sudutGambar).trim();
   if (/^\d+([.,]\d+)?$/.test(labelSudut)) labelSudut += '°';
-  let labelBusur = cfg.busur != null ? String(cfg.busur).trim() : '';
+  let labelBusur = cfg.busur != null ? texKeTeks(String(cfg.busur).trim()) : '';
   // Busur yang bisa dihitung dari jari-jari dan sudut (ketiganya angka) berarti jawaban soal "panjang busur":
   // label itu dibuang supaya gambar tidak membocorkan jawaban.
   if (labelBusur && busurRedundan(cfg.jari, sb ? sb.rad : (numOrDefault(cfg.sudut, NaN) * Math.PI) / 180, labelBusur)) labelBusur = '';
@@ -3869,6 +3869,16 @@ function rapikanTitikSisi(pts, garisRaw) {
 }
 
 function renderSketsaSVG(cfg) {
+  // Pusat busur boleh berupa koordinat: B^(14:5)C -> titik bantu otomatis (tanpa harus menulis titik pusatnya).
+  const RE_PUSAT_KOORD = /\(\s*(-?\d+(?:\.\d+)?)\s*:\s*(-?\d+(?:\.\d+)?)\s*\)/g;
+  if (['lengkung', 'lengkungputus', 'rel', 'daerah'].some((k) => new RegExp(RE_PUSAT_KOORD.source).test(String(cfg[k] || '')))) {
+    cfg = Object.assign({}, cfg);
+    let n = 0; const tambah = [];
+    ['lengkung', 'lengkungputus', 'rel', 'daerah'].forEach((k) => {
+      if (cfg[k] != null) cfg[k] = String(cfg[k]).replace(RE_PUSAT_KOORD, (_, x, y) => { const nm = '.pk' + (n++); tambah.push(nm + ':' + x + ':' + y); return '(' + nm + ')'; });
+    });
+    cfg.titik = [cfg.titik, ...tambah].filter(Boolean).join(',');
+  }
   if (/siku-?tinggi/i.test(String(cfg.bentuk || ''))) cfg = Object.assign({}, cfg, sketsaSikuTinggi(cfg));
   else if (/^segitiga-?sejajar$/i.test(String(cfg.bentuk || ''))) cfg = gabungSketsa(cfg, sketsaSegitigaSejajar(cfg));
   else if (/^silang$/i.test(String(cfg.bentuk || ''))) cfg = gabungSketsa(cfg, sketsaSilang(cfg));
@@ -11858,7 +11868,8 @@ function sudutBagian(raw, satuan, defRad) {
   }
   const n = parseFloat(t.replace(',', '.'));
   if (isFinite(n) && /^-?\d+([.,]\d+)?$/.test(t)) {
-    return /^der/i.test(String(satuan || '')) ? { rad: (n * PI_FIS) / 180, teks: `${t}°` } : { rad: n, teks: `${t} rad` };
+    // Angka polos di atas 2π (≈6,3) tak mungkin radian: dibaca derajat, kecuali satuan=rad ditulis eksplisit.
+    return /^der/i.test(String(satuan || '')) || (!/^rad/i.test(String(satuan || '')) && n > 6.4) ? { rad: (n * PI_FIS) / 180, teks: `${t}°` } : { rad: n, teks: `${t} rad` };
   }
   return { rad: defRad, teks: t };
 }
