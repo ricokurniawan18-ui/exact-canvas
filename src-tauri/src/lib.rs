@@ -14,6 +14,32 @@ mod windows;
 
 use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 
+/// Buka tautan di aplikasi PWA Exact Practice (Chrome) bila terpasang di Mac ini.
+/// Mengembalikan false bila PWA tidak ada atau gagal dibuka, supaya pemanggil memakai peramban.
+#[tauri::command]
+fn buka_di_pwa(url: String) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        let Some(home) = std::env::var_os("HOME") else { return false };
+        let app = std::path::Path::new(&home).join("Applications/Chrome Apps.localized/Exact Practice.app");
+        if !app.is_dir() {
+            return false;
+        }
+        return std::process::Command::new("open")
+            .arg("-a")
+            .arg(&app)
+            .arg(&url)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = url;
+        false
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Kalau vault ada di iCloud, turunkan dulu isinya: database yang isinya
@@ -50,6 +76,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            buka_di_pwa,
             vault::vault_info,
             vault::vault_set_root,
             vault::app_restart,

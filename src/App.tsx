@@ -58,8 +58,13 @@ async function bukaRuangGuru() {
     /* tanpa tiket: halaman masuk Practice */
   }
   if (inTauri) {
-    const { openUrl } = await import('@tauri-apps/plugin-opener')
-    await openUrl(url).catch(() => {})
+    const { invoke } = await import('@tauri-apps/api/core')
+    // Utamakan aplikasi Exact Practice yang terpasang di Mac ini; tanpa itu, peramban.
+    const diPwa = await invoke<boolean>('buka_di_pwa', { url }).catch(() => false)
+    if (!diPwa) {
+      const { openUrl } = await import('@tauri-apps/plugin-opener')
+      await openUrl(url).catch(() => {})
+    }
   } else if (tab) {
     tab.location.href = url
   } else {
