@@ -2005,7 +2005,7 @@ function renderPictogramSVG(cfg) {
       svg += `<g clip-path="url(#${clipId})">${drawer(x + iconSize / 2, y, iconSize)}</g>`;
       x += iconSize + iconGap;
     }
-    if (!skalaDicari) svg += `<text x="${(x + 4).toFixed(1)}" y="${(y + 4).toFixed(1)}" font-size="10" fill="#333333">(${v})</text>`;
+    if (!skalaDicari && !/^(tidak|no|false|0)$/i.test(String(cfg.angka || '').trim())) svg += `<text x="${(x + 4).toFixed(1)}" y="${(y + 4).toFixed(1)}" font-size="10" fill="#333333">(${v})</text>`;
   });
 
   const legendY = pad + labels.length * rowH + 16;
