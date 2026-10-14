@@ -1093,7 +1093,8 @@ const GEOMETRY_PRESETS = {
       if (geser < 0) bantu.push({ from: 'A', to: 'H', label: '' });
       else if (geser > alas) bantu.push({ from: 'B', to: 'H', label: '' });
       const arah = geser < alas / 2 ? 'B' : 'A';
-      bantu.push({ from: 'C', to: 'H', arah, label: `${tinggi}` });
+      const sisi = p.sisi != null ? String(p.sisi).trim() : '';
+      bantu.push({ from: 'C', to: 'H', arah, label: /tinggi/.test(String(p.sembunyi || '')) ? '' : `${tinggi}` });
       return {
         points: [
           { name: 'A', x: 0, y: 0 }, { name: 'B', x: alas, y: 0 }, { name: 'C', x: geser, y: tinggi },
@@ -1102,8 +1103,8 @@ const GEOMETRY_PRESETS = {
         polygons: [['A', 'B', 'C']],
         segments: [
           { from: 'A', to: 'B', label: `${alas}` },
-          { from: 'B', to: 'C', label: '' },
-          { from: 'C', to: 'A', label: '' },
+          { from: 'B', to: 'C', label: sisi },
+          { from: 'C', to: 'A', label: sisi },
         ],
         bantu,
       };
@@ -1124,12 +1125,15 @@ const GEOMETRY_PRESETS = {
   'persegi-panjang': {
     build: (p) => {
       const pj = numOrDefault(p.panjang, 8), lb = numOrDefault(p.lebar, 5);
+      // sembunyi=lebar: lebar tetap menentukan bentuk gambar tapi angkanya tidak ditulis (soal mencarinya).
+      const tl = /lebar/.test(String(p.sembunyi || '')) ? '' : `${lb}`;
       return {
         points: [{ name: 'A', x: 0, y: 0 }, { name: 'B', x: pj, y: 0 }, { name: 'C', x: pj, y: lb }, { name: 'D', x: 0, y: lb }],
         segments: [
-          { from: 'A', to: 'B', label: `${pj}` }, { from: 'B', to: 'C', label: `${lb}` },
-          { from: 'C', to: 'D', label: `${pj}` }, { from: 'D', to: 'A', label: `${lb}` },
+          { from: 'A', to: 'B', label: `${pj}` }, { from: 'B', to: 'C', label: tl },
+          { from: 'C', to: 'D', label: `${pj}` }, { from: 'D', to: 'A', label: tl },
         ],
+        bantu: p.diagonal != null && String(p.diagonal).trim() !== '' ? [{ from: 'A', to: 'C', label: String(p.diagonal).trim() }] : [],
       };
     },
   },
@@ -1169,6 +1173,27 @@ const GEOMETRY_PRESETS = {
   // di satu titik) — tidak perlu garis bantu terpisah untuk tingginya,
   // karena di sini tinggi memang salah satu sisi asli (kiri), bukan garis
   // bantu dari tengah seperti versi simetris.
+  // Layang-layang datar: diagonal tegak dibagi pusat jadi atas/bawah, diagonal mendatar setengah=a di tiap sisi pusat.
+  'layang-layang': {
+    build: (p) => {
+      const atas = numOrDefault(p.atas, 6), bawah = numOrDefault(p.bawah, 12), h = numOrDefault(p.setengah, 8);
+      return {
+        points: [
+          { name: 'A', x: h, y: atas + bawah }, { name: 'B', x: 0, y: bawah }, { name: 'C', x: h, y: 0 }, { name: 'D', x: 2 * h, y: bawah },
+          { name: 'O', x: h, y: bawah, hidden: true },
+        ],
+        polygons: [['A', 'B', 'C', 'D']],
+        segments: [
+          { from: 'A', to: 'B', label: '' }, { from: 'B', to: 'C', label: '' },
+          { from: 'C', to: 'D', label: '' }, { from: 'D', to: 'A', label: '' },
+        ],
+        bantu: [
+          { from: 'A', to: 'O', arah: 'D', label: `${atas}` }, { from: 'C', to: 'O', label: `${bawah}` },
+          { from: 'B', to: 'O', label: `${h}` }, { from: 'D', to: 'O', label: `${h}` },
+        ],
+      };
+    },
+  },
   'trapesium-siku': {
     build: (p) => {
       const atas = numOrDefault(p.atas, 4), bawah = numOrDefault(p.bawah, 8), tinggi = numOrDefault(p.tinggi, 5);
@@ -1240,6 +1265,27 @@ const GEOMETRY_PRESETS = {
           { from: 'C', to: 'D', label: labelAkar(p.kaki2, kaki2) }, { from: 'D', to: 'A', label: dicari },
         ],
         bantu: [{ from: 'A', to: 'C', label: '' }],
+      };
+    },
+  },
+  // Segitiga siku-siku GANDA: segitiga ABC siku-siku di B (kaki1a=AB, kaki1b=BC); sisi miringnya AC menjadi
+  // kaki segitiga kedua ACD yang siku-siku di A (kaki2=AD). Sisi miring terluar CD = dicari. AC putus-putus, tanpa angka.
+  'siku-ganda': {
+    build: (p) => {
+      const a = numOrDefault(p.kaki1a, 4), b = numOrDefault(p.kaki1b, 3), d = numOrDefault(p.kaki2, 12);
+      const dicari = String(p.dicari || 'y').trim();
+      const L = Math.hypot(a, b) || 1;
+      return {
+        points: [
+          { name: 'B', x: 0, y: 0 }, { name: 'C', x: b, y: 0 },
+          { name: 'D', x: (d * a) / L, y: a + (d * b) / L }, { name: 'A', x: 0, y: a },
+        ],
+        polygons: [['B', 'C', 'D', 'A']],
+        segments: [
+          { from: 'B', to: 'C', label: `${b}` }, { from: 'C', to: 'D', label: dicari },
+          { from: 'D', to: 'A', label: `${d}` }, { from: 'A', to: 'B', label: `${a}` },
+        ],
+        bantu: [{ from: 'C', to: 'A', arah: 'D', label: '' }],
       };
     },
   },
