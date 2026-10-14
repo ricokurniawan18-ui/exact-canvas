@@ -37,6 +37,12 @@ interface StoreApp {
   mintaSketsaBaru: () => void
   mintaCetak: () => void
   setPengaturan: (buka: boolean) => void
+  /** Panel Class dipegang kanvas, tombolnya ada di pojok kanan atas (sebelah Practice): penghitung permintaan buka/tutup,
+   *  serta keadaan panel dan jumlah pertanyaan menunggu untuk lencana tombol. */
+  kelasToggle: number
+  kelasAktif: boolean
+  kelasMenunggu: number
+  toggleKelas: () => void
 }
 
 export const useApp = create<StoreApp>((set) => ({
@@ -50,4 +56,8 @@ export const useApp = create<StoreApp>((set) => ({
   mintaSketsaBaru: () => set((s) => ({ sketsaBaru: s.sketsaBaru + 1 })),
   mintaCetak: () => set((s) => ({ cetakSketsa: s.cetakSketsa + 1 })),
   setPengaturan: (buka) => set({ pengaturanTerbuka: buka }),
+  kelasToggle: 0,
+  kelasAktif: false,
+  kelasMenunggu: 0,
+  toggleKelas: () => set((s) => ({ kelasToggle: s.kelasToggle + 1 })),
 }))

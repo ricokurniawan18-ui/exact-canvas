@@ -80,6 +80,8 @@ export default function App() {
 
   useEffect(() => pasangTema(), [])
   const sembunyiPerangkat = useTampilan((x) => x.sembunyi)
+  const kelasAktif = useApp((x) => x.kelasAktif)
+  const kelasMenunggu = useApp((x) => x.kelasMenunggu)
   useEffect(() => useTampilan.getState().setel(), [])
 
   // Pastikan database (atau server, di browser) bisa dijangkau sebelum kanvas
@@ -154,6 +156,28 @@ export default function App() {
       <div className="ex-texture relative h-full w-full">
         <KanvasLayar />
         <div className="absolute right-3 top-3 z-10 flex gap-2">
+          {!sembunyiPerangkat.kelas && (
+            <button
+              className="ex-card ex-btn relative"
+              data-variant={kelasAktif ? 'accent' : 'ghost'}
+              style={{ padding: '6px 10px', fontSize: 'var(--fs-label)' }}
+              title="Class: queue, students, groups"
+              onClick={() => useApp.getState().toggleKelas()}
+            >
+              👥 Class
+              {kelasMenunggu > 0 && (
+                <span
+                  className="ex-num"
+                  style={{
+                    marginLeft: 6, minWidth: 16, height: 16, padding: '0 4px', borderRadius: 999,
+                    background: 'var(--down)', color: '#fff', fontSize: 10, lineHeight: '16px', textAlign: 'center', display: 'inline-block',
+                  }}
+                >
+                  {kelasMenunggu}
+                </span>
+              )}
+            </button>
+          )}
           {!sembunyiPerangkat.practice && (
             <button
               className="ex-card ex-btn"

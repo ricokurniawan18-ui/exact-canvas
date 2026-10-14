@@ -287,6 +287,15 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
   /** Antrian pertanyaan murid — untuk lencana di rel dan bunyi saat ada yang baru. */
   const { data: antrianKelas } = useData('kelas', daftarTanya, [])
   const jumlahMenunggu = antrianKelas.filter((t) => t.status === 'menunggu').length
+  /* Tombol Class ada di pojok kanan atas (App.tsx, sebelah Practice): ia menaikkan penghitung, panelnya tetap dipegang di sini. */
+  const kelasToggle = useApp((x) => x.kelasToggle)
+  const kelasToggleLama = useRef(kelasToggle)
+  useEffect(() => {
+    if (kelasToggle === kelasToggleLama.current) return
+    kelasToggleLama.current = kelasToggle
+    setMenuTampil(true)
+    setPanelAlat((lama) => (lama === 'kelas' ? null : 'kelas'))
+  }, [kelasToggle])
   useEffect(
     () =>
       dengarkan('kelas', (payload) => {
@@ -799,6 +808,9 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
   const mintaCetak = useApp((s) => s.cetakSketsa)
   const cetakTerlayani = useRef(mintaCetak)
   const [menuTampil, setMenuTampil] = useState(true)
+  useEffect(() => {
+    useApp.setState({ kelasAktif: panelAlat === 'kelas' && menuTampil, kelasMenunggu: jumlahMenunggu })
+  }, [panelAlat, menuTampil, jumlahMenunggu])
   /** Daftar halaman di pojok kanan bawah bisa dilipat sendiri, terpisah dari rel alat. */
   const [daftarTampil, setDaftarTampil] = useState(true)
   const [sibuk, setSibuk] = useState<string | null>(null)
@@ -4112,38 +4124,6 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
           onClick={() => bukaPanel('sisip')}
         />
         )}
-        {ada('kelas') && (
-        <div className="relative">
-          <IconButton
-            nama="grup"
-            label="Class: queue, students, groups"
-            aktif={panelAlat === 'kelas'}
-            onClick={() => bukaPanel('kelas')}
-          />
-          {jumlahMenunggu > 0 && (
-            <span
-              className="ex-num absolute"
-              style={{
-                top: 0,
-                right: 0,
-                minWidth: 16,
-                height: 16,
-                padding: '0 4px',
-                borderRadius: 999,
-                background: 'var(--down)',
-                color: '#fff',
-                fontSize: 10,
-                lineHeight: '16px',
-                textAlign: 'center',
-                pointerEvents: 'none',
-              }}
-            >
-              {jumlahMenunggu}
-            </span>
-          )}
-        </div>
-        )}
-
         <div className="ex-divider ex-pemisah" style={{ margin: '2px 0' }} />
 
         {ada('undo') && <IconButton nama="urungkan" label="Undo (⌘Z)" onClick={urungkan} />}
