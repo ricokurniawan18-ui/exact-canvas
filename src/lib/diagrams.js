@@ -7440,7 +7440,9 @@ function renderTransformSVG(cfg) {
   const points = orig.length ? orig : [{ name: 'A', x: 1, y: 1 }, { name: 'B', x: 4, y: 1 }, { name: 'C', x: 1, y: 5 }];
   // bayangan=tidak: hanya bangun asal — soal "gambarkan bayangannya" (siswa
   // yang menggambar), jadi bayangan, cermin, dan pusat tidak boleh tampak.
-  const tanpaBayangan = /^(tidak|no|false|0)$/i.test(String(cfg.bayangan || '').trim());
+  // Satu titik saja (soal "tentukan koordinat bayangan titik P") tanpa bayangan=ya: jawabannya tidak ikut tergambar.
+  const tanpaBayangan = /^(tidak|no|false|0)$/i.test(String(cfg.bayangan || '').trim())
+    || (points.length === 1 && !/^(ya|iya|true|1)$/i.test(String(cfg.bayangan || '').trim()));
   const image = tanpaBayangan ? [] : applyGeoTransform(points, cfg);
   const jenis = tanpaBayangan ? '' : String(cfg.jenis || 'translasi').toLowerCase();
   const pusat = String(cfg.pusat || '0,0').split(',').map(Number);
@@ -16076,7 +16078,8 @@ function renderLuasArsirSVG(cfg) {
 function formatSudutGS(t) {
   t = texKeTeks(String(t).trim());
   if (t === '' || t === '?') return t;
-  // Berakhir angka atau kurung tutup -> diberi °; huruf saja (x, p) apa adanya.
+  // Nama sudut (A1, B3, ∠A1) ditulis apa adanya; berakhir angka atau kurung tutup -> diberi °; huruf saja (x, p) apa adanya.
+  if (/^∠?[A-Z]\d?$/.test(t)) return t;
   return /[\d)]$/.test(t) ? t + '°' : t;
 }
 
