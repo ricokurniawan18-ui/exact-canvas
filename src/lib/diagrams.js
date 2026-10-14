@@ -1973,7 +1973,9 @@ let pictogramClipCounter = 0;
 
 function renderPictogramSVG(cfg) {
   const drawer = ICON_DRAWERS[cfg.simbol] || ICON_DRAWERS.bintang;
-  const skala = numOrDefault(cfg.skala, 1) || 1;
+  // skala=? (atau huruf): nilai simbol DICARI siswa — kunci ditulis garis kosong dan jumlah simbol per baris tidak dituliskan.
+  const skalaDicari = /\S/.test(String(cfg.skala == null ? '' : cfg.skala)) && !isFinite(parseFloat(String(cfg.skala).replace(',', '.')));
+  const skala = skalaDicari ? 1 : (numOrDefault(cfg.skala, 1) || 1);
   const labels = String(cfg.label || '').split(',').map((s) => s.trim()).filter(Boolean);
   const data = String(cfg.data || '').split(',').map((s) => parseFloat(s.trim()) || 0);
   const satuan = cfg.satuan || '';
@@ -2003,12 +2005,12 @@ function renderPictogramSVG(cfg) {
       svg += `<g clip-path="url(#${clipId})">${drawer(x + iconSize / 2, y, iconSize)}</g>`;
       x += iconSize + iconGap;
     }
-    svg += `<text x="${(x + 4).toFixed(1)}" y="${(y + 4).toFixed(1)}" font-size="10" fill="#333333">(${v})</text>`;
+    if (!skalaDicari) svg += `<text x="${(x + 4).toFixed(1)}" y="${(y + 4).toFixed(1)}" font-size="10" fill="#333333">(${v})</text>`;
   });
 
   const legendY = pad + labels.length * rowH + 16;
   svg += drawer(pad + 8, legendY, 15);
-  svg += `<text x="${pad + 22}" y="${(legendY + 4).toFixed(1)}" font-size="9.5" fill="#000000">= ${skala}${satuan ? ' ' + escText(satuan) : ''}</text>`;
+  svg += `<text x="${pad + 22}" y="${(legendY + 4).toFixed(1)}" font-size="9.5" fill="#000000">= ${skalaDicari ? '........................' : skala}${satuan ? ' ' + escText(satuan) : ''}</text>`;
 
   svg += '</svg>';
   return svg;
