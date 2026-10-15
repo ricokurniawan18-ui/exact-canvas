@@ -4128,8 +4128,14 @@ function renderSketsaSVG(cfg) {
     while (d <= -Math.PI) d += 2 * Math.PI;
     while (d > Math.PI) d -= 2 * Math.PI;
     const r = Math.abs(d) < 0.8 ? 24 : 17;
-    isi += angleArcSVG(vx, vy, vx + Math.cos(a1) * 40, vy + Math.sin(a1) * 40, vx + Math.cos(a1 + d) * 40, vy + Math.sin(a1 + d) * 40, r, '');
-    if (e.teks) {
+    // Tanda sudut sama (bukti kongruen): := satu busur, :== dua busur, :* atau :. busur dengan titik; tanpa nilai.
+    const tanda = /^(={1,3}|[*.•])$/.test(String(e.teks || '').trim()) ? String(e.teks).trim() : '';
+    const busurKe = (rr) => angleArcSVG(vx, vy, vx + Math.cos(a1) * 40, vy + Math.sin(a1) * 40, vx + Math.cos(a1 + d) * 40, vy + Math.sin(a1 + d) * 40, rr, '');
+    isi += busurKe(r);
+    if (tanda) {
+      if (/^=+$/.test(tanda)) for (let k = 1; k < tanda.length; k++) isi += busurKe(r + 4 * k);
+      else { const mid0 = a1 + d / 2, rd = r * 0.55; isi += `<circle cx="${(vx + rd * Math.cos(mid0)).toFixed(1)}" cy="${(vy + rd * Math.sin(mid0)).toFixed(1)}" r="1.8" fill="${GAYA.hitam}"/>`; }
+    } else if (e.teks) {
       const t = teksSudutSketsa(e.teks), w = lebarTeksKira(t, 11);
       const mid = a1 + d / 2;
       const cands = [0, 8, 16].map((extra) => {
