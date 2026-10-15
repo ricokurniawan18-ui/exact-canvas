@@ -14957,12 +14957,12 @@ function heliksKumparan(xA, xB, yMid, R, n, miring, kanan) {
 }
 
 function renderInduksiSVG(cfg) {
-  const n = Math.max(3, Math.min(12, parseInt(cfg.lilitan, 10) || 7));
+  const n = Math.max(3, Math.min(20, parseInt(cfg.lilitan, 10) || 12));
   const kanan = !/^kiri/i.test(String(cfg.sisi || ''));
   const gerak = String(cfg.gerak || 'diam').toLowerCase();
   const masuk = /^(masuk|dalam|tengah)/i.test(String(cfg.posisi || ''));   // magnet sebagian berada DI DALAM kumparan
   const label = !/^(tidak|no|false|0)$/i.test(String(cfg.label || '').trim());
-  const warna = !/^(tidak|no|false|0)$/i.test(String(cfg.warna || '').trim());
+  const warna = /^(ya|iya|true|1)$/i.test(String(cfg.warna || '').trim());
   const biru = warna ? '#2f3fd0' : GAYA.hitam, merah = warna ? '#d63a2b' : GAYA.hitam;
   const kutub = String(cfg.kutub || 'S-N').split(/[-,|]/).map((t) => t.trim());
   const b = kotakBatas();
@@ -14971,14 +14971,17 @@ function renderInduksiSVG(cfg) {
     isi += `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${size || 12}"${miring ? ' font-style="italic"' : ''} text-anchor="${anchor || 'middle'}" fill="${GAYA.hitam}">${escText(t)}</text>`;
     b.teks(x, y, t, size || 12, anchor || 'middle');
   };
-  const x0 = 46, sp = Math.min(18, 130 / n), x1 = x0 + 22 + (n - 1) * sp + 30;
-  const yTop = 34, yBot = 104, yMid = (yTop + yBot) / 2, tegak = (yBot - yTop) / 2;
-  const rx = 6, ry = tegak + 12;
-  const hk = heliksKumparan(x0 + 16, x1 - 8, yMid, ry, n, Math.min(9, sp * 0.45), true);
-  const untai = (d, depan) => `<path d="${d}" fill="none" stroke="${biru}" stroke-width="${depan ? 1.9 : 1.2}" stroke-linecap="round" stroke-linejoin="round"${depan ? '' : ' opacity="0.55"'}/>`;
+  // Kumparan gaya buku (sama dengan solenoidabaterai): heliks hitam rapat, inti lebih kecil DI DALAM kumparan.
+  const sp = Math.min(11, 150 / n), x0 = 46, x1 = x0 + 12 + n * sp;
+  const ry = 30, yTop = 40, yBot = 100, yMid = (yTop + yBot) / 2, tegak = ry * 0.58;
+  const hk = heliksKumparan(x0 + 6, x1 - 6, yMid, ry, n, Math.min(7, sp * 0.45), true);
+  const warnaKumparan = warna ? biru : GAYA.hitam;
+  const untai = (d, depan) => depan
+    ? `<path d="${d}" fill="none" stroke="${warnaKumparan}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`
+    : `<path d="${d}" fill="none" stroke="${warna ? biru : '#555555'}" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"${warna ? ' opacity="0.55"' : ''}/>`;
   const lilit = [hk.awal[0], hk.akhir[0]];
   // magnet batang (3D sederhana)
-  const mW = 84, mH = 26, dep = 8;
+  const mW = 84, mH = 24, dep = 7;
   const mx = masuk ? (kanan ? x1 - 44 : x0 - mW + 44) : (kanan ? x1 + 70 : x0 - 36 - mW - 24), my = yMid - mH / 2;
   const magnet = () => {
     let g = `<path d="M${mx} ${my} L${mx + dep} ${my - dep} L${mx + mW + dep} ${my - dep} L${mx + mW} ${my} Z" fill="#e6e6e6" stroke="${GAYA.abu}" stroke-width="1.2"/>`;
@@ -14992,19 +14995,23 @@ function renderInduksiSVG(cfg) {
     return g;
   };
   // 1) separuh belakang lilitan  2) inti silinder (atau tabung tipis bila magnet masuk) + magnet masuk  3) separuh depan lilitan
+  // sumbu putus-putus digambar paling dulu: tertutup inti/magnet, tidak menimpa huruf kutub
+  isi += `<line x1="${x0 - 36}" y1="${yMid}" x2="${x1 + (masuk && kanan ? 80 : 70)}" y2="${yMid}" stroke="${GAYA.hitam}" stroke-width="1" stroke-dasharray="${GAYA.putus}"/>`;
   hk.belakang.forEach((d) => { isi += untai(d, false); });
-  const cyl = (fill) => `<path d="M${x0} ${yTop} L${x1} ${yTop} A12 ${tegak} 0 0 1 ${x1} ${yBot} L${x0} ${yBot} A12 ${tegak} 0 0 1 ${x0} ${yTop} Z" fill="${fill}" stroke="${GAYA.abu}" stroke-width="1.4"/>`;
-  if (!masuk) isi += cyl('#f6f6f6') + `<ellipse cx="${x1}" cy="${yMid}" rx="12" ry="${tegak}" fill="#ffffff" stroke="${GAYA.abu}" stroke-width="1.4"/>`;
-  else isi += `<path d="M${x0} ${yTop} L${x1} ${yTop} M${x0} ${yBot} L${x1} ${yBot}" stroke="${GAYA.abu}" stroke-width="1.2" fill="none"/><ellipse cx="${x1}" cy="${yMid}" rx="12" ry="${tegak}" fill="none" stroke="${GAYA.abu}" stroke-width="1.2"/><path d="M${x0} ${yTop} A12 ${tegak} 0 0 0 ${x0} ${yBot}" fill="none" stroke="${GAYA.abu}" stroke-width="1.2"/>`;
+  // inti (silinder kecil di dalam kumparan); bila magnet masuk, intinya diganti magnet itu sendiri
+  if (!masuk) {
+    const xa = x0 - 12, xb = x1 + 12;
+    isi += `<path d="M${xa} ${yMid - tegak} L${xb} ${yMid - tegak} A7 ${tegak} 0 0 1 ${xb} ${yMid + tegak} L${xa} ${yMid + tegak} A7 ${tegak} 0 0 1 ${xa} ${yMid - tegak} Z" fill="#e9e9e9" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    isi += `<ellipse cx="${xb}" cy="${yMid}" rx="7" ry="${tegak}" fill="#f7f7f7" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+  }
   if (masuk) isi += magnet();
   hk.depan.forEach((d) => { isi += untai(d, true); });
-  b.titik(x0 - 14, yMid - ry - 4); b.titik(x1 + 16, yBot + 4);
-  isi += `<line x1="${x0 - 36}" y1="${yMid}" x2="${x1 + (masuk && kanan ? 80 : 70)}" y2="${yMid}" stroke="${GAYA.hitam}" stroke-width="1" stroke-dasharray="${GAYA.putus}"/>`;
+  b.titik(x0 - 16, yMid - ry - 4); b.titik(x1 + 18, yMid + ry + 4);
   b.titik(x0 - 36, yMid); b.titik(x1 + 70, yMid);
   if (label) { T(x0 - (masuk && !kanan ? 64 : 28), yMid - 12, 'P', 'middle', 12); T(x1 + (masuk && kanan ? 64 : 24), yMid - 12, 'R', 'middle', 12); }
   // ujung kumparan x, y (oval hitam) -> kawat ke galvanometer berkubah
   const xA = hk.awal[0], xB = hk.akhir[0], yT = yMid + ry + 8, yG = yBot + 62;
-  isi += `<line x1="${xA.toFixed(1)}" y1="${(yMid + ry).toFixed(1)}" x2="${xA.toFixed(1)}" y2="${yT}" stroke="${biru}" stroke-width="1.8"/><line x1="${xB.toFixed(1)}" y1="${(yMid + ry).toFixed(1)}" x2="${xB.toFixed(1)}" y2="${yT}" stroke="${biru}" stroke-width="1.8"/>`;
+  isi += `<line x1="${xA.toFixed(1)}" y1="${(yMid + ry).toFixed(1)}" x2="${xA.toFixed(1)}" y2="${yT}" stroke="${warnaKumparan}" stroke-width="1.5"/><line x1="${xB.toFixed(1)}" y1="${(yMid + ry).toFixed(1)}" x2="${xB.toFixed(1)}" y2="${yT}" stroke="${warnaKumparan}" stroke-width="1.5"/>`;
   isi += `<ellipse cx="${xA}" cy="${yT}" rx="9" ry="4" fill="${GAYA.hitam}"/><ellipse cx="${xB}" cy="${yT}" rx="9" ry="4" fill="${GAYA.hitam}"/>`;
   if (label) { T(xA - 20, yT + 4, 'x', 'end', 12, true); T(xB + 20, yT + 4, 'y', 'start', 12, true); }
   isi += `<path d="M${xA} ${yT} L${xA} ${yG} L${xB} ${yG} L${xB} ${yT}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
