@@ -14941,7 +14941,7 @@ function renderGrafikBertahapSVG(cfg) {
 // Heliks kumparan (proyeksi miring): untai depan dan belakang dipisah supaya inti/magnet bisa digambar di antaranya.
 // Lilitan mulai dan berakhir di sisi BAWAH. kanan=true -> untai depan miring "\" (belitan kanan).
 function heliksKumparan(xA, xB, yMid, R, n, miring, kanan) {
-  const t0 = Math.PI, t1 = Math.PI + 2 * Math.PI * n, langkah = Math.PI / 24, h = kanan ? 1 : -1;
+  const t0 = Math.PI, t1 = Math.PI + 2 * Math.PI * n, langkah = Math.PI / 60, h = kanan ? 1 : -1;
   const P = (t) => [xA + ((xB - xA) * (t - t0)) / (t1 - t0) + miring * Math.sin(t), yMid - h * R * Math.cos(t)];
   const depan = [], belakang = [];
   let run = [], dpn = null;
@@ -15055,17 +15055,22 @@ function renderSolenoidaBateraiSVG(cfg) {
   const geser = (kananBelit ? 1 : -1) * sp * 0.5;
   const line = (x1_, y1_, x2_, y2_, w, gray, dash) => `<line x1="${x1_.toFixed(1)}" y1="${y1_.toFixed(1)}" x2="${x2_.toFixed(1)}" y2="${y2_.toFixed(1)}" stroke="${gray ? GAYA.abu : GAYA.hitam}" stroke-width="${w}"${dash ? ` stroke-dasharray="1.6 2.4"` : ''}/>`;
   // inti besi lunak: silinder di BELAKANG lilitan
+  // Urutan gambar: untai belakang -> inti besi lunak (lebih kecil dari kumparan, di DALAMNYA) -> untai depan.
+  // Untai belakang tetap terlihat di atas dan di bawah inti, jadi tampak jelas lilitan melingkari inti.
+  const hk = heliksKumparan(x0 + 4, x1 - 4, yMid, tegak, n, Math.min(7, sp * 0.4), kananBelit);
+  hk.belakang.forEach((d) => {
+    isi += inti
+      ? `<path d="${d}" fill="none" stroke="#555555" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>`
+      : `<path d="${d}" fill="none" stroke="${GAYA.abu}" stroke-width="1" stroke-dasharray="1.6 2.2"/>`;
+  });
   if (inti) {
-    const xa = x0 - 4, xb = x1 + 4, ry = tegak + 8;
-    isi += `<path d="M${xa} ${yMid - ry} L${xb} ${yMid - ry} A10 ${ry} 0 0 1 ${xb} ${yMid + ry} L${xa} ${yMid + ry} A10 ${ry} 0 0 1 ${xa} ${yMid - ry} Z" fill="#f4f4f4" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
-    isi += `<ellipse cx="${xb}" cy="${yMid}" rx="10" ry="${ry}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
-    T(xb + 26, yMid + 4, /^(ya|iya|true|1)$/i.test(String(cfg.kutub || '')) ? 'Besi lunak' : 'Besi lunak', 'start', 12);
-    b.titik(xb + 100, yMid);
+    const rI = tegak * 0.58, xa = x0 - 14, xb = x1 + 16, eI = 7;
+    isi += `<path d="M${xa} ${yMid - rI} L${xb} ${yMid - rI} A${eI} ${rI} 0 0 1 ${xb} ${yMid + rI} L${xa} ${yMid + rI} A${eI} ${rI} 0 0 1 ${xa} ${yMid - rI} Z" fill="#e9e9e9" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    isi += `<ellipse cx="${xb}" cy="${yMid}" rx="${eI}" ry="${rI}" fill="#f7f7f7" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    T(xb + (/^(ya|iya|true|1)$/i.test(String(cfg.kutub || '')) ? 38 : 18), yMid + 4, 'Besi lunak', 'start', 12);
+    b.titik(xa - 8, yMid); b.titik(xb + 90, yMid);
   }
-  // lilitan: heliks rapi; untai belakang tipis putus-putus (tersembunyi bila ada inti), untai depan tebal
-  const hk = heliksKumparan(x0 + 4, x1 - 4, yMid, tegak, n, Math.min(8, sp * 0.45), kananBelit);
-  if (!inti) hk.belakang.forEach((d) => { isi += `<path d="${d}" fill="none" stroke="${GAYA.abu}" stroke-width="1" stroke-dasharray="1.6 2.2"/>`; });
-  hk.depan.forEach((d) => { isi += `<path d="${d}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>`; });
+  hk.depan.forEach((d) => { isi += `<path d="${d}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`; });
   b.titik(x0 - 14, yTop - 12); b.titik(x1 + 22, yBot + 12);
   // kawat: awal lilitan (kiri bawah) dan akhir lilitan (kanan bawah) turun ke baterai
   const [xAwal, yAwal] = hk.awal, [xAkhir, yAkhir] = hk.akhir;
@@ -15083,8 +15088,8 @@ function renderSolenoidaBateraiSVG(cfg) {
   b.titik(kiriX - 62, yBat + 6);
   if (/^(ya|iya|true|1)$/i.test(String(cfg.kutub || ''))) {
     const nKanan = naik === kananBelit;   // arus masuk dari kiri + belitan kanan -> kutub utara di kanan
-    T(x0 - 8, yMid + 4, nKanan ? 'S' : 'U', 'end', 14, true);
-    T(x1 + (inti ? 20 : 12), yMid + 4, nKanan ? 'U' : 'S', 'start', 14, true);
+    T(x0 - (inti ? 22 : 8), yMid + 4, nKanan ? 'S' : 'U', 'end', 14, true);
+    T(x1 + (inti ? 26 : 12), yMid + 4, nKanan ? 'U' : 'S', 'start', 14, true);
   }
   return bungkusGambarSVG(isi, b, true);
 }
