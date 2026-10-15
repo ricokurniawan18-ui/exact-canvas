@@ -14941,66 +14941,74 @@ function renderInduksiSVG(cfg) {
   const n = Math.max(3, Math.min(12, parseInt(cfg.lilitan, 10) || 7));
   const kanan = !/^kiri/i.test(String(cfg.sisi || ''));
   const gerak = String(cfg.gerak || 'diam').toLowerCase();
+  const masuk = /^(masuk|dalam|tengah)/i.test(String(cfg.posisi || ''));   // magnet sebagian berada DI DALAM kumparan
   const label = !/^(tidak|no|false|0)$/i.test(String(cfg.label || '').trim());
   const warna = !/^(tidak|no|false|0)$/i.test(String(cfg.warna || '').trim());
   const biru = warna ? '#2f3fd0' : GAYA.hitam, merah = warna ? '#d63a2b' : GAYA.hitam;
   const kutub = String(cfg.kutub || 'S-N').split(/[-,|]/).map((t) => t.trim());
   const b = kotakBatas();
+  let isi = '';
   const T = (x, y, t, anchor, size, miring) => {
     isi += `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${size || 12}"${miring ? ' font-style="italic"' : ''} text-anchor="${anchor || 'middle'}" fill="${GAYA.hitam}">${escText(t)}</text>`;
     b.teks(x, y, t, size || 12, anchor || 'middle');
   };
-  let isi = '';
-  const x0 = 46, tebal = 14, sp = Math.min(18, 130 / n), x1 = x0 + 22 + (n - 1) * sp + 30;
-  const yTop = 34, yBot = 104, yMid = (yTop + yBot) / 2;
-  const cxL = (xi) => xi;                        // pusat elips lilitan
-  const rx = 6, ry = (yBot - yTop) / 2 + 12;
-  // 1) separuh belakang lilitan, 2) inti silinder, 3) separuh depan lilitan
+  const x0 = 46, sp = Math.min(18, 130 / n), x1 = x0 + 22 + (n - 1) * sp + 30;
+  const yTop = 34, yBot = 104, yMid = (yTop + yBot) / 2, tegak = (yBot - yTop) / 2;
+  const rx = 6, ry = tegak + 12;
   const lilit = []; for (let i = 0; i < n; i++) lilit.push(x0 + 20 + i * sp);
-  lilit.forEach((xi) => { isi += `<path d="M${xi} ${(yMid - ry).toFixed(1)} A${rx} ${ry} 0 0 0 ${xi} ${(yMid + ry).toFixed(1)}" fill="none" stroke="${biru}" stroke-width="1.8"/>`; });
-  isi += `<path d="M${x0} ${yTop} L${x1} ${yTop} A12 ${(yBot - yTop) / 2} 0 0 1 ${x1} ${yBot} L${x0} ${yBot} A12 ${(yBot - yTop) / 2} 0 0 1 ${x0} ${yTop} Z" fill="#f6f6f6" stroke="${GAYA.abu}" stroke-width="1.4"/>`;
-  isi += `<ellipse cx="${x1}" cy="${yMid}" rx="12" ry="${(yBot - yTop) / 2}" fill="#ffffff" stroke="${GAYA.abu}" stroke-width="1.4"/>`;
-  lilit.forEach((xi) => { isi += `<path d="M${xi} ${(yMid - ry).toFixed(1)} A${rx} ${ry} 0 0 1 ${xi} ${(yMid + ry).toFixed(1)}" fill="none" stroke="${biru}" stroke-width="1.8"/>`; });
+  const setengah = (xi, depan) => `<path d="M${xi} ${(yMid - ry).toFixed(1)} A${rx} ${ry} 0 0 ${depan ? 1 : 0} ${xi} ${(yMid + ry).toFixed(1)}" fill="none" stroke="${biru}" stroke-width="1.8"/>`;
+  // magnet batang (3D sederhana)
+  const mW = 84, mH = 26, dep = 8;
+  const mx = masuk ? (kanan ? x1 - 44 : x0 - mW + 44) : (kanan ? x1 + 70 : x0 - 36 - mW - 24), my = yMid - mH / 2;
+  const magnet = () => {
+    let g = `<path d="M${mx} ${my} L${mx + dep} ${my - dep} L${mx + mW + dep} ${my - dep} L${mx + mW} ${my} Z" fill="#e6e6e6" stroke="${GAYA.abu}" stroke-width="1.2"/>`;
+    g += `<path d="M${mx + mW} ${my} L${mx + mW + dep} ${my - dep} L${mx + mW + dep} ${my + mH - dep} L${mx + mW} ${my + mH} Z" fill="#cfcfcf" stroke="${GAYA.abu}" stroke-width="1.2"/>`;
+    g += `<rect x="${mx}" y="${my}" width="${mW}" height="${mH}" fill="#ffffff" stroke="${GAYA.abu}" stroke-width="1.4"/>`;
+    g += `<line x1="${mx + mW / 2}" y1="${my}" x2="${mx + mW / 2}" y2="${my + mH}" stroke="${GAYA.abu}" stroke-width="1"/>`;
+    if (label) {
+      g += `<text x="${(mx + mW * 0.25).toFixed(1)}" y="${(my + mH / 2 + 4).toFixed(1)}" font-size="12" text-anchor="middle" fill="${GAYA.hitam}">${escText(kutub[0] || 'S')}</text>`;
+      g += `<text x="${(mx + mW * 0.75).toFixed(1)}" y="${(my + mH / 2 + 4).toFixed(1)}" font-size="12" text-anchor="middle" fill="${GAYA.hitam}">${escText(kutub[1] || 'N')}</text>`;
+    }
+    return g;
+  };
+  // 1) separuh belakang lilitan  2) inti silinder (atau tabung tipis bila magnet masuk) + magnet masuk  3) separuh depan lilitan
+  lilit.forEach((xi) => { isi += setengah(xi, false); });
+  const cyl = (fill) => `<path d="M${x0} ${yTop} L${x1} ${yTop} A12 ${tegak} 0 0 1 ${x1} ${yBot} L${x0} ${yBot} A12 ${tegak} 0 0 1 ${x0} ${yTop} Z" fill="${fill}" stroke="${GAYA.abu}" stroke-width="1.4"/>`;
+  if (!masuk) isi += cyl('#f6f6f6') + `<ellipse cx="${x1}" cy="${yMid}" rx="12" ry="${tegak}" fill="#ffffff" stroke="${GAYA.abu}" stroke-width="1.4"/>`;
+  else isi += `<path d="M${x0} ${yTop} L${x1} ${yTop} M${x0} ${yBot} L${x1} ${yBot}" stroke="${GAYA.abu}" stroke-width="1.2" fill="none"/><ellipse cx="${x1}" cy="${yMid}" rx="12" ry="${tegak}" fill="none" stroke="${GAYA.abu}" stroke-width="1.2"/><path d="M${x0} ${yTop} A12 ${tegak} 0 0 0 ${x0} ${yBot}" fill="none" stroke="${GAYA.abu}" stroke-width="1.2"/>`;
+  if (masuk) isi += magnet();
+  lilit.forEach((xi) => { isi += setengah(xi, true); });
   b.titik(x0 - 14, yMid - ry - 4); b.titik(x1 + 16, yBot + 4);
-  // sumbu putus-putus melalui pusat kumparan
-  isi += `<line x1="${x0 - 36}" y1="${yMid}" x2="${x1 + 70}" y2="${yMid}" stroke="${GAYA.hitam}" stroke-width="1" stroke-dasharray="${GAYA.putus}"/>`;
+  isi += `<line x1="${x0 - 36}" y1="${yMid}" x2="${x1 + (masuk && kanan ? 80 : 70)}" y2="${yMid}" stroke="${GAYA.hitam}" stroke-width="1" stroke-dasharray="${GAYA.putus}"/>`;
   b.titik(x0 - 36, yMid); b.titik(x1 + 70, yMid);
-  if (label) { T(x0 - 28, yMid - 12, 'P', 'middle', 12); T(x1 + 24, yMid - 12, 'R', 'middle', 12); }
-  // ujung kumparan x, y (oval hitam) -> kawat ke galvanometer
+  if (label) { T(x0 - (masuk && !kanan ? 64 : 28), yMid - 12, 'P', 'middle', 12); T(x1 + (masuk && kanan ? 64 : 24), yMid - 12, 'R', 'middle', 12); }
+  // ujung kumparan x, y (oval hitam) -> kawat ke galvanometer berkubah
   const xA = lilit[0] + 4, xB = lilit[n - 1] + 18, yT = yBot + 14, yG = yBot + 62;
   isi += `<ellipse cx="${xA}" cy="${yT}" rx="9" ry="4" fill="${GAYA.hitam}"/><ellipse cx="${xB}" cy="${yT}" rx="9" ry="4" fill="${GAYA.hitam}"/>`;
   if (label) { T(xA - 20, yT + 4, 'x', 'end', 12, true); T(xB + 20, yT + 4, 'y', 'start', 12, true); }
-  isi += `<line x1="${xA}" y1="${yT}" x2="${xA}" y2="${yG}" stroke="${GAYA.hitam}" stroke-width="1.5"/><line x1="${xB}" y1="${yT}" x2="${xB}" y2="${yG}" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
-  isi += `<line x1="${xA}" y1="${yG}" x2="${xB}" y2="${yG}" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
+  isi += `<path d="M${xA} ${yT} L${xA} ${yG} L${xB} ${yG} L${xB} ${yT}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
   const gx = (xA + xB) / 2;
   isi += `<path d="M${gx - 22} ${yG} A22 24 0 0 1 ${gx + 22} ${yG}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
   const pj = String(cfg.simpangan || '').toLowerCase();
   const sudutJ = /kanan/.test(pj) ? 28 : /kiri/.test(pj) ? -28 : 0;
-  isi += arrowSVG(gx - Math.sin((sudutJ * Math.PI) / 180) * 0, yG - 2, gx + Math.sin((sudutJ * Math.PI) / 180) * 14, yG - 2 - Math.cos((sudutJ * Math.PI) / 180) * 16, { headLen: 6, strokeWidth: 1.6, color: merah });
+  isi += arrowSVG(gx, yG - 2, gx + Math.sin((sudutJ * Math.PI) / 180) * 14, yG - 2 - Math.cos((sudutJ * Math.PI) / 180) * 16, { headLen: 6, strokeWidth: 1.6, color: merah });
   if (label) { T(xA - 8, yG + 16, 'A', 'end', 12); T(xB + 8, yG + 16, 'B', 'start', 12); }
   b.titik(xA - 24, yG + 22); b.titik(xB + 24, yG + 22);
   const arus = String(cfg.arus || '').replace(/\s/g, '');
-  if (/^x>y$/i.test(arus) || /^y>x$/i.test(arus)) {
+  if (/^(x>y|y>x)$/i.test(arus)) {
     const ke = /^x>y$/i.test(arus);
-    isi += arrowSVG(xA, yT + 18, xA, yT + 18 + (ke ? 12 : -12) * 1 + (ke ? 0 : 0), { headLen: 6, strokeWidth: 1.6 });
+    isi += arrowSVG(ke ? xA : xB, yT + 18, ke ? xA : xB, yT + 36, { headLen: 6, strokeWidth: 1.6 });
   }
-  // magnet batang di samping (3D sederhana) dengan panah kecepatan v
-  const mW = 84, mH = 28, mx = kanan ? x1 + 70 : x0 - 36 - mW - 24, my = yMid - 6;
-  const dep = 8;
-  isi += `<path d="M${mx} ${my} L${mx + dep} ${my - dep} L${mx + mW + dep} ${my - dep} L${mx + mW} ${my} Z" fill="#e6e6e6" stroke="${GAYA.abu}" stroke-width="1.2"/>`;
-  isi += `<path d="M${mx + mW} ${my} L${mx + mW + dep} ${my - dep} L${mx + mW + dep} ${my + mH - dep} L${mx + mW} ${my + mH} Z" fill="#cfcfcf" stroke="${GAYA.abu}" stroke-width="1.2"/>`;
-  isi += `<rect x="${mx}" y="${my}" width="${mW}" height="${mH}" fill="#ffffff" stroke="${GAYA.abu}" stroke-width="1.4"/>`;
-  if (label) { T(mx + mW * 0.25, my + mH / 2 + 4, kutub[0] || 'S', 'middle', 12); T(mx + mW * 0.75, my + mH / 2 + 4, kutub[1] || 'N', 'middle', 12); }
-  b.titik(mx - 4, my - dep - 28); b.titik(mx + mW + dep + 4, my + mH + 4);
+  if (!masuk) isi += magnet();
+  b.titik(mx - 4, my - dep - 30); b.titik(mx + mW + dep + 4, my + mH + 4);
   if (gerak === 'mendekat' || gerak === 'menjauh') {
     const kiriArah = (gerak === 'mendekat') === kanan;   // magnet di kanan & mendekat -> bergerak ke kiri
-    const ay = my - dep - 14, ax1 = mx + mW / 2 + (kiriArah ? 18 : -18), ax2 = mx + mW / 2 + (kiriArah ? -18 : 18);
-    isi += arrowSVG(ax1, ay, ax2, ay, { headLen: 7, strokeWidth: 2, color: merah });
-    if (label) T(mx + mW / 2 + (kiriArah ? 8 : -8), ay - 8, 'v', 'middle', 11, true);
+    const ay = my - dep - 14, c = mx + mW / 2 + (masuk ? (kanan ? 20 : -20) : 0);
+    isi += arrowSVG(c + (kiriArah ? 20 : -20), ay, c + (kiriArah ? -20 : 20), ay, { headLen: 7, strokeWidth: 2, color: merah });
+    if (label) T(c + (kiriArah ? 4 : -4), ay - 8, 'v', 'middle', 11, true);
   }
   return bungkusGambarSVG(isi, b, true);
 }
-
 
 // ---------------------------------------------------------------------
 // Solenoida berbaterai (kaidah tangan kanan): kumparan mendatar, kawat dari kedua ujung turun ke baterai di bawah,
@@ -15021,39 +15029,44 @@ function renderSolenoidaBateraiSVG(cfg) {
     isi += `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${size || 12}"${miring ? ' font-style="italic"' : ''} text-anchor="${anchor || 'middle'}" fill="${GAYA.hitam}">${escText(t)}</text>`;
     b.teks(x, y, t, size || 12, anchor || 'middle');
   };
-  const sp = rapat ? 8 : 15, W = n * sp, x0 = 60, x1 = x0 + W + 14, yTop = 30, yBot = 74, yMid = (yTop + yBot) / 2, yBat = yBot + 62;
-  const dx = (kananBelit ? 1 : -1) * sp * 0.55;
+  const sp = rapat ? 9 : 17, W = n * sp, x0 = 70, x1 = x0 + W + 10, yTop = 30, yBot = 82, yMid = (yTop + yBot) / 2, yBat = yBot + 56;
+  const tegak = (yBot - yTop) / 2;
+  const geser = (kananBelit ? 1 : -1) * sp * 0.5;
+  const line = (x1_, y1_, x2_, y2_, w, gray, dash) => `<line x1="${x1_.toFixed(1)}" y1="${y1_.toFixed(1)}" x2="${x2_.toFixed(1)}" y2="${y2_.toFixed(1)}" stroke="${gray ? GAYA.abu : GAYA.hitam}" stroke-width="${w}"${dash ? ` stroke-dasharray="1.6 2.4"` : ''}/>`;
+  // inti besi lunak: silinder di BELAKANG lilitan
   if (inti) {
-    isi += `<path d="M${x0 - 8} ${yTop - 6} L${x1 + 8} ${yTop - 6} A9 ${(yBot - yTop) / 2 + 6} 0 0 1 ${x1 + 8} ${yBot + 6} L${x0 - 8} ${yBot + 6} A9 ${(yBot - yTop) / 2 + 6} 0 0 1 ${x0 - 8} ${yTop - 6} Z" fill="#f2f2f2" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
-    isi += `<ellipse cx="${x1 + 8}" cy="${yMid}" rx="9" ry="${(yBot - yTop) / 2 + 6}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
-    T(x1 + (/^(ya|iya|true|1)$/i.test(String(cfg.kutub || '')) ? 44 : 34), yMid + 4, 'Besi lunak', 'start', 11.5);
-    b.titik(x1 + 100, yMid);
+    const xa = x0 - 4, xb = x1 + 4, ry = tegak + 8;
+    isi += `<path d="M${xa} ${yMid - ry} L${xb} ${yMid - ry} A10 ${ry} 0 0 1 ${xb} ${yMid + ry} L${xa} ${yMid + ry} A10 ${ry} 0 0 1 ${xa} ${yMid - ry} Z" fill="#f4f4f4" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+    isi += `<ellipse cx="${xb}" cy="${yMid}" rx="10" ry="${ry}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+    T(xb + 26, yMid + 4, /^(ya|iya|true|1)$/i.test(String(cfg.kutub || '')) ? 'Besi lunak' : 'Besi lunak', 'start', 12);
+    b.titik(xb + 100, yMid);
   }
-  // untai: depan (tebal) miring sesuai belitan, belakang (tipis) menyambung ke untai berikutnya
-  const xs = []; for (let i = 0; i < n; i++) xs.push(x0 + 8 + i * sp);
+  const xs = []; for (let i = 0; i < n; i++) xs.push(x0 + 6 + i * sp);
+  // untai belakang (putus-putus tipis, hilang bila ada inti) lalu untai depan (tebal) yang miring sesuai belitan
   xs.forEach((xi, i) => {
-    const xa = kananBelit ? xi : xi + Math.abs(dx), xb = kananBelit ? xi + dx : xi;
-    isi += `<path d="M${xa.toFixed(1)} ${yTop} C${(xa - 5).toFixed(1)} ${yTop + 10} ${(xb - 5).toFixed(1)} ${yBot - 10} ${xb.toFixed(1)} ${yBot}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
-    if (i < n - 1) isi += `<line x1="${xb.toFixed(1)}" y1="${yBot}" x2="${(xs[i + 1] + (kananBelit ? 0 : Math.abs(dx))).toFixed(1)}" y2="${yTop}" stroke="${GAYA.abu}" stroke-width="0.9"/>`;
+    const xTopI = xi, xBotI = xi + geser;
+    if (i < n - 1 && !inti) isi += `<path d="M${xBotI.toFixed(1)} ${yBot} C${(xBotI + 8).toFixed(1)} ${yBot - 12} ${(xs[i + 1] + 8).toFixed(1)} ${yTop + 12} ${xs[i + 1].toFixed(1)} ${yTop}" fill="none" stroke="${GAYA.abu}" stroke-width="1" stroke-dasharray="1.6 2.4"/>`;
+    isi += `<path d="M${xTopI.toFixed(1)} ${yTop} C${(xTopI - 8).toFixed(1)} ${yTop + 12} ${(xBotI - 8).toFixed(1)} ${yBot - 12} ${xBotI.toFixed(1)} ${yBot}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.7"/>`;
   });
-  b.titik(x0 - 12, yTop - 8); b.titik(x1 + 20, yBot + 8);
-  const xL = x0 + 8 + (kananBelit ? 0 : Math.abs(dx)) - 4, xR = xs[n - 1] + (kananBelit ? dx : 0) + 6;
-  // kawat ke baterai
-  isi += `<path d="M${xL} ${yTop} L${x0 - 14} ${yTop} L${x0 - 14} ${yBat} L${(x0 + x1) / 2 - 12} ${yBat}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
-  isi += `<path d="M${xR} ${yBot} L${x1 + 22} ${yBot} L${x1 + 22} ${yBat} L${(x0 + x1) / 2 + 12} ${yBat}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
-  // baterai: pelat panjang = kutub positif; arus keluar dari positif
-  const cx = (x0 + x1) / 2, panjangKiri = naik;
-  const plat = (x, tinggi) => `<line x1="${x}" y1="${yBat - tinggi}" x2="${x}" y2="${yBat + tinggi}" stroke="${GAYA.hitam}" stroke-width="2.2"/>`;
-  isi += plat(cx - 4, panjangKiri ? 11 : 6) + plat(cx + 4, panjangKiri ? 6 : 11);
-  // panah dan nilai arus di kawat kiri
-  const yA = (yBat + yBot) / 2 + 4;
-  isi += arrowSVG(x0 - 14, naik ? yA + 10 : yA - 10, x0 - 14, naik ? yA - 10 : yA + 10, { headLen: 7, strokeWidth: 1.8 });
-  if (arus) T(x0 - 22, yA + 4, 'I = ' + arus, 'end', 12, true);
-  b.titik(x0 - 70, yBat + 4);
+  b.titik(x0 - 14, yTop - 12); b.titik(x1 + 22, yBot + 12);
+  // kawat: awal lilitan (kiri atas) dan akhir lilitan (kanan bawah) menuju baterai
+  const xAwal = xs[0], xAkhir = xs[n - 1] + geser;
+  const kiriX = x0 - 18, kananX = x1 + 24;
+  isi += `<path d="M${xAwal.toFixed(1)} ${yTop} L${kiriX} ${yTop} L${kiriX} ${yBat}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.7" stroke-linejoin="round"/>`;
+  isi += `<path d="M${xAkhir.toFixed(1)} ${yBot} L${kananX} ${yBot} L${kananX} ${yBat}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.7" stroke-linejoin="round"/>`;
+  const cx = (kiriX + kananX) / 2;
+  isi += line(kiriX, yBat, cx - 5, yBat, 1.7) + line(cx + 5, yBat, kananX, yBat, 1.7);
+  const plat = (x, tinggi) => line(x, yBat - tinggi, x, yBat + tinggi, 2.4);
+  isi += plat(cx - 5, naik ? 13 : 7) + plat(cx + 5, naik ? 7 : 13);
+  // panah dan nilai arus di kawat kiri (searah arus)
+  const yA = (yTop + yBat) / 2 + 12;
+  isi += arrowSVG(kiriX, naik ? yA + 12 : yA - 12, kiriX, naik ? yA - 12 : yA + 12, { headLen: 8, strokeWidth: 2 });
+  if (arus) T(kiriX - 8, yA + 4, 'I = ' + arus, 'end', 12.5, true);
+  b.titik(kiriX - 62, yBat + 6);
   if (/^(ya|iya|true|1)$/i.test(String(cfg.kutub || ''))) {
     const nKanan = naik === kananBelit;   // arus masuk dari kiri + belitan kanan -> kutub utara di kanan
-    T(x0 - 6, yMid + 4, nKanan ? 'S' : 'U', 'end', 13, true);
-    T(x1 + (inti ? 24 : 10), yMid + 4, nKanan ? 'U' : 'S', 'start', 13, true);
+    T(x0 - 8, yMid + 4, nKanan ? 'S' : 'U', 'end', 14, true);
+    T(x1 + (inti ? 20 : 12), yMid + 4, nKanan ? 'U' : 'S', 'start', 14, true);
   }
   return bungkusGambarSVG(isi, b, true);
 }
