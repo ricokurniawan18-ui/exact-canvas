@@ -7618,7 +7618,9 @@ function parseProbBranches(raw) {
   return String(raw || '').split(',').map((s) => s.trim()).filter(Boolean).map((tok) => {
     const bits = tok.split(':');
     const label = (bits[0] || '').trim();
-    const fracTxt = (bits[1] || '').trim();
+    let fracTxt = (bits[1] || '').trim();
+    // "?" = peluang yang diisi siswa: cabang ditulis garis titik-titik, peluang gabungannya tidak ditampilkan.
+    if (fracTxt === '?') return { label, fracTxt: '............', p: 0, tanya: true };
     let p = NaN;
     if (fracTxt.includes('/')) {
       const [n, d] = fracTxt.split('/').map(Number);
@@ -7637,6 +7639,8 @@ function renderProbTreeSVG(cfg) {
   const L1 = L1raw.length ? L1raw : [{ label: 'A', fracTxt: '1/2', p: 0.5 }, { label: 'B', fracTxt: '1/2', p: 0.5 }];
   const L2 = L2raw.length ? L2raw : L1;
   const levels = L3raw ? [L1, L2, L3raw] : [L1, L2];
+  // hasil=tidak: peluang gabungan di ujung cabang tidak ditulis (soal "hitung peluang kedua kejadian").
+  const tanpaHasil = /^(tidak|no|false|0)$/i.test(String(cfg.hasil || '').trim());
 
   // Tata letak naskah ujian: nama kejadian ditulis di UJUNG cabang, dan
   // cabang tahap berikutnya baru mulai di sebelah kanan nama itu — jadi
@@ -7694,11 +7698,11 @@ function renderProbTreeSVG(cfg) {
           svg += `<circle cx="${xNode[2]}" cy="${y3.toFixed(1)}" r="2.2" fill="${GAYA.hitam}"/>`;
           svg += nodeLabel(xNode[2], y3, b3.label);
           const totalP = b1.p * b2.p * b3.p;
-          svg += `<text x="${(xNode[2] + labelW[2]).toFixed(1)}" y="${(y3 + 4).toFixed(1)}" font-size="${GAYA.teksKecil}" fill="${GAYA.hitam}">P = ${Math.round(totalP * 1000) / 1000}</text>`;
+          if (!tanpaHasil && !(b1.tanya || b2.tanya || b3.tanya)) svg += `<text x="${(xNode[2] + labelW[2]).toFixed(1)}" y="${(y3 + 4).toFixed(1)}" font-size="${GAYA.teksKecil}" fill="${GAYA.hitam}">P = ${Math.round(totalP * 1000) / 1000}</text>`;
         });
       } else {
         const totalP = b1.p * b2.p;
-        svg += `<text x="${(xNode[1] + labelW[1]).toFixed(1)}" y="${(y2 + 4).toFixed(1)}" font-size="${GAYA.teksKecil}" fill="${GAYA.hitam}">P = ${Math.round(totalP * 1000) / 1000}</text>`;
+        if (!tanpaHasil && !(b1.tanya || b2.tanya)) svg += `<text x="${(xNode[1] + labelW[1]).toFixed(1)}" y="${(y2 + 4).toFixed(1)}" font-size="${GAYA.teksKecil}" fill="${GAYA.hitam}">P = ${Math.round(totalP * 1000) / 1000}</text>`;
       }
     });
   });
@@ -12510,6 +12514,8 @@ const DIAGRAM_TYPE_ALIASES = {
   jodohkan: 'jodohkan', menjodohkan: 'jodohkan', matching: 'jodohkan', pasangkan: 'jodohkan',
   tabelcentang: 'tabelcentang', tickbox: 'tabelcentang', kotakcentang: 'tabelcentang',
   inersia: 'inersia', momeninersia: 'inersia', inertia: 'inersia',
+  spinner: 'spinner', pemutar: 'spinner', putaran: 'spinner',
+  grafikbertahap: 'grafikbertahap', grafiktarif: 'grafikbertahap', grafikpatah: 'grafikbertahap',
   kartu: 'kartu', kartuhuruf: 'kartu', cards: 'kartu',
   toples: 'toples', jar: 'toples', stoples: 'toples',
   grafiksketsa: 'grafiksketsa', sketsagrafik: 'grafiksketsa', grafiktanpaskala: 'grafiksketsa',
@@ -14871,6 +14877,58 @@ function renderTegarSVG(cfg) {
 }
 
 
+
+// ---------------------------------------------------------------------
+// Spinner datar (peluang): segi-n beraturan dibagi n juring dari pusat, sebagian diarsir.
+//   sisi=5; arsir=2 (dua juring pertama) atau arsir=1,3 (juring ke-1 dan ke-3); bentuk=lingkaran (juring berbusur)
+// ---------------------------------------------------------------------
+function renderSpinnerSVG(cfg) {
+  const n = Math.max(3, Math.min(12, parseInt(cfg.sisi, 10) || 4));
+  const a = String(cfg.arsir == null ? '1' : cfg.arsir).split(',').map((t) => parseInt(t, 10)).filter((v) => isFinite(v));
+  const arsir = new Set(a.length === 1 && a[0] > 0 ? Array.from({ length: Math.min(n, a[0]) }, (_, i) => i + 1) : a);
+  const bulat = /^(lingkaran|bulat|circle)$/i.test(String(cfg.bentuk || ''));
+  const R = 62, b = kotakBatas();
+  let isi = '';
+  const sudut = (i) => (-90 + 180 / n + (360 * i) / n) * Math.PI / 180;
+  const V = (i) => [R * Math.cos(sudut(i)), R * Math.sin(sudut(i))];
+  for (let i = 0; i < n; i++) {
+    const [x1, y1] = V(i), [x2, y2] = V(i + 1);
+    const tepi = bulat ? ` A${R} ${R} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)}` : ` L${x2.toFixed(1)} ${y2.toFixed(1)}`;
+    isi += `<path d="M0 0 L${x1.toFixed(1)} ${y1.toFixed(1)}${tepi} Z" fill="${arsir.has(i + 1) ? '#c8c8c8' : GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.5" stroke-linejoin="round"/>`;
+    b.titik(x1, y1);
+  }
+  isi += `<circle cx="0" cy="0" r="3" fill="${GAYA.hitam}"/>`;
+  b.titik(-R - 4, -R - 4); b.titik(R + 4, R + 4);
+  return bungkusGambarSVG(isi, b, true);
+}
+
+
+// ---------------------------------------------------------------------
+// Grafik bertahap (tarif, ongkos): garis patah melalui titik-titik, garis putus-putus ke kedua sumbu dari tiap titik
+// setelah yang pertama, dan HANYA nilai yang disebut di xlabel/ylabel yang ditulis pada sumbu (sisanya dicari siswa).
+//   titik=0:2,10:10,25:14; xlabel=0,10,25; ylabel=0,2,10; sumbux=Distance (km); sumbuy=Cost ($)
+// ---------------------------------------------------------------------
+function renderGrafikBertahapSVG(cfg) {
+  const pt = String(cfg.titik || '0:2,10:10,25:14').split(',').map((t) => t.split(':').map((v) => parseFloat(v.replace(',', '.')))).filter((q) => q.length >= 2 && isFinite(q[0]) && isFinite(q[1]));
+  const daftar = (v) => String(v == null ? '' : v).split(',').map((t) => parseFloat(t.replace(',', '.'))).filter((n) => isFinite(n));
+  const xl = daftar(cfg.xlabel), yl = daftar(cfg.ylabel);
+  const W = 250, H = 190, b = kotakBatas();
+  const mx = Math.max(...pt.map((q) => q[0])) * 1.12 || 1, my = Math.max(...pt.map((q) => q[1])) * 1.12 || 1;
+  const X = (v) => (v / mx) * W, Y = (v) => H - (v / my) * H;
+  let isi = '';
+  const T = (x, y, t, anchor, size) => { isi += `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${size || 11}" text-anchor="${anchor || 'middle'}" fill="${GAYA.hitam}" stroke="${GAYA.putih}" stroke-width="3" paint-order="stroke">${escText(t)}</text>`; b.teks(x, y, t, size || 11, anchor || 'middle'); };
+  isi += arrowSVG(0, H, W + 18, H, { headLen: 8, strokeWidth: 1.4 }) + arrowSVG(0, H, 0, -14, { headLen: 8, strokeWidth: 1.4 });
+  b.titik(0, -18); b.titik(W + 20, H + 24);
+  const garisPutus = (x1, y1, x2, y2) => `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1" stroke-dasharray="${GAYA.putus}"/>`;
+  pt.forEach((q, i) => { if (i > 0) isi += garisPutus(X(q[0]), Y(q[1]), X(q[0]), H) + garisPutus(X(q[0]), Y(q[1]), 0, Y(q[1])); });
+  isi += `<polyline points="${pt.map((q) => X(q[0]).toFixed(1) + ',' + Y(q[1]).toFixed(1)).join(' ')}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.6" stroke-linejoin="round"/>`;
+  xl.forEach((v) => { isi += `<line x1="${X(v).toFixed(1)}" y1="${H}" x2="${X(v).toFixed(1)}" y2="${H + 4}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`; T(X(v), H + 17, String(v)); });
+  yl.forEach((v) => { isi += `<line x1="-4" y1="${Y(v).toFixed(1)}" x2="0" y2="${Y(v).toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`; T(-8, Y(v) + 4, String(v), 'end'); });
+  if (cfg.sumbux) T(W / 2, H + 36, String(cfg.sumbux), 'middle', 11.5);
+  if (cfg.sumbuy) T(-40, H / 2, String(cfg.sumbuy), 'end', 11.5);
+  return bungkusGambarSVG(isi, b, true);
+}
+
 // ---------------------------------------------------------------------
 // Momen inersia (SMA): batang dengan poros (ujung / tengah / posisi 0-1), dua partikel pada batang ringan, cakram.
 //   bentuk=batang; panjang=2 m; massa=3 kg; poros=ujung|tengah|0.25
@@ -17227,6 +17285,8 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'jodohkan') svg = renderMatchingSVG(params);
     else if (type === 'tabelcentang') svg = renderTabelCentangSVG(params);
     else if (type === 'inersia') svg = renderInersiaSVG(params);
+    else if (type === 'spinner') svg = renderSpinnerSVG(params);
+    else if (type === 'grafikbertahap') svg = renderGrafikBertahapSVG(params);
     else if (type === 'kartu') svg = renderKartuSVG(params);
     else if (type === 'toples') svg = renderToplesSVG(params);
     else if (type === 'grafiksketsa') svg = renderGrafikSketsaSVG(params);
