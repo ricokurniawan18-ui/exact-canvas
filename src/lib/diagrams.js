@@ -15040,7 +15040,9 @@ function renderInduksiSVG(cfg) {
 function renderSolenoidaBateraiSVG(cfg) {
   const n = Math.max(4, Math.min(24, parseInt(cfg.lilitan, 10) || 10));
   const rapat = !/^(renggang|jarang)/i.test(String(cfg.rapat || ''));
-  const inti = /^(besi|ya|lunak)/i.test(String(cfg.inti || ''));
+  const intiTeks = String(cfg.inti || '').trim();
+  const inti = !!intiTeks && !/^(tanpa|tidak|no|false|0)$/i.test(intiTeks);
+  const namaInti = /^(ya|besi|lunak|besi lunak)$/i.test(intiTeks) ? 'Besi lunak' : intiTeks;
   const naik = !/^(turun|bawah)/i.test(String(cfg.arah || ''));
   const kananBelit = !/^kiri/i.test(String(cfg.belitan || ''));
   const arus = String(cfg.arus == null ? '2 A' : cfg.arus).trim();
@@ -15067,8 +15069,18 @@ function renderSolenoidaBateraiSVG(cfg) {
     const rI = tegak * 0.58, xa = x0 - 14, xb = x1 + 16, eI = 7;
     isi += `<path d="M${xa} ${yMid - rI} L${xb} ${yMid - rI} A${eI} ${rI} 0 0 1 ${xb} ${yMid + rI} L${xa} ${yMid + rI} A${eI} ${rI} 0 0 1 ${xa} ${yMid - rI} Z" fill="#e9e9e9" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
     isi += `<ellipse cx="${xb}" cy="${yMid}" rx="${eI}" ry="${rI}" fill="#f7f7f7" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
-    T(xb + (/^(ya|iya|true|1)$/i.test(String(cfg.kutub || '')) ? 38 : 18), yMid + 4, 'Besi lunak', 'start', 12);
-    b.titik(xa - 8, yMid); b.titik(xb + 90, yMid);
+    // nama inti dengan garis penunjuk dari ujung kiri (seperti gambar buku: "Baja", "Besi lunak")
+    // Ada panah arus I di kawat kiri -> nama ditulis di kanan inti supaya tidak bertumpuk.
+    if (arus && !/^(-|tidak|no)$/i.test(arus)) T(xb + (/^(ya|iya|true|1)$/i.test(String(cfg.kutub || '')) ? 38 : 18), yMid + 4, namaInti, 'start', 12);
+    else {
+      isi += `<line x1="${xa + 2}" y1="${(yMid + rI * 0.4).toFixed(1)}" x2="${xa - 22}" y2="${(yMid + tegak + 20).toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+      T(xa - 24, yMid + tegak + 34, namaInti, 'middle', 12.5);
+    }
+    // huruf ujung inti, mis. ujung=K,L
+    const uj = String(cfg.ujung || '').split(',').map((t) => t.trim()).filter(Boolean);
+    if (uj[0]) T(xa + 8, yMid + 4, uj[0], 'start', 12);
+    if (uj[1]) T(xb - 10, yMid + 4, uj[1], 'end', 12);
+    b.titik(xa - 60, yMid + tegak + 40); b.titik(xb + 10, yMid);
   }
   hk.depan.forEach((d) => { isi += `<path d="${d}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`; });
   b.titik(x0 - 14, yTop - 12); b.titik(x1 + 22, yBot + 12);
@@ -15083,8 +15095,11 @@ function renderSolenoidaBateraiSVG(cfg) {
   isi += plat(cx - 5, naik ? 13 : 7) + plat(cx + 5, naik ? 7 : 13);
   // panah dan nilai arus di kawat kiri (searah arus)
   const yA = (yAwal + 10 + yBat) / 2;
-  isi += arrowSVG(kiriX, naik ? yA + 12 : yA - 12, kiriX, naik ? yA - 12 : yA + 12, { headLen: 8, strokeWidth: 2 });
-  if (arus) T(kiriX - 8, yA + 4, 'I = ' + arus, 'end', 12.5, true);
+  if (arus && !/^(-|tidak|no)$/i.test(arus)) {
+    isi += arrowSVG(kiriX, naik ? yA + 12 : yA - 12, kiriX, naik ? yA - 12 : yA + 12, { headLen: 8, strokeWidth: 2 });
+    T(kiriX - 8, yA + 4, 'I = ' + arus, 'end', 12.5, true);
+  }
+  if (cfg.sumber) T(cx, yBat - 18, String(cfg.sumber), 'middle', 12.5);
   b.titik(kiriX - 62, yBat + 6);
   if (/^(ya|iya|true|1)$/i.test(String(cfg.kutub || ''))) {
     const nKanan = naik === kananBelit;   // arus masuk dari kiri + belitan kanan -> kutub utara di kanan
