@@ -4087,6 +4087,9 @@ function renderSketsaSVG(cfg) {
       if (!ada(s[0]) || !ada(s[1])) return;
       let p = px[s[0]], q = px[s[1]];
       if (q[0] < p[0] - 1e-6 || (Math.abs(q[0] - p[0]) < 1e-6 && q[1] > p[1])) { const t = p; p = q; q = t; }
+      // Sisi yang juga bertanda sama panjang: panah digeser ke 70% ruas supaya tidak menimpa tandanya di tengah.
+      const kunciSisi = (m, n) => [m, n].sort().join('-');
+      if (parseKelompokSisi(cfg.sama).some((k2) => k2.some((t2) => kunciSisi(t2[0], t2[1]) === kunciSisi(s[0], s[1])))) p = [p[0] + 0.4 * (q[0] - p[0]), p[1] + 0.4 * (q[1] - p[1])];
       isi += panahSejajarSVG(p[0], p[1], q[0], q[1], gi + 1);
     });
   });
