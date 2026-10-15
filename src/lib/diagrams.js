@@ -12515,6 +12515,7 @@ const DIAGRAM_TYPE_ALIASES = {
   tabelcentang: 'tabelcentang', tickbox: 'tabelcentang', kotakcentang: 'tabelcentang',
   inersia: 'inersia', momeninersia: 'inersia', inertia: 'inersia',
   spinner: 'spinner', pemutar: 'spinner', putaran: 'spinner',
+  solenoidabaterai: 'solenoidabaterai', solenoidaarus: 'solenoidabaterai', elektromagnetsolenoid: 'solenoidabaterai',
   induksibuku: 'induksibuku', kumparanbuku: 'induksibuku', induksigambar: 'induksibuku',
   grafikbertahap: 'grafikbertahap', grafiktarif: 'grafikbertahap', grafikpatah: 'grafikbertahap',
   kartu: 'kartu', kartuhuruf: 'kartu', cards: 'kartu',
@@ -15000,6 +15001,63 @@ function renderInduksiSVG(cfg) {
   return bungkusGambarSVG(isi, b, true);
 }
 
+
+// ---------------------------------------------------------------------
+// Solenoida berbaterai (kaidah tangan kanan): kumparan mendatar, kawat dari kedua ujung turun ke baterai di bawah,
+// panah arus I pada kawat kiri, inti besi lunak opsional. Kutub TIDAK digambar (itu yang ditanyakan); kutub=ya untuk kunci.
+//   lilitan=10; rapat=rapat|renggang; inti=besi|tanpa; arus=2 A; arah=naik|turun (arus naik di kawat kiri = masuk dari ujung kiri);
+//   belitan=kanan|kiri (miring untai depan: kanan "\", kiri "/"); kutub=ya (huruf U dan S, dihitung sesuai arah arus dan belitan)
+// ---------------------------------------------------------------------
+function renderSolenoidaBateraiSVG(cfg) {
+  const n = Math.max(4, Math.min(24, parseInt(cfg.lilitan, 10) || 10));
+  const rapat = !/^(renggang|jarang)/i.test(String(cfg.rapat || ''));
+  const inti = /^(besi|ya|lunak)/i.test(String(cfg.inti || ''));
+  const naik = !/^(turun|bawah)/i.test(String(cfg.arah || ''));
+  const kananBelit = !/^kiri/i.test(String(cfg.belitan || ''));
+  const arus = String(cfg.arus == null ? '2 A' : cfg.arus).trim();
+  const b = kotakBatas();
+  let isi = '';
+  const T = (x, y, t, anchor, size, miring) => {
+    isi += `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${size || 12}"${miring ? ' font-style="italic"' : ''} text-anchor="${anchor || 'middle'}" fill="${GAYA.hitam}">${escText(t)}</text>`;
+    b.teks(x, y, t, size || 12, anchor || 'middle');
+  };
+  const sp = rapat ? 8 : 15, W = n * sp, x0 = 60, x1 = x0 + W + 14, yTop = 30, yBot = 74, yMid = (yTop + yBot) / 2, yBat = yBot + 62;
+  const dx = (kananBelit ? 1 : -1) * sp * 0.55;
+  if (inti) {
+    isi += `<path d="M${x0 - 8} ${yTop - 6} L${x1 + 8} ${yTop - 6} A9 ${(yBot - yTop) / 2 + 6} 0 0 1 ${x1 + 8} ${yBot + 6} L${x0 - 8} ${yBot + 6} A9 ${(yBot - yTop) / 2 + 6} 0 0 1 ${x0 - 8} ${yTop - 6} Z" fill="#f2f2f2" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    isi += `<ellipse cx="${x1 + 8}" cy="${yMid}" rx="9" ry="${(yBot - yTop) / 2 + 6}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    T(x1 + (/^(ya|iya|true|1)$/i.test(String(cfg.kutub || '')) ? 44 : 34), yMid + 4, 'Besi lunak', 'start', 11.5);
+    b.titik(x1 + 100, yMid);
+  }
+  // untai: depan (tebal) miring sesuai belitan, belakang (tipis) menyambung ke untai berikutnya
+  const xs = []; for (let i = 0; i < n; i++) xs.push(x0 + 8 + i * sp);
+  xs.forEach((xi, i) => {
+    const xa = kananBelit ? xi : xi + Math.abs(dx), xb = kananBelit ? xi + dx : xi;
+    isi += `<path d="M${xa.toFixed(1)} ${yTop} C${(xa - 5).toFixed(1)} ${yTop + 10} ${(xb - 5).toFixed(1)} ${yBot - 10} ${xb.toFixed(1)} ${yBot}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
+    if (i < n - 1) isi += `<line x1="${xb.toFixed(1)}" y1="${yBot}" x2="${(xs[i + 1] + (kananBelit ? 0 : Math.abs(dx))).toFixed(1)}" y2="${yTop}" stroke="${GAYA.abu}" stroke-width="0.9"/>`;
+  });
+  b.titik(x0 - 12, yTop - 8); b.titik(x1 + 20, yBot + 8);
+  const xL = x0 + 8 + (kananBelit ? 0 : Math.abs(dx)) - 4, xR = xs[n - 1] + (kananBelit ? dx : 0) + 6;
+  // kawat ke baterai
+  isi += `<path d="M${xL} ${yTop} L${x0 - 14} ${yTop} L${x0 - 14} ${yBat} L${(x0 + x1) / 2 - 12} ${yBat}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
+  isi += `<path d="M${xR} ${yBot} L${x1 + 22} ${yBot} L${x1 + 22} ${yBat} L${(x0 + x1) / 2 + 12} ${yBat}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.5"/>`;
+  // baterai: pelat panjang = kutub positif; arus keluar dari positif
+  const cx = (x0 + x1) / 2, panjangKiri = naik;
+  const plat = (x, tinggi) => `<line x1="${x}" y1="${yBat - tinggi}" x2="${x}" y2="${yBat + tinggi}" stroke="${GAYA.hitam}" stroke-width="2.2"/>`;
+  isi += plat(cx - 4, panjangKiri ? 11 : 6) + plat(cx + 4, panjangKiri ? 6 : 11);
+  // panah dan nilai arus di kawat kiri
+  const yA = (yBat + yBot) / 2 + 4;
+  isi += arrowSVG(x0 - 14, naik ? yA + 10 : yA - 10, x0 - 14, naik ? yA - 10 : yA + 10, { headLen: 7, strokeWidth: 1.8 });
+  if (arus) T(x0 - 22, yA + 4, 'I = ' + arus, 'end', 12, true);
+  b.titik(x0 - 70, yBat + 4);
+  if (/^(ya|iya|true|1)$/i.test(String(cfg.kutub || ''))) {
+    const nKanan = naik === kananBelit;   // arus masuk dari kiri + belitan kanan -> kutub utara di kanan
+    T(x0 - 6, yMid + 4, nKanan ? 'S' : 'U', 'end', 13, true);
+    T(x1 + (inti ? 24 : 10), yMid + 4, nKanan ? 'U' : 'S', 'start', 13, true);
+  }
+  return bungkusGambarSVG(isi, b, true);
+}
+
 // ---------------------------------------------------------------------
 // Momen inersia (SMA): batang dengan poros (ujung / tengah / posisi 0-1), dua partikel pada batang ringan, cakram.
 //   bentuk=batang; panjang=2 m; massa=3 kg; poros=ujung|tengah|0.25
@@ -17358,6 +17416,7 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'inersia') svg = renderInersiaSVG(params);
     else if (type === 'spinner') svg = renderSpinnerSVG(params);
     else if (type === 'induksibuku') svg = renderInduksiSVG(params);
+    else if (type === 'solenoidabaterai') svg = renderSolenoidaBateraiSVG(params);
     else if (type === 'grafikbertahap') svg = renderGrafikBertahapSVG(params);
     else if (type === 'kartu') svg = renderKartuSVG(params);
     else if (type === 'toples') svg = renderToplesSVG(params);
