@@ -330,14 +330,56 @@ fn cadangkan_sebelum_tulis(id: &str, p: &Path, baru: &str) {
     }
 }
 
-#[tauri::command]
-pub fn canvas_write(id: String, json: String) -> Result<(), String> {
+/// Satu kunci untuk SEMUA penulisan berkas sketsa: simpanan editor (Mac,
+/// tablet) dan coretan murid yang digabung server adalah baca–ubah–tulis atas
+/// berkas yang sama. Tanpa kunci, dua penulis yang berselisih beberapa
+/// milidetik saling menimpa — goresan salah satunya hilang tanpa jejak.
+static KUNCI_TULIS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+pub fn kunci_tulis() -> std::sync::MutexGuard<'static, ()> {
+    KUNCI_TULIS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// `updated_at` tingkat atas berkas sketsa, tanpa mengurai seluruh JSON
+/// (sketsa ber-PDF bisa belasan MB). Kunci itu hanya ada di tingkat atas.
+pub fn updated_at_berkas(teks: &str) -> Option<i64> {
+    let i = teks.rfind("\"updated_at\":")? + "\"updated_at\":".len();
+    let angka: String = teks[i..].trim_start().chars().take_while(|c| c.is_ascii_digit() || *c == '-').collect();
+    angka.parse().ok()
+}
+
+/// Tulis berkas sketsa. Pemanggil WAJIB sudah memegang `kunci_tulis()`.
+pub fn tulis_berkas_terkunci(id: &str, json: &str) -> Result<(), String> {
     // JSON yang tidak terbaca ditolak di sini, bukan disimpan lalu gagal dibuka.
-    serde_json::from_str::<serde_json::Value>(&json).map_err(|e| format!("Sketch data is not valid JSON: {e}"))?;
+    serde_json::from_str::<serde_json::Value>(json).map_err(|e| format!("Sketch data is not valid JSON: {e}"))?;
     fs::create_dir_all(canvas_dir()).map_err(|e| e.to_string())?;
     let p = resolve_within(&canvas_dir(), &format!("{id}.json"))?;
-    cadangkan_sebelum_tulis(&id, &p, &json);
-    fs::write(p, json).map_err(|e| e.to_string())
+    cadangkan_sebelum_tulis(id, &p, json);
+    // Tulis ke berkas sementara lalu ganti nama: pembaca tidak pernah melihat
+    // berkas setengah jadi, dan aplikasi yang mati di tengah jalan tidak
+    // meninggalkan sketsa terpotong.
+    let sementara = p.with_extension("json.tmp");
+    fs::write(&sementara, json).map_err(|e| e.to_string())?;
+    fs::rename(&sementara, &p).map_err(|e| e.to_string())
+}
+
+/// Simpan sketsa. `dasar` = `updated_at` versi yang sedang disunting penulis;
+/// kalau berkasnya sudah berubah sejak itu (penulis lain menyimpan lebih dulu),
+/// tulisan ditolak dengan "KONFLIK:<updated_at sekarang>" supaya penulis
+/// menggabungkan dulu, bukan menimpa.
+#[tauri::command]
+pub fn canvas_write(id: String, json: String, dasar: Option<i64>) -> Result<(), String> {
+    let _g = kunci_tulis();
+    if let Some(d) = dasar {
+        if let Ok(p) = resolve_within(&canvas_dir(), &format!("{id}.json")) {
+            if let Some(kini) = fs::read_to_string(&p).ok().as_deref().and_then(updated_at_berkas) {
+                if kini != d {
+                    return Err(format!("KONFLIK:{kini}"));
+                }
+            }
+        }
+    }
+    tulis_berkas_terkunci(&id, &json)
 }
 
 /// Hapus berkas sketsa. Berkas yang sudah tidak ada bukan dianggap galat.
@@ -354,4 +396,36 @@ pub fn canvas_delete(id: String) -> Result<(), String> {
 #[tauri::command]
 pub fn write_bytes(path: String, bytes: Vec<u8>) -> Result<(), String> {
     fs::write(path, bytes).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod uji_tulis {
+    use super::{canvas_read, canvas_write, updated_at_berkas};
+
+    #[test]
+    fn stempel_waktu() {
+        assert_eq!(updated_at_berkas(r#"{"id":"a","strokes":[],"updated_at":1760000000123}"#), Some(1760000000123));
+        // Urutan kunci dari serde (abjad): updated_at tetap terbaca.
+        assert_eq!(updated_at_berkas(r#"{"pages":1,"title":"x","updated_at": 42}"#), Some(42));
+        assert_eq!(updated_at_berkas(r#"{"id":"a"}"#), None);
+    }
+
+    /// Simpanan yang dibuat dari versi basi ditolak; yang dari versi terbaru diterima.
+    #[test]
+    fn simpanan_basi_ditolak() {
+        std::env::set_var("EXACT_CANVAS_VAULT", std::env::temp_dir().join("uji-exact-vault"));
+        let _ = std::fs::create_dir_all(std::env::temp_dir().join("uji-exact-vault"));
+        let id = format!("cnv_uji{}", std::process::id());
+        canvas_write(id.clone(), r#"{"id":"x","strokes":[],"updated_at":100}"#.into(), None).unwrap();
+        // Murid menyimpan goresan → versi 200.
+        canvas_write(id.clone(), r#"{"id":"x","strokes":[{"id":"m"}],"updated_at":200}"#.into(), Some(100)).unwrap();
+        // Tablet guru masih memegang versi 100: ditolak, bukan menimpa goresan murid.
+        let e = canvas_write(id.clone(), r#"{"id":"x","strokes":[{"id":"g"}],"updated_at":300}"#.into(), Some(100)).unwrap_err();
+        assert_eq!(e, "KONFLIK:200");
+        assert!(canvas_read(id.clone()).unwrap().unwrap().contains(r#""id":"m""#));
+        // Sesudah menggabung (dasar 200) diterima.
+        canvas_write(id.clone(), r#"{"id":"x","strokes":[{"id":"m"},{"id":"g"}],"updated_at":300}"#.into(), Some(200)).unwrap();
+        assert_eq!(updated_at_berkas(&canvas_read(id.clone()).unwrap().unwrap()), Some(300));
+        let _ = super::canvas_delete(id);
+    }
 }

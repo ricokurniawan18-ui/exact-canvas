@@ -71,6 +71,52 @@ let timerUlang: number | null = null
 let antrean: string[] = []
 const BATAS_ANTREAN = 200
 
+/**
+ * Pesan sesaat — titik pratinjau, kursor, posisi layar. Tidak ada gunanya
+ * dikirim belakangan, jadi tidak diantrekan saat putus. Dulu ikut diantrekan
+ * dan, karena tiap goresan menghasilkan puluhan titik, membanjiri antrean
+ * sampai pesan `ubah` (goresan yang sudah jadi) tergeser keluar dan hilang.
+ */
+const SESAAT = new Set(['titik', 'kursor', 'pandangan', 'instrumen', 'goresan', 'objek', 'ping'])
+
+/**
+ * Pesan yang harus sampai (goresan murid): disimpan sampai server mengakuinya
+ * ({t:'ack', kunci}), dikirim ulang setiap tersambung lagi dan berkala kalau
+ * belum diakui. Server menyimpannya berdasarkan id goresan, jadi kiriman
+ * ganda aman.
+ */
+const belumDiakui = new Map<string, { pesan: string; dikirim: number }>()
+const BATAS_BELUM_DIAKUI = 500
+/** Disimpan juga di perangkat: halaman yang dimuat ulang saat putus tidak kehilangan goresannya. */
+const KUNCI_SIMPAN = 'exact-goresan-belum-diakui'
+try {
+  const lama = JSON.parse(localStorage.getItem(KUNCI_SIMPAN) ?? '[]') as [string, string][]
+  for (const [k, pesan] of lama) belumDiakui.set(k, { pesan, dikirim: 0 })
+} catch {
+  /* penyimpanan tidak tersedia */
+}
+let timerSimpanBelum: number | null = null
+function simpanBelumDiakui() {
+  if (timerSimpanBelum) return
+  timerSimpanBelum = window.setTimeout(() => {
+    timerSimpanBelum = null
+    try {
+      // Foto yang ditempel (data URL besar) tidak ikut disimpan — kuota terbatas.
+      const isi = [...belumDiakui].filter(([, v]) => v.pesan.length < 200_000).map(([k, v]) => [k, v.pesan])
+      if (isi.length) localStorage.setItem(KUNCI_SIMPAN, JSON.stringify(isi))
+      else localStorage.removeItem(KUNCI_SIMPAN)
+    } catch {
+      /* penuh / tidak tersedia */
+    }
+  }, 500)
+}
+
+/** Pesan terakhir dari server — untuk mengenali sambungan yang mati diam-diam. */
+let terakhirTerima = 0
+let timerDenyut: number | null = null
+/** Tanpa kabar selama ini (padahal kita mengirim ping tiap 10 detik): anggap putus. */
+const BATAS_SENYAP_MS = 25_000
+
 function sambung() {
   if (!opsi) return
   const u = new URL(opsi.url)
@@ -87,6 +133,8 @@ function sambung() {
   ws = soket
   soket.onopen = () => {
     if (ws !== soket) return
+    terakhirTerima = Date.now()
+    mulaiDenyut()
     useSinkron.setState({ status: 'tersambung', serverMati: false })
     if (antrean.length) {
       const isi = antrean
@@ -95,12 +143,19 @@ function sambung() {
         if (soket.readyState === WebSocket.OPEN) soket.send(pesan)
       }
     }
+    kirimUlangBelumDiakui(soket, 0)
   }
   soket.onmessage = (e) => {
+    terakhirTerima = Date.now()
     let p: PesanLangsung
     try {
       p = JSON.parse(String(e.data)) as PesanLangsung
     } catch {
+      return
+    }
+    if (p.t === 'pong') return
+    if (p.t === 'ack') {
+      if (typeof p.kunci === 'string' && belumDiakui.delete(p.kunci)) simpanBelumDiakui()
       return
     }
     if (p.t === 'klien') {
@@ -132,6 +187,37 @@ function sambung() {
   }
 }
 
+/** Kirim ulang pesan yang belum diakui dan sudah lebih lama dari `umurMs`. */
+function kirimUlangBelumDiakui(soket: WebSocket, umurMs: number) {
+  const kini = Date.now()
+  for (const v of belumDiakui.values()) {
+    if (soket.readyState !== WebSocket.OPEN) return
+    if (kini - v.dikirim < umurMs) continue
+    v.dikirim = kini
+    soket.send(v.pesan)
+  }
+}
+
+/**
+ * Sambungan seluler/tunnel bisa tetap "OPEN" padahal sudah mati: pesan yang
+ * dikirim masuk ke lubang tanpa galat. Ping tiap 10 detik; kalau server
+ * senyap lebih dari 25 detik, sambungan ditutup dan disambung ulang — lalu
+ * goresan yang belum diakui dikirim lagi.
+ */
+function mulaiDenyut() {
+  if (timerDenyut) return
+  timerDenyut = window.setInterval(() => {
+    const s = ws
+    if (!s || s.readyState !== WebSocket.OPEN) return
+    if (Date.now() - terakhirTerima > BATAS_SENYAP_MS) {
+      s.close()
+      return
+    }
+    s.send(JSON.stringify({ t: 'ping' }))
+    kirimUlangBelumDiakui(s, 8_000)
+  }, 10_000)
+}
+
 export function mulaiSinkron(o: OpsiSinkron): void {
   if (opsi && opsi.url === o.url && opsi.pin === o.pin && ws && ws.readyState <= 1) return
   hentikanSinkron()
@@ -143,6 +229,8 @@ export function hentikanSinkron(): void {
   opsi = null
   if (timerUlang) window.clearTimeout(timerUlang)
   timerUlang = null
+  if (timerDenyut) window.clearInterval(timerDenyut)
+  timerDenyut = null
   const s = ws
   ws = null
   s?.close()
@@ -161,11 +249,34 @@ export function tersambung(): boolean {
 export function kirim(p: Record<string, unknown>): void {
   const pesan = JSON.stringify({ ...p, src: idKlien })
   if (!ws || ws.readyState !== WebSocket.OPEN) {
+    if (SESAAT.has(String(p.t))) return
     antrean.push(pesan)
     if (antrean.length > BATAS_ANTREAN) antrean.shift()
     return
   }
   ws.send(pesan)
+}
+
+/**
+ * Kirim pesan yang harus sampai (goresan murid yang sudah jadi). Disimpan
+ * sampai server mengakuinya; putus, tersambung lagi, atau sambungan mati
+ * diam-diam — pesannya dikirim ulang sampai diakui.
+ */
+export function kirimPasti(p: Record<string, unknown>): void {
+  const kunci = `${idKlien}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  const pesan = JSON.stringify({ ...p, src: idKlien, kunci })
+  belumDiakui.set(kunci, { pesan, dikirim: Date.now() })
+  if (belumDiakui.size > BATAS_BELUM_DIAKUI) {
+    const tertua = belumDiakui.keys().next().value
+    if (tertua) belumDiakui.delete(tertua)
+  }
+  simpanBelumDiakui()
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(pesan)
+}
+
+/** Jumlah goresan yang belum dipastikan tersimpan di server. */
+export function jumlahBelumDiakui(): number {
+  return belumDiakui.size
 }
 
 /** Dengarkan pesan dari layar lain (pesan sendiri sudah disaring). */

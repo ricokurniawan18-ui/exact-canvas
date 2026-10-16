@@ -92,6 +92,7 @@ import { bunyiTanya, daftarTanya, ubahTanya, type Tanya } from '@/lib/kelas'
 import { buatKanvas } from './data'
 import { useTampilan } from '@/lib/tampilan'
 import { q1, x } from '@/lib/db'
+import { galatKonflik } from '@/lib/vault'
 import { useData } from '@/lib/useData'
 import { ukuranTabel, type DefinisiGrafik, type DefinisiTabel, type MetaGambar } from './sisipan'
 import {
@@ -125,6 +126,43 @@ import {
 const AMBANG_PANGGANG = 2000
 const SISA_HIDUP = 400
 const JEDA_SIMPAN = 800
+
+/**
+ * Tulis `saya` ke vault tanpa menimpa simpanan sisi lain.
+ *
+ * Kalau sisi lain (Mac, tablet, goresan murid) menyimpan sejak `basis`
+ * dimuat, hasilnya digabung tiga arah dulu. Server ikut menjaga: tulisan
+ * membawa `dasar` (versi yang digabung) dan ditolak bila berkasnya berubah
+ * di sela-sela — misalnya goresan murid tersimpan selagi simpanan tablet
+ * masih di jalan — lalu digabung ulang dan dicoba lagi. Tanpa ini, simpanan
+ * yang kalah balapan diam-diam menimpa goresan yang lain.
+ *
+ * Tidak menyentuh keadaan React: dipakai juga saat sketsa sudah ditinggalkan.
+ */
+async function tulisDenganGabung(id: string, saya: BerkasKanvas, basis: BerkasKanvas | null): Promise<BerkasKanvas> {
+  let tulis = saya
+  let dasar = basis?.updated_at
+  const baris = basis ? await q1<{ updated_at: number }>('SELECT updated_at FROM canvases WHERE id = ?', [id]).catch(() => null) : null
+  if (baris && basis && baris.updated_at !== basis.updated_at) {
+    const diVault = await bacaKanvas(id).catch(() => null)
+    if (diVault && diVault.updated_at !== basis.updated_at) {
+      tulis = { ...gabungkan(basis, saya, diVault), updated_at: saya.updated_at }
+      dasar = diVault.updated_at
+    }
+  }
+  for (let coba = 0; ; coba++) {
+    try {
+      await simpanKanvas(tulis, dasar)
+      return tulis
+    } catch (e) {
+      if (!basis || !galatKonflik(e) || coba >= 4) throw e
+      const diVault = await bacaKanvas(id)
+      if (!diVault) throw e
+      tulis = { ...gabungkan(basis, tulis, diVault), updated_at: Math.max(Date.now(), diVault.updated_at + 1) }
+      dasar = diVault.updated_at
+    }
+  }
+}
 
 /** Latar kertas. Bukan coretan — tidak ikut terhapus, tidak ikut terekspor. */
 type Latar = 'polos' | 'titik' | 'kotak' | 'garis'
@@ -1004,12 +1042,22 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
   const objekRef = useRef(objek)
   objekRef.current = objek
 
+  /** Simpanan terakhir gagal (jaringan): dicoba ulang otomatis, tombol simpan memberi tahu. */
+  const [gagalSimpan, setGagalSimpan] = useState(false)
+  const percobaanSimpan = useRef(0)
+  /** Simpanan sedang di jalan; kabar "sisi lain menyimpan" yang datang saat itu ditunda. */
+  const simpanBerjalan = useRef(false)
+  const muatUlangTertunda = useRef(false)
+  const idKanvasRef = useRef(idKanvas)
+  idKanvasRef.current = idKanvas
+  const simpanSekarangRef = useRef<(isi: Coretan[]) => Promise<void>>(async () => {})
+  const muatUlangGabungRef = useRef<() => Promise<void>>(async () => {})
+
   const simpanSekarang = useCallback(
     async (isi: Coretan[]) => {
       if (simpanTimer.current) window.clearTimeout(simpanTimer.current)
       simpanTimer.current = null
       if (!dimuat.current) return
-      const saat = Date.now()
       const saya = berkasBaru(
         idKanvas,
         judul,
@@ -1021,34 +1069,58 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
         kertasRef.current,
         jumlahHalamanRef.current,
       )
-      let tulis = saya
-      // Kalau sisi lain sempat menyimpan sejak salinan ini dimuat, hasilnya
-      // digabung dulu — bukan ditimpa. Ini yang membuat goresan dari tablet dan
-      // dari Mac sama-sama bertahan.
-      //
-      // Dicek lewat SATU angka di SQLite dulu (sama seperti jaring pengaman
-      // lima detik di bawah), bukan langsung bacaKanvas — sketsa puluhan
-      // halaman bisa belasan MB, dan mem-parse seluruhnya cuma untuk
-      // membandingkan satu stempel waktu (kasus paling umum: tidak ada sisi
-      // lain yang menulis) berarti menahan thread utama tiap kali jeda
-      // menulis berakhir. bacaKanvas yang mahal itu baru dipanggil kalau
-      // angkanya memang berbeda.
       const basis = basisRef.current
-      const baris = basis ? await q1<{ updated_at: number }>('SELECT updated_at FROM canvases WHERE id = ?', [idKanvas]).catch(() => null) : null
-      if (baris && basis && baris.updated_at !== basis.updated_at) {
-        const diVault = await bacaKanvas(idKanvas).catch(() => null)
-        if (diVault && diVault.updated_at !== basis.updated_at) {
-          tulis = { ...gabungkan(basis, saya, diVault), updated_at: saat }
-          terapkanBerkas(tulis)
+      simpanBerjalan.current = true
+      try {
+        const tulis = await tulisDenganGabung(idKanvas, saya, basis)
+        // Sketsa sudah berganti selagi menyimpan: jangan sentuh keadaan sketsa baru.
+        if (idKanvasRef.current !== idKanvas) return
+        if (tulis !== saya) {
+          // Hasil gabungan memuat goresan sisi lain. Goresan yang ditulis DI SINI
+          // selama simpanan di jalan (tablet lewat internet: bisa beberapa detik)
+          // belum ada di `saya` — gabung lagi dengan keadaan sekarang supaya
+          // tidak terhapus dari layar.
+          const kini = berkasBaru(
+            idKanvas,
+            judul,
+            coretanRef.current,
+            lapisanRef.current,
+            gambarRef.current,
+            objekRef.current,
+            teksRef.current,
+            kertasRef.current,
+            jumlahHalamanRef.current,
+          )
+          terapkanBerkas(gabungkan(saya, kini, tulis))
+        }
+        basisRef.current = tulis
+        setDisimpan(tulis.updated_at)
+        percobaanSimpan.current = 0
+        setGagalSimpan(false)
+      } catch {
+        if (idKanvasRef.current !== idKanvas) return
+        // Jaringan putus / server sibuk: goresan tetap di layar dan dicoba
+        // simpan lagi dengan jeda yang makin panjang (2, 4, 8 … 30 detik).
+        setGagalSimpan(true)
+        const tunda = Math.min(30_000, 2_000 * 2 ** percobaanSimpan.current++)
+        if (!simpanTimer.current) {
+          simpanTimer.current = window.setTimeout(() => {
+            simpanTimer.current = null
+            void simpanSekarangRef.current(coretanRef.current)
+          }, tunda)
+        }
+      } finally {
+        simpanBerjalan.current = false
+        if (muatUlangTertunda.current && idKanvasRef.current === idKanvas) {
+          muatUlangTertunda.current = false
+          void muatUlangGabungRef.current()
         }
       }
-      await simpanKanvas(tulis)
-      basisRef.current = tulis
-      setDisimpan(saat)
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [idKanvas, judul],
   )
+  simpanSekarangRef.current = simpanSekarang
 
   /** Ganti seluruh keadaan dengan isi berkas — tanpa memicu penyimpanan ulang. */
   function terapkanBerkas(b: BerkasKanvas) {
@@ -1082,6 +1154,10 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
    */
   const muatUlangGabung = useCallback(async () => {
     if (!dimuat.current) return
+    if (simpanBerjalan.current) {
+      muatUlangTertunda.current = true
+      return
+    }
     if (simpanTimer.current) {
       void simpanSekarang(coretanRef.current)
       return
@@ -1106,6 +1182,7 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
     setDisimpan(mereka.updated_at)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idKanvas, judul, simpanSekarang])
+  muatUlangGabungRef.current = muatUlangGabung
 
   useEffect(
     () =>
@@ -1148,14 +1225,70 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
 
   // Sketsa yang belum sempat tersimpan tidak boleh hilang saat berpindah
   // sketsa, berpindah modul, atau menutup window.
+  //
+  // Dulu simpanan yang masih menunggu jeda di sini cuma dibatalkan — goresan
+  // yang ditulis kurang dari sedetik sebelum pindah sketsa hilang. Sekarang
+  // disiram: ditulis di latar (dengan penggabungan), tanpa menyentuh keadaan
+  // sketsa berikutnya.
   useEffect(() => {
+    const idLama = idKanvas
+    const judulLama = judul
     return () => {
-      if (simpanTimer.current) {
-        window.clearTimeout(simpanTimer.current)
-        simpanTimer.current = null
-      }
+      if (!simpanTimer.current) return
+      window.clearTimeout(simpanTimer.current)
+      simpanTimer.current = null
+      if (!dimuat.current) return
+      const saya = berkasBaru(
+        idLama,
+        basisRef.current?.title ?? judulLama,
+        coretanRef.current,
+        lapisanRef.current,
+        gambarRef.current,
+        objekRef.current,
+        teksRef.current,
+        kertasRef.current,
+        jumlahHalamanRef.current,
+      )
+      const basis = basisRef.current
+      void (async () => {
+        for (let coba = 0; coba < 6; coba++) {
+          try {
+            await tulisDenganGabung(idLama, saya, basis)
+            return
+          } catch {
+            await new Promise((r) => window.setTimeout(r, Math.min(30_000, 2_000 * 2 ** coba)))
+          }
+        }
+        beriTahu(`Could not save "${saya.title}" — check the connection and open it again.`)
+      })()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idKanvas])
+
+  // Tablet berpindah aplikasi / layar dikunci / tab ditutup: simpan sekarang,
+  // jangan menunggu jeda — halaman di latar bisa dibekukan atau dibuang browser.
+  useEffect(() => {
+    const siram = () => {
+      if (simpanTimer.current) void simpanSekarangRef.current(coretanRef.current)
+    }
+    const padaTersembunyi = () => {
+      if (document.visibilityState === 'hidden') siram()
+    }
+    const sebelumTutup = (e: BeforeUnloadEvent) => {
+      if (!simpanTimer.current && !simpanBerjalan.current) return
+      siram()
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    document.addEventListener('visibilitychange', padaTersembunyi)
+    window.addEventListener('pagehide', siram)
+    window.addEventListener('beforeunload', sebelumTutup)
+    return () => {
+      document.removeEventListener('visibilitychange', padaTersembunyi)
+      window.removeEventListener('pagehide', siram)
+      window.removeEventListener('beforeunload', sebelumTutup)
+    }
+  }, [])
 
   /**
    * Siarkan selisih dua keadaan ke layar lain sebagai operasi kecil.
@@ -4639,7 +4772,7 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
           }}
         >
           <Icon nama="arsip" ukuran={14} />
-          {disimpan ? `Saved ${jam(new Date(disimpan))}` : 'Save now'}
+          {gagalSimpan ? 'Not saved — retrying…' : disimpan ? `Saved ${jam(new Date(disimpan))}` : 'Save now'}
         </button>
 
         <div className="flex gap-1">

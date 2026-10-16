@@ -705,8 +705,11 @@ async fn api_canvas_write(
     if !guru_sah(&hub, &headers, None, None) {
         return tolak_admin();
     }
-    match vault::canvas_write(id, body) {
+    let dasar = headers.get("x-exact-dasar").and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<i64>().ok());
+    match tokio::task::spawn_blocking(move || vault::canvas_write(id, body, dasar)).await.unwrap_or_else(|e| Err(e.to_string())) {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        // Ada yang menyimpan lebih dulu: editor menggabungkan lalu mencoba lagi.
+        Err(e) if e.starts_with("KONFLIK:") => (StatusCode::CONFLICT, e).into_response(),
         Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
     }
 }
@@ -1208,6 +1211,21 @@ async fn layani(soket: WebSocket, hub: Arc<Hub>, klien: Klien) {
                         // klien di server sebelum diteruskan.
                         if let Ok(v) = serde_json::from_str::<Value>(&t) {
                             let jenis = v.get("t").and_then(|x| x.as_str()).unwrap_or("");
+                            // Denyut: klien tahu sambungannya masih hidup (sambungan
+                            // seluler/tunnel bisa "terbuka" padahal sudah mati).
+                            if jenis == "ping" {
+                                if tulis.send(Message::Text(json!({ "t": "pong" }).to_string().into())).await.is_err() {
+                                    break;
+                                }
+                                continue;
+                            }
+                            // Pesan berkunci (goresan murid): diakui begitu diterima
+                            // server, supaya HP tahu kapan boleh berhenti mengirim ulang.
+                            if let Some(k) = v.get("kunci").and_then(|x| x.as_str()) {
+                                if tulis.send(Message::Text(json!({ "t": "ack", "kunci": k }).to_string().into())).await.is_err() {
+                                    break;
+                                }
+                            }
                             if jenis == "fokus" {
                                 if let Ok(mut k) = hub.klien.lock() {
                                     if let Some(me) = k.iter_mut().find(|x| x.id == id) {

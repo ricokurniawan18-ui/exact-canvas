@@ -420,7 +420,7 @@ fn buat_sketsa_kosong(c: &rusqlite::Connection, judul: &str, grup: Option<&str>,
         "id": id, "title": judul, "strokes": [], "images": [], "objects": [], "texts": [],
         "layers": [lapisan(1), lapisan(2), lapisan(3)], "paper": "a4", "pages": 1, "updated_at": kini,
     });
-    vault::canvas_write(id.clone(), berkas.to_string())?;
+    vault::canvas_write(id.clone(), berkas.to_string(), None)?;
     c.execute(
         "INSERT OR REPLACE INTO canvases (id, title, updated_at, group_id, student_id) VALUES (?1, ?2, ?3, ?4, ?5)",
         rusqlite::params![id, judul, kini, grup, murid],
@@ -658,6 +658,8 @@ pub fn goresan_milik(id_kanvas: &str, murid: &str) -> std::collections::HashSet<
 }
 
 fn tulis_coretan_murid(id: &str, ops: &[Value]) -> Result<(), String> {
+    // Baca–gabung–tulis di bawah kunci yang sama dengan simpanan editor.
+    let _g = vault::kunci_tulis();
     let teks = vault::canvas_read(id.to_string())?.ok_or_else(|| "Sketch is gone.".to_string())?;
     let mut d: Value = serde_json::from_str(&teks).map_err(|e| e.to_string())?;
     if !d.is_object() {
@@ -736,7 +738,7 @@ fn tulis_coretan_murid(id: &str, ops: &[Value]) -> Result<(), String> {
     }
     let kini = sekarang();
     d["updated_at"] = json!(kini);
-    vault::canvas_write(id.to_string(), d.to_string())?;
+    vault::tulis_berkas_terkunci(id, &d.to_string())?;
     let c = koneksi()?;
     // Upsert, bukan UPDATE: baris yang hilang membuat `sketsa_murid` menganggap
     // kanvasnya tidak ada lagi, dan sejak itu goresan murid dibuang diam-diam.

@@ -23,15 +23,27 @@ export const kanvas = {
       throw e
     }
   },
-  tulis: (id: string, json: string) =>
+  /** `dasar` = updated_at versi yang disunting; server menolak ("KONFLIK") kalau berkasnya sudah berubah. */
+  tulis: (id: string, json: string, dasar?: number) =>
     inTauri
-      ? inv<void>('canvas_write', { id, json })
-      : api<void>(`/api/canvas/${encodeURIComponent(id)}`, { method: 'PUT', body: json }),
+      ? inv<void>('canvas_write', { id, json, dasar: dasar ?? null })
+      : api<void>(`/api/canvas/${encodeURIComponent(id)}`, {
+          method: 'PUT',
+          body: json,
+          timeoutMs: 60_000,
+          headers: dasar !== undefined ? { 'x-exact-dasar': String(dasar) } : undefined,
+        }),
   daftar: () => (inTauri ? inv<string[]>('canvas_list') : api<string[]>('/api/canvas')),
   hapus: (id: string) =>
     inTauri
       ? inv<void>('canvas_delete', { id })
       : api<void>(`/api/canvas/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+}
+
+/** Simpanan ditolak karena sisi lain menyimpan lebih dulu (lihat `dasar`). */
+export function galatKonflik(e: unknown): boolean {
+  const pesan = e instanceof Error ? e.message : String(e)
+  return pesan.startsWith('KONFLIK:') || (e as { status?: number })?.status === 409
 }
 
 export const vault = {

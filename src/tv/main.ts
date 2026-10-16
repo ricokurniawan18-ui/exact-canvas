@@ -9,7 +9,7 @@
  */
 
 import { api as apiTanpaBatas, pinTersimpan, namaPerangkat, sesiAktif, simpanPin, simpanSesi } from '@/lib/api'
-import { dengarkanLangsung, kirim, mulaiSinkron, useSinkron, type PesanLangsung } from '@/lib/sinkron'
+import { dengarkanLangsung, jumlahBelumDiakui, kirim, kirimPasti, mulaiSinkron, useSinkron, type PesanLangsung } from '@/lib/sinkron'
 import { bunyi } from '@/lib/kelas'
 import { pilihTujuan, tulisBerkas } from '@/lib/berkas'
 import { ANGGARAN_PDF, padatkanHalaman } from '@/lib/pdf'
@@ -806,6 +806,20 @@ async function mulai() {
     // Masuk pertama hari ini: minta nilai ulangan terbaru & konfirmasi jadwal les.
     window.setTimeout(() => void bukaHarian(true), 1500)
     pasangNotif()
+    // Goresan yang belum dipastikan tersimpan di server lebih dari 15 detik:
+    // beri tahu, supaya anak tidak menutup halaman dan mengira sudah aman.
+    {
+      let sejak = 0
+      window.setInterval(() => {
+        if (jumlahBelumDiakui() === 0) {
+          if (sejak && Date.now() - sejak > 15_000) tampilkanStatus('Your drawing is saved.')
+          sejak = 0
+          return
+        }
+        if (!sejak) sejak = Date.now()
+        else if (Date.now() - sejak > 15_000) tampilkanStatus('Connection is weak — your drawing will be saved when it comes back. Keep this page open.', true)
+      }, 5_000)
+    }
     el('tombol-info').onclick = () => void bukaInfo('agenda')
     // Dari notifikasi agenda/catatan: langsung buka tabnya.
     {
@@ -2458,7 +2472,7 @@ async function sisipFotoKanvas(berkasTerpilih: File[]) {
   for (const g of baru) muatGambar(g.src, () => (kotorDasar = true))
   kotorDasar = true
   kotorAktif = true
-  kirim({ t: 'ubah', idKanvas: idSketsa, hapus: { coretan: [], objek: [] }, tambah: { coretan: [], objek: [], gambar: baru } })
+  kirimPasti({ t: 'ubah', idKanvas: idSketsa, hapus: { coretan: [], objek: [] }, tambah: { coretan: [], objek: [], gambar: baru } })
   tampilkanStatus(baru.length > 1 ? `${baru.length} photos added to your canvas.` : 'Photo added to your canvas.')
 }
 
@@ -2942,7 +2956,7 @@ function komitBentukKu(c: Coretan, o: Objek) {
   kotorDasar = true
   kotorAktif = true
   kirim({ t: 'goresan-selesai', idKanvas: idSketsa, id: c.id, batal: true })
-  kirim({ t: 'ubah', idKanvas: idSketsa, hapus: { coretan: [], objek: [] }, tambah: { coretan: [], objek: [o] } })
+  kirimPasti({ t: 'ubah', idKanvas: idSketsa, hapus: { coretan: [], objek: [] }, tambah: { coretan: [], objek: [o] } })
 }
 
 function selesaiGoresan() {
@@ -2991,7 +3005,7 @@ function selesaiGoresan() {
   kotorDasar = true
   kotorAktif = true
   kirim({ t: 'goresan-selesai', idKanvas: idSketsa, id: g.c.id })
-  kirim({ t: 'ubah', idKanvas: idSketsa, hapus: { coretan: [], objek: [] }, tambah: { coretan: [g.c], objek: [] } })
+  kirimPasti({ t: 'ubah', idKanvas: idSketsa, hapus: { coretan: [], objek: [] }, tambah: { coretan: [g.c], objek: [] } })
 }
 
 /* Penghapus: menyapu membuang goresan saya yang tersentuh, seutuhnya.
@@ -3021,7 +3035,7 @@ function hapusDi(lx: number, ly: number) {
   sketsa.strokes = sketsa.strokes.filter((c) => !ids.has(c.id))
   hapusanSaya.dihapus.push(...kena)
   kotorDasar = true
-  kirim({ t: 'ubah', idKanvas: idSketsa, hapus: { coretan: Array.from(ids), objek: [] }, tambah: { coretan: [], objek: [] } })
+  kirimPasti({ t: 'ubah', idKanvas: idSketsa, hapus: { coretan: Array.from(ids), objek: [] }, tambah: { coretan: [], objek: [] } })
 }
 
 function selesaiHapus() {

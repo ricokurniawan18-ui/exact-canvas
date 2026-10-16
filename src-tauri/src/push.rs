@@ -451,8 +451,9 @@ mod uji {
 
     #[test]
     fn jwt_terverifikasi() {
-        std::env::set_var("EXACT_CANVAS_VAULT", std::env::temp_dir().join("uji-push-vapid"));
-        let _ = std::fs::create_dir_all(std::env::temp_dir().join("uji-push-vapid"));
+        // Satu folder vault uji untuk semua tes (variabel lingkungan dipakai bersama antar-thread).
+        std::env::set_var("EXACT_CANVAS_VAULT", std::env::temp_dir().join("uji-exact-vault"));
+        let _ = std::fs::create_dir_all(std::env::temp_dir().join("uji-exact-vault"));
         let t = jwt_vapid("https://fcm.googleapis.com/fcm/send/abc").unwrap();
         let bagian: Vec<&str> = t.split('.').collect();
         let klaim: Value = serde_json::from_slice(&B64.decode(bagian[1]).unwrap()).unwrap();

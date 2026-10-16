@@ -124,8 +124,8 @@ export async function bacaKanvas(id: string): Promise<BerkasKanvas | null> {
   }
 }
 
-export async function simpanKanvas(berkas: BerkasKanvas): Promise<void> {
-  await kanvas.tulis(berkas.id, JSON.stringify(berkas))
+export async function simpanKanvas(berkas: BerkasKanvas, dasar?: number): Promise<void> {
+  await kanvas.tulis(berkas.id, JSON.stringify(berkas), dasar)
   await x(
     `INSERT INTO canvases (id, title, updated_at) VALUES (?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET title = excluded.title, updated_at = excluded.updated_at`,

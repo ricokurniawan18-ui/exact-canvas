@@ -142,9 +142,9 @@ export class GalatApi extends Error {
 
 export async function api<T>(
   path: string,
-  init: { method?: string; body?: BodyInit; json?: unknown; timeoutMs?: number } = {},
+  init: { method?: string; body?: BodyInit; json?: unknown; timeoutMs?: number; headers?: Record<string, string> } = {},
 ): Promise<T> {
-  const headers: Record<string, string> = {}
+  const headers: Record<string, string> = { ...(init.headers ?? {}) }
   const pin = pinAktif()
   if (pin) headers['x-exact-pin'] = pin
   const sesi = sesiAktif()
