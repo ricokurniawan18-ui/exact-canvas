@@ -633,6 +633,19 @@ export function geserCoretan(c: Coretan, dx: number, dy: number): Coretan {
   return { ...c, points: c.points.map(([x, y, p]) => [x + dx, y + dy, p]) }
 }
 
+/**
+ * Skala seragam terhadap titik jangkar. Tebal garis ikut diskala supaya
+ * tulisan yang diperbesar tetap terlihat sama, hanya lebih besar.
+ */
+export function skalaCoretan(c: Coretan, jangkar: [number, number], s: number): Coretan {
+  const [jx, jy] = jangkar
+  return {
+    ...c,
+    size: Math.max(0.5, c.size * s),
+    points: c.points.map(([x, y, p]) => [jx + (x - jx) * s, jy + (y - jy) * s, p]),
+  }
+}
+
 /* ── Ekspor ────────────────────────────────────────────────────────── */
 
 export function keSvg(

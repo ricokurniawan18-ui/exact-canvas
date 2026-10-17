@@ -22,6 +22,7 @@ import {
   coretanKena,
   gambarCoretan,
   geserCoretan,
+  skalaCoretan,
   garisLuar,
   jalurDari,
   kePng,
@@ -190,6 +191,17 @@ const SISI_MAKS = 2200
 
 /** Radius pegangan titik sudut objek, dalam piksel layar. */
 const TITIK_KENDALI = 7
+
+/**
+ * Papan salin coretan laso. Disimpan di modul, bukan di state komponen, supaya
+ * yang disalin di satu halaman/kanvas masih bisa ditempel sesudah pindah
+ * halaman atau membuka kanvas murid (komponennya dipasang ulang).
+ */
+let papanCoretan: Coretan[] | null = null
+/** Berapa kali isi papan sudah ditempel — tiap tempelan bergeser sedikit lagi. */
+let tempelanKe = 0
+/** Penanda teks di papan klip sistem: isinya coretan Exact Canvas, bukan teks biasa. */
+const PENANDA_PAPAN = 'exact-canvas/coretan:'
 
 /** Jarak pegangan putar dari tepi atas bentuk, dalam piksel layar. */
 const LENGAN_PUTAR = 26
@@ -896,6 +908,18 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
   /** Sudut pertama seretan laso kotak; laso bebas tidak memerlukannya. */
   const awalLaso = useRef<{ x: number; y: number } | null>(null)
   const geser = useRef<{ x: number; y: number } | null>(null)
+  /**
+   * Ubah ukuran pilihan laso dari salah satu sudut bingkai. Coretan asal
+   * disimpan supaya tiap gerakan menskala dari bentuk awal, bukan dari hasil
+   * gerakan sebelumnya (yang lama-lama menumpuk galat pembulatan).
+   */
+  /** ⌘V ditekan; batal kalau event paste datang menanganinya lebih dulu. */
+  const tempelTertunda = useRef(false)
+  const ukurPilihan = useRef<{
+    jangkar: [number, number]
+    sudut: [number, number]
+    awal: Coretan[]
+  } | null>(null)
   const seretTeks = useRef<{ id: string; x: number; y: number } | null>(null)
   const ketikRef = useRef<HTMLTextAreaElement | null>(null)
   /**
@@ -1648,6 +1672,18 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
         ctx.fillStyle = warnaToken('accent')
         ctx.globalAlpha = 0.05
         ctx.fillRect(k.x1, k.y1, k.x2 - k.x1, k.y2 - k.y1)
+        // Pegangan ubah-ukuran di keempat sudut, seukuran pegangan gambar.
+        ctx.globalAlpha = 1
+        ctx.setLineDash([])
+        const p = PEGANGAN / v.tampilan.skala
+        for (const [px, py] of sudutKotak(k)) {
+          ctx.fillStyle = warnaToken('paper')
+          ctx.fillRect(px - p / 2, py - p / 2, p, p)
+          ctx.fillStyle = warnaToken('accent')
+          ctx.globalAlpha = 0.9
+          ctx.strokeRect(px - p / 2, py - p / 2, p, p)
+          ctx.globalAlpha = 1
+        }
         ctx.restore()
       }
     }
@@ -2141,6 +2177,22 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
     }
 
     if (efektif === 'laso' || efektif === 'lasoKotak') {
+      // Pegangan sudut pilihan diuji paling awal: ia kecil dan sengaja dituju,
+      // dan sering menumpuk di atas tulisan atau gambar di dekatnya.
+      const kp = kotakPilihan()
+      if (kp) {
+        const sudut = sudutKotak(kp)
+        const jangkauan = PEGANGAN / v.tampilan.skala
+        const i = sudut.findIndex(([px, py]) => Math.hypot(px - d.x, py - d.y) <= jangkauan)
+        if (i >= 0) {
+          ukurPilihan.current = {
+            sudut: sudut[i],
+            jangkar: sudut[(i + 2) % 4],
+            awal: coretan,
+          }
+          return
+        }
+      }
       // Tulisan diuji lebih dulu: ia digambar paling atas, jadi ia juga yang
       // pantas tersentuh lebih dulu.
       const teksKenaIni = [...teks]
@@ -2549,6 +2601,24 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
       return
     }
 
+    if (ukurPilihan.current) {
+      const d = v.keDunia(e.clientX, e.clientY)
+      const { jangkar, sudut, awal } = ukurPilihan.current
+      // Skala seragam: tulisan tangan dan bangun yang gepeng selalu salah.
+      // Jarak pointer ke sudut seberang dibandingkan dengan jarak semula.
+      const jarakAwal = Math.hypot(sudut[0] - jangkar[0], sudut[1] - jangkar[1]) || 1
+      const s = Math.max(0.05, Math.hypot(d.x - jangkar[0], d.y - jangkar[1]) / jarakAwal)
+      const asal = new Map(awal.map((c) => [c.id, c]))
+      setCoretan((lama) =>
+        lama.map((c) => {
+          const a = asal.get(c.id)
+          return a && pilihan.has(c.id) ? skalaCoretan(a, jangkar, s) : c
+        }),
+      )
+      panggang.current = null
+      return
+    }
+
     if (geser.current) {
       const d = v.keDunia(e.clientX, e.clientY)
       const dx = d.x - geser.current.x
@@ -2709,6 +2779,19 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
       return
     }
 
+    if (ukurPilihan.current) {
+      // Satu langkah undo untuk seluruh tarikan, dan disiarkan ke TV sekali
+      // saat pena diangkat — bukan setiap gerakan.
+      const { awal } = ukurPilihan.current
+      ukurPilihan.current = null
+      riwayat.current.push({ coretan: awal, objek })
+      if (riwayat.current.length > 60) riwayat.current.shift()
+      riwayatMaju.current = []
+      siarkanPerubahan(awal, coretan, objek, objek)
+      jadwalkanSimpan(coretan)
+      return
+    }
+
     if (geser.current) {
       geser.current = null
       jadwalkanSimpan(coretan)
@@ -2843,6 +2926,56 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
     setPilihan(new Set(salinan.map((c) => c.id)))
     panggang.current = null
   }, [coretan, objek, objekTerpilih, pilihan, terapkan])
+
+  /** Salin coretan terpilih ke papan salin. Mengembalikan isinya (atau null). */
+  const salinPilihan = useCallback((): Coretan[] | null => {
+    if (pilihan.size === 0) return null
+    papanCoretan = coretan.filter((c) => pilihan.has(c.id))
+    tempelanKe = 0
+    beriTahu(`Copied ${papanCoretan.length} stroke${papanCoretan.length === 1 ? '' : 's'}.`)
+    return papanCoretan
+  }, [coretan, pilihan, beriTahu])
+
+  const hapusPilihan = useCallback(() => {
+    if (pilihan.size === 0) return
+    terapkan(coretan.filter((c) => !pilihan.has(c.id)))
+    setPilihan(new Set())
+    panggang.current = null
+  }, [coretan, pilihan, terapkan])
+
+  /**
+   * Tempel isi papan salin sebagai coretan baru di lapisan aktif. Tempelan
+   * berturut-turut makin bergeser, jadi ⌘V berkali-kali menghasilkan deretan.
+   * Hasilnya langsung jadi pilihan laso supaya bisa langsung diseret/diubah.
+   */
+  const tempelCoretan = useCallback(
+    (isi?: Coretan[] | null) => {
+      const sumber = isi ?? papanCoretan
+      if (!sumber || sumber.length === 0) return false
+      const sasaran = lapisanInfo[lapisan]
+      if (sasaran?.kunci) {
+        beriTahu(`${sasaran.nama} is locked.`)
+        return true
+      }
+      tempelanKe += 1
+      const geserTempel = 18 * tempelanKe
+      const salinan = sumber.map((c) => ({
+        ...geserCoretan(c, geserTempel, geserTempel),
+        id: newId('sk'),
+        layer: lapisan,
+        murid: undefined,
+      }))
+      terapkan([...coretan, ...salinan])
+      setPilihan(new Set(salinan.map((c) => c.id)))
+      setObjekTerpilih(null)
+      setGambarTerpilih(null)
+      setTeksTerpilih(null)
+      if (alat !== 'laso' && alat !== 'lasoKotak') setAlat('laso')
+      panggang.current = null
+      return true
+    },
+    [coretan, lapisan, lapisanInfo, terapkan, alat, beriTahu],
+  )
 
   /** Pindahkan yang terpilih ke lapisan yang sedang aktif. */
   const pindahKeLapisan = useCallback(
@@ -3234,6 +3367,16 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
     return { x1: x1 - tepi, y1: y1 - tepi, x2: x2 + tepi, y2: y2 + tepi }
   }
 
+  /** Empat sudut bingkai searah jarum jam dari kiri atas — sudut seberang = (i + 2) % 4. */
+  function sudutKotak(k: { x1: number; y1: number; x2: number; y2: number }): [number, number][] {
+    return [
+      [k.x1, k.y1],
+      [k.x2, k.y1],
+      [k.x2, k.y2],
+      [k.x1, k.y2],
+    ]
+  }
+
   function adaPilihanDiTitik(x: number, y: number): boolean {
     const k = kotakPilihan()
     if (k && x >= k.x1 && x <= k.x2 && y >= k.y1 && y <= k.y2) return true
@@ -3302,6 +3445,31 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
         if (e.key.toLowerCase() === 'd') {
           e.preventDefault()
           duplikat()
+          return
+        }
+        // ⌘C/⌘X/⌘V untuk pilihan laso. Event copy/cut/paste (di bawah) yang
+        // membawa isi ke papan klip sistem; ini cadangan untuk webview yang
+        // tidak menembakkan event copy saat tidak ada teks terseleksi.
+        if ((e.key.toLowerCase() === 'c' || e.key.toLowerCase() === 'x') && pilihan.size > 0) {
+          const isi = salinPilihan()
+          if (isi) {
+            void navigator.clipboard?.writeText(PENANDA_PAPAN + JSON.stringify(isi)).catch(() => {})
+            if (e.key.toLowerCase() === 'x') {
+              e.preventDefault()
+              hapusPilihan()
+            }
+          }
+          return
+        }
+        if (e.key.toLowerCase() === 'v' && papanCoretan) {
+          // Kalau event paste tidak datang (papan klip sistem kosong atau
+          // ditolak webview), tempel dari papan salin sendiri.
+          tempelTertunda.current = true
+          window.setTimeout(() => {
+            if (!tempelTertunda.current) return
+            tempelTertunda.current = false
+            tempelCoretan()
+          }, 60)
           return
         }
         if (e.key === '0') {
@@ -3383,6 +3551,9 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
     objekTerpilih,
     terapkan,
     duplikat,
+    salinPilihan,
+    hapusPilihan,
+    tempelCoretan,
     muatSemua,
     simpanSekarang,
     beriTahu,
@@ -3562,17 +3733,64 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
   // menempel padanya tidak akan pernah menerima event paste.
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
+      tempelTertunda.current = false
       const t = e.target as HTMLElement | null
       if (t && (t.isContentEditable || /^(INPUT|TEXTAREA)$/.test(t.tagName))) return
+      // Coretan yang disalin dari Exact Canvas (jendela ini atau jendela lain)
+      // dikenali dari penandanya di papan klip sistem.
+      const teksPapan = e.clipboardData?.getData('text/plain') ?? ''
+      if (teksPapan.startsWith(PENANDA_PAPAN)) {
+        try {
+          const isi = JSON.parse(teksPapan.slice(PENANDA_PAPAN.length)) as Coretan[]
+          if (Array.isArray(isi) && isi.length > 0) {
+            if (isi !== papanCoretan && JSON.stringify(isi) !== JSON.stringify(papanCoretan)) {
+              papanCoretan = isi
+              tempelanKe = 0
+            }
+            e.preventDefault()
+            tempelCoretan()
+            return
+          }
+        } catch {
+          // Bukan JSON yang utuh — perlakukan seperti teks biasa.
+        }
+      }
       const item = Array.from(e.clipboardData?.items ?? []).find((i) =>
         i.type.startsWith('image/'),
       )
-      if (!item) return
+      if (!item) {
+        // Tidak ada gambar dan bukan coretan bertanda: kalau barusan menyalin
+        // coretan di sini (papan klip sistem tak sempat terisi), tempel itu.
+        if (papanCoretan && !teksPapan) {
+          e.preventDefault()
+          tempelCoretan()
+        }
+        return
+      }
       e.preventDefault()
       void terimaBerkas(item.getAsFile())
     }
+    // ⌘C / ⌘X pada pilihan laso. Lewat event copy/cut (bukan keydown) supaya
+    // isinya ikut ke papan klip sistem tanpa izin clipboard API — webview
+    // Tauri menolak navigator.clipboard.writeText di luar gestur tertentu.
+    const onSalin = (e: ClipboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA)$/.test(t.tagName))) return
+      if (window.getSelection()?.toString()) return
+      const isi = salinPilihan()
+      if (!isi) return
+      e.preventDefault()
+      e.clipboardData?.setData('text/plain', PENANDA_PAPAN + JSON.stringify(isi))
+      if (e.type === 'cut') hapusPilihan()
+    }
     window.addEventListener('paste', onPaste)
-    return () => window.removeEventListener('paste', onPaste)
+    window.addEventListener('copy', onSalin)
+    window.addEventListener('cut', onSalin)
+    return () => {
+      window.removeEventListener('paste', onPaste)
+      window.removeEventListener('copy', onSalin)
+      window.removeEventListener('cut', onSalin)
+    }
   })
 
   /* ── PDF ───────────────────────────────────────────────────────── */
@@ -4068,6 +4286,46 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
             if (aktifCoretan.current && e.buttons === 0) naik(e)
           }}
         />
+
+        {/* Tombol pilihan laso melayang di atas bingkainya — untuk pena dan
+            tablet yang tidak punya ⌘C/⌘V. Disembunyikan selama diseret atau
+            diubah ukurannya supaya tidak menutupi yang sedang digarap. */}
+        {(() => {
+          const kp =
+            pilihan.size > 0 && !ukurPilihan.current && !geser.current ? kotakPilihan() : null
+          if (!kp) return null
+          const kiri = kp.x1 * v.tampilan.skala + v.tampilan.x
+          const atas = kp.y1 * v.tampilan.skala + v.tampilan.y - 40
+          return (
+            <div
+              className="absolute flex gap-1"
+              style={{ left: Math.max(8, kiri), top: Math.max(8, atas), zIndex: 5 }}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <button className="ex-btn" data-variant="ghost" title="Copy (⌘C)" onClick={() => salinPilihan()}>
+                Copy
+              </button>
+              <button
+                className="ex-btn"
+                data-variant="ghost"
+                title="Cut (⌘X)"
+                onClick={() => {
+                  if (salinPilihan()) hapusPilihan()
+                }}
+              >
+                Cut
+              </button>
+              {papanCoretan && (
+                <button className="ex-btn" data-variant="ghost" title="Paste (⌘V)" onClick={() => tempelCoretan()}>
+                  Paste
+                </button>
+              )}
+              <button className="ex-btn" data-variant="ghost" title="Delete (⌫)" onClick={hapusPilihan}>
+                Delete
+              </button>
+            </div>
+          )
+        })()}
 
         {/* Kotak ketik melayang tepat di atas tempat tulisannya akan berada,
             dengan huruf seukuran hasil akhirnya — jadi yang terlihat saat
