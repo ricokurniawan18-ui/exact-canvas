@@ -5890,6 +5890,44 @@ function parseCircuitSusunan(raw) {
   });
 }
 
+// Pohon susunan bertingkat: "+" = seri, "|" = paralel, kurung boleh
+// bersarang. Contoh "R1:3+((R2:6|R3:12)+R4:2|R5:6)": R1 seri dengan
+// [cabang (R2∥R3)+R4] paralel R5. Simpul: {t:'c',comp} | {t:'s',kids} | {t:'p',kids}.
+// parseCircuitSusunan (datar) di atas tidak sanggup: cabang paralel berisi
+// seri ("R1+R2|R3") dulu kehilangan R2 dan menulis label "(R2".
+function pisahPuncak(str, sep) {
+  const out = []; let d = 0, cur = '';
+  for (const ch of str) {
+    if (ch === '(') d++;
+    else if (ch === ')') d--;
+    if (ch === sep && d === 0) { out.push(cur); cur = ''; } else cur += ch;
+  }
+  out.push(cur);
+  return out.map((t) => t.trim()).filter(Boolean);
+}
+function kurungLuar(t) {
+  if (!(t.startsWith('(') && t.endsWith(')'))) return false;
+  let d = 0;
+  for (let i = 0; i < t.length; i++) {
+    if (t[i] === '(') d++; else if (t[i] === ')') d--;
+    if (d === 0 && i < t.length - 1) return false;
+  }
+  return true;
+}
+function uraiPohonRangkaian(raw) {
+  const t = String(raw || '').trim();
+  if (!t) return null;
+  const par = pisahPuncak(t, '|');
+  if (par.length > 1) return { t: 'p', kids: par.map(uraiPohonRangkaian).filter(Boolean) };
+  const ser = pisahPuncak(t, '+');
+  if (ser.length > 1) return { t: 's', kids: ser.map(uraiPohonRangkaian).filter(Boolean) };
+  if (kurungLuar(t)) return uraiPohonRangkaian(t.slice(1, -1));
+  return { t: 'c', comp: parseCircuitComponent(t) };
+}
+function komponenPohon(n) {
+  return !n ? [] : n.t === 'c' ? [n.comp] : n.kids.flatMap(komponenPohon);
+}
+
 // IEC-style resistor (a plain rectangle, not a zigzag) matching what
 // Indonesian textbooks use, with short lead wires on each side so it drops
 // cleanly into any horizontal wire span.
@@ -6045,6 +6083,9 @@ function parseCabangMultiloop(raw) {
       voltTeks: voltTanya ? 'ε' : `${numOrDefault(bits[2], 0)} V`,
       rdalam: numOrDefault(bits[3], 0),
       balik: (bits[4] || '').trim().toLowerCase() === 'balik',
+      // "E:0:24" / "E:-:24": cabang sel saja, tanpa resistor (sumber di sisi kiri
+      // rangkaian dua-loop yang resistornya ada di rel)
+      tanpaR: bits[1] === '-' || (ohmAda && parseFloat(String(bits[1]).replace(',', '.')) === 0),
     };
   });
 }
@@ -6092,7 +6133,7 @@ function renderMultiloopSVG(cfg) {
   }
   cabang.forEach((c, i) => {
     const x = xs[i];
-    isi += resistorVertikalSVG(x, topY, resBottom, c.ohmTeks);
+    isi += c.tanpaR ? W(x, topY, x, resBottom) : resistorVertikalSVG(x, topY, resBottom, c.ohmTeks);
     if (c.adaSel) {
       isi += W(x, resBottom, x, battTop);
       isi += selVertikalSVG(x, battTop, battBottom, c.voltTeks, c.balik);
@@ -6148,37 +6189,58 @@ function renderCircuitSVG(cfg) {
   if (String(cfg.tipe || '').toLowerCase() === 'multiloop') return renderMultiloopSVG(cfg);
   const tipe = cfg.tipe || 'seri';
   const comps = String(cfg.komponen || '').split(',').map((s) => s.trim()).filter(Boolean).map(parseCircuitComponent);
-  let blocks;
-  if (cfg.susunan) blocks = parseCircuitSusunan(cfg.susunan);
-  else if (tipe === 'paralel') blocks = comps.length ? [{ type: 'parallel', comps }] : [];
-  else blocks = comps.map((c) => ({ type: 'series', comp: c }));
-  if (!blocks.length) blocks = [{ type: 'series', comp: { name: 'R1', value: 10 } }];
+  let akar;
+  if (cfg.susunan) akar = uraiPohonRangkaian(cfg.susunan);
+  else if (tipe === 'paralel') akar = comps.length ? { t: 'p', kids: comps.map((c) => ({ t: 'c', comp: c })) } : null;
+  else akar = comps.length ? { t: 's', kids: comps.map((c) => ({ t: 'c', comp: c })) } : null;
+  if (!akar) akar = { t: 'c', comp: { name: 'R1', kind: 'resistor', value: 10 } };
 
-  // Jarak antarcabang paralel 38 px: label komponen cabang bawah (≈ y−17)
-  // harus lepas dari kotak komponen cabang di atasnya (tinggi 14 px).
-  const branchGap = 38, blockWidth = 90;
-  const maxBranches = Math.max(1, ...blocks.map((b) => (b.type === 'parallel' ? b.comps.length : 1)));
+  // Jarak antarcabang 38 px: label komponen cabang bawah (≈ y−17) harus
+  // lepas dari kotak komponen di atasnya. REL = lebar kawat masuk/keluar
+  // grup paralel sebelum rel tegaknya.
+  const CABANG = 38, LEBAR_K = 86, REL = 14;
+  const ukur = (n) => {
+    if (n.t === 'c') return (n.u = { w: LEBAR_K, h: 0 });
+    const k = n.kids.map(ukur);
+    if (n.t === 's') return (n.u = { w: k.reduce((a, x) => a + x.w, 0), h: Math.max(0, ...k.map((x) => x.h)) });
+    let y = 0; n.yk = [];
+    k.forEach((x, i) => { n.yk.push(y); y += x.h + (i < k.length - 1 ? CABANG : 0); });
+    return (n.u = { w: Math.max(...k.map((x) => x.w)) + 2 * REL, h: y });
+  };
+  ukur(akar);
 
-  // Kawat 1.2 px hitam, sudut siku; sel di kawat kiri, komponen di kawat
-  // atas (cabang paralel turun ke bawah), kanvas dipotong pas.
   const KAWAT = 1.2;
   const W = (x1, y1, x2, y2) => `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="${KAWAT}"/>`;
+  const titik = (x, y) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.2" fill="${GAYA.hitam}"/>`;
+  const gambar = (n, x, y, w) => {
+    if (n.t === 'c') return componentSVG(x, y, x + w, n.comp);
+    if (n.t === 's') {
+      const lebih = (w - n.u.w) / n.kids.length;
+      let out = '', cx = x;
+      n.kids.forEach((k) => { const kw = k.u.w + lebih; out += gambar(k, cx, y, kw); cx += kw; });
+      return out;
+    }
+    const x0 = x + REL, x1 = x + w - REL, yAkhir = y + n.yk[n.yk.length - 1];
+    let out = W(x, y, x0, y) + W(x1, y, x + w, y) + W(x0, y, x0, yAkhir) + W(x1, y, x1, yAkhir) + titik(x0, y) + titik(x1, y);
+    n.kids.forEach((k, i) => { out += gambar(k, x0, y + n.yk[i], x1 - x0); });
+    return out;
+  };
+
   const leftX = 56;
-  // Blok paralel pertama diberi kawat penghubung dulu: kalau rel kirinya
-  // berimpit dengan kawat sel, cabang bawah menempel di BAWAH sel dan
-  // komponennya terhubung singkat (gambar salah secara listrik).
-  const lead = blocks[0] && blocks[0].type === 'parallel' ? 34 : 0;
-  const rightX = leftX + lead + blocks.length * blockWidth;
+  // Grup paralel paling depan diberi kawat penghubung dulu: kalau rel
+  // kirinya berimpit dengan kawat sel, cabang bawah menempel di BAWAH sel.
+  const pertama = akar.t === 's' ? akar.kids[0] : akar;
+  const lead = pertama && pertama.t === 'p' ? 26 : 0;
+  const rightX = leftX + lead + akar.u.w + 8;
   const width = rightX + 22;
   const topY = 46;
-  const bottomY = topY + (maxBranches - 1) * branchGap + 56;
+  const bottomY = topY + akar.u.h + 56;
   const height = bottomY + 18;
 
   let svg = `<svg class="ws-diagram-svg" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">`;
   svg += `<rect x="0.5" y="0.5" width="${width - 1}" height="${height - 1}" fill="#ffffff" stroke="#d8dce1"/>`;
 
-  // Sel: pelat panjang tipis (+) di atas, pelat pendek tebal (−) di bawah,
-  // tanda + di sisi pelat panjang dan tegangan di samping kiri.
+  // Sel: pelat panjang tipis (+) di atas, pelat pendek tebal (−) di bawah.
   const bcy = (topY + bottomY) / 2;
   svg += W(leftX, topY, leftX, bcy - 6);
   svg += `<line x1="${(leftX - 12).toFixed(1)}" y1="${(bcy - 6).toFixed(1)}" x2="${(leftX + 12).toFixed(1)}" y2="${(bcy - 6).toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
@@ -6189,9 +6251,7 @@ function renderCircuitSVG(cfg) {
   if (sumber !== null) {
     svg += `<text x="${(leftX - 16).toFixed(1)}" y="${(bcy + 2).toFixed(1)}" font-size="${GAYA.teks}" text-anchor="end" fill="${GAYA.hitam}">${sumber} V</text>`;
   }
-
-  // terbuka=ya: kawat bawah diputus di tengah — rangkaian tidak lengkap untuk
-  // soal "lengkapi diagram: pasang amperemeter dan voltmeter" (Checkpoint).
+  // terbuka=ya: kawat bawah diputus di tengah (soal "lengkapi diagram").
   if (/^(ya|iya|true|1)$/i.test(String(cfg.terbuka || '').trim())) {
     const span = rightX - leftX;
     svg += W(leftX, bottomY, leftX + span * 0.3, bottomY);
@@ -6200,27 +6260,9 @@ function renderCircuitSVG(cfg) {
     svg += W(leftX, bottomY, rightX, bottomY);
   }
   svg += W(rightX, topY, rightX, bottomY);
-
   if (lead) svg += W(leftX, topY, leftX + lead, topY);
-  blocks.forEach((block, i) => {
-    const bx0 = leftX + lead + i * blockWidth, bx1 = bx0 + blockWidth;
-    if (block.type === 'series') {
-      svg += componentSVG(bx0, topY, bx1, block.comp);
-    } else {
-      const n = block.comps.length;
-      const lastY = topY + (n - 1) * branchGap;
-      if (n > 1) {
-        svg += W(bx0, topY, bx0, lastY);
-        svg += W(bx1, topY, bx1, lastY);
-        // titik sambung hanya di percabangan
-        svg += `<circle cx="${bx0.toFixed(1)}" cy="${topY}" r="2.2" fill="${GAYA.hitam}"/>`;
-        svg += `<circle cx="${bx1.toFixed(1)}" cy="${topY}" r="2.2" fill="${GAYA.hitam}"/>`;
-      }
-      block.comps.forEach((c, j) => {
-        svg += componentSVG(bx0, topY + j * branchGap, bx1, c);
-      });
-    }
-  });
+  svg += gambar(akar, leftX + lead, topY, akar.u.w);
+  svg += W(leftX + lead + akar.u.w, topY, rightX, topY);
 
   svg += '</svg>';
   return svg;
@@ -12315,7 +12357,10 @@ function renderFigureHTML(headRaw, panelsRaw, depth) {
   const judul = head.judul ? ' — ' + escText(head.judul) : '';
   // Banyak panel berbagi lebar: 2 -> 2 lajur, 3 -> 3, 4 -> 2x2, 5+ -> 3 lajur.
   // Tanpa ini tiap panel selebar gambar penuh dan menumpuk satu per satu ke bawah.
-  const lajur = panels.length <= 1 ? 1 : panels.length === 4 ? 2 : Math.min(3, panels.length);
+  // lajur=1 menumpuk panel ke bawah (tiap panel selebar kolom) — perlu di lembar dua kolom,
+  // tempat 2x2 diagram gaya mengecil sampai labelnya tak terbaca.
+  const lajurMinta = Math.round(numOrDefault(head.lajur, 0));
+  const lajur = lajurMinta >= 1 ? Math.min(lajurMinta, panels.length) : panels.length <= 1 ? 1 : panels.length === 4 ? 2 : Math.min(3, panels.length);
   const gayaPanel = multi ? ` style="--ws-fig-cols:${lajur}"` : '';
   return `<figure class="ws-figure">`
     + `<div class="ws-figure-panels"${gayaPanel}>${body}</div>`
@@ -17138,7 +17183,8 @@ const pisahDaftar = (v) => String(v || '').split(/[|,]/).map((t) => t.trim()).fi
 // ikon: isi=bee,hibiscus,snail:pond snail; kotak=ya (kotak centang); kolom=3; huruf=ya ((a),(b) di bawah);
 // grup=grasshopper,fish,snail|earthworm,frog,water lily (tiap kelompok dalam kotak bulat + satu kotak centang).
 function renderIkonSVG(cfg) {
-  const s = Math.max(20, Math.min(90, numOrDefault(cfg.ukuran, 40)));
+  // besar= (bukan ukuran=: itu kunci anotasi garis ukur bersama, lihat ANNOTATION_KEYS)
+  const s = Math.max(20, Math.min(90, numOrDefault(cfg.besar, 40)));
   const pakaiLabel = !tidakFis(cfg.label);
   const kotak = yaFis(cfg.kotak) || yaFis(cfg.centang);
   const fs = GAYA.teksKecil;
@@ -17205,7 +17251,7 @@ function renderJodohIkonSVG(cfg) {
     t.startsWith('@') ? { ...uraiItemIkon(t), gambar: true } : { label: texKeTeks(t), gambar: false }));
   const kiri = ambil(cfg.kiri), kanan = ambil(cfg.kanan);
   if (!kiri.length || !kanan.length) throw new Error('jodohkan perlu kiri= dan kanan= (pisah |)');
-  const s = Math.max(24, Math.min(70, numOrDefault(cfg.ukuran, 38)));
+  const s = Math.max(24, Math.min(70, numOrDefault(cfg.besar, 38)));
   const fs = GAYA.teksKecil, uk = GAYA.teks;
   const lebarItem = (it) => (it.gambar ? Math.max(s, lebarTeksKira(it.label, fs)) : Math.max(70, lebarTeksKira(it.label, uk) + 22));
   const tinggiItem = (it) => (it.gambar ? s + fs + 6 : 28);
@@ -17499,15 +17545,42 @@ function renderKartuSVG(cfg) {
   }).filter((x) => x.t);
   if (!item.length) throw new Error('kartu perlu isi= (pisah |)');
   const ukuran = GAYA.teks + 1;
-  const w = Math.max(104, ...item.map((x) => lebarTeksKira(x.t, ukuran) + 34)), h = 58, celah = 22;
+  // Teks panjang ("interior angle of a regular pentagon") dipecah jadi beberapa
+  // baris dengan "A =" di kiri, dan kartunya disusun dua kolom — sebaris empat
+  // kartu panjang mengecilkan hurufnya sampai tak terbaca.
+  const panjang = item.some((x) => x.t.length > 22);
+  if (!panjang) {
+    const w = Math.max(104, ...item.map((x) => lebarTeksKira(x.t, ukuran) + 34)), h = 58, celah = 22;
+    const kol = Math.max(1, Math.round(numOrDefault(cfg.kolom, item.length)));
+    const b = kotakBatas();
+    let isi = '';
+    item.forEach((x, i) => {
+      const x0 = (i % kol) * (w + celah), y0 = Math.floor(i / kol) * (h + 16);
+      isi += `<rect x="${x0.toFixed(1)}" y="${y0}" width="${w.toFixed(1)}" height="${h}" rx="22" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+      isi += `<text x="${(x0 + w / 2).toFixed(1)}" y="${y0 + 22}" font-size="${ukuran}" font-weight="700" text-anchor="middle" fill="${GAYA.hitam}">${escText(x.h)}</text>`;
+      isi += `<text x="${(x0 + w / 2).toFixed(1)}" y="${y0 + 44}" font-size="${ukuran}" text-anchor="middle" fill="${GAYA.hitam}">${escText(x.t)}</text>`;
+      b.titik(x0, y0); b.titik(x0 + w, y0 + h);
+    });
+    return bungkusGambarSVG(isi, b, false);
+  }
+  const baris = item.map((x) => pecahBarisTeks(x.t, 24));
+  const kol = Math.max(1, Math.round(numOrDefault(cfg.kolom, item.length > 1 ? 2 : 1)));
+  const wTeks = Math.max(...baris.flat().map((t) => lebarTeksKira(t, ukuran)));
+  const wKepala = lebarTeksKira('MM =', ukuran);
+  const w = wKepala + wTeks + 44, h = Math.max(...baris.map((l) => l.length)) * (ukuran + 4) + 22, celah = 26;
   const b = kotakBatas();
   let isi = '';
   item.forEach((x, i) => {
-    const x0 = i * (w + celah);
-    isi += `<rect x="${x0.toFixed(1)}" y="0" width="${w.toFixed(1)}" height="${h}" rx="22" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
-    isi += `<text x="${(x0 + w / 2).toFixed(1)}" y="22" font-size="${ukuran}" font-weight="700" text-anchor="middle" fill="${GAYA.hitam}">${escText(x.h)}</text>`;
-    isi += `<text x="${(x0 + w / 2).toFixed(1)}" y="44" font-size="${ukuran}" text-anchor="middle" fill="${GAYA.hitam}">${escText(x.t)}</text>`;
-    b.titik(x0, 0); b.titik(x0 + w, h);
+    const x0 = (i % kol) * (w + celah), y0 = Math.floor(i / kol) * (h + 18);
+    isi += `<rect x="${x0.toFixed(1)}" y="${y0.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="${(h / 2).toFixed(1)}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    const yt = y0 + h / 2;
+    isi += `<text x="${(x0 + 16).toFixed(1)}" y="${(yt + ukuran * 0.35).toFixed(1)}" font-size="${ukuran}" fill="${GAYA.hitam}">${escText(x.h)} =</text>`;
+    const l = baris[i];
+    l.forEach((t, j) => {
+      const y = yt + (j - (l.length - 1) / 2) * (ukuran + 4) + ukuran * 0.35;
+      isi += `<text x="${(x0 + 22 + wKepala).toFixed(1)}" y="${y.toFixed(1)}" font-size="${ukuran}" fill="${GAYA.hitam}">${escText(t)}</text>`;
+    });
+    b.titik(x0, y0); b.titik(x0 + w, y0 + h);
   });
   return bungkusGambarSVG(isi, b, false);
 }
@@ -17630,21 +17703,21 @@ function luasArsirNumerik(cfg) {
 function nilaiPenggantiRangkaian(cfg) {
   const tipe = String(cfg.tipe || 'seri').toLowerCase();
   if (tipe === 'multiloop') return null;
-  let blocks;
-  if (cfg.susunan) blocks = parseCircuitSusunan(cfg.susunan);
+  let akar;
+  if (cfg.susunan) akar = uraiPohonRangkaian(cfg.susunan);
   else {
     const comps = String(cfg.komponen || '').split(',').map((t) => t.trim()).filter(Boolean).map(parseCircuitComponent);
-    blocks = tipe === 'paralel' ? [{ type: 'parallel', comps }] : comps.map((c) => ({ type: 'series', comp: c }));
+    akar = { t: tipe === 'paralel' ? 'p' : 's', kids: comps.map((c) => ({ t: 'c', comp: c })) };
   }
-  const semua = blocks.flatMap((bl) => (bl.type === 'parallel' ? bl.comps : [bl.comp]));
+  const semua = komponenPohon(akar);
   if (!semua.length || semua.some((c) => !isFinite(c.value) || c.value <= 0)) return null;
   const jenis = semua.every((c) => c.kind === 'kapasitor') ? 'kapasitor' : semua.every((c) => c.kind === 'resistor') ? 'resistor' : null;
   if (!jenis) return null;
   // Kapasitor: seri = kebalikan, paralel = jumlah; resistor kebalikannya.
   const seri = (v) => (jenis === 'resistor' ? v.reduce((a, c) => a + c, 0) : 1 / v.reduce((a, c) => a + 1 / c, 0));
   const paralel = (v) => (jenis === 'resistor' ? 1 / v.reduce((a, c) => a + 1 / c, 0) : v.reduce((a, c) => a + c, 0));
-  const tiapBlok = blocks.map((bl) => (bl.type === 'parallel' ? paralel(bl.comps.map((c) => c.value)) : bl.comp.value));
-  const total = tiapBlok.length === 1 ? tiapBlok[0] : seri(tiapBlok);
+  const nilai = (n) => (n.t === 'c' ? n.comp.value : n.t === 's' ? seri(n.kids.map(nilai)) : paralel(n.kids.map(nilai)));
+  const total = nilai(akar);
   return { nama: jenis === 'kapasitor' ? 'kapasitas pengganti' : 'hambatan pengganti', nilai: total, satuan: jenis === 'kapasitor' ? 'μF' : 'Ω' };
 }
 
