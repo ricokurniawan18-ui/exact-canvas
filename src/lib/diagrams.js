@@ -10520,7 +10520,9 @@ function renderPegasSVG(cfg) {
     isi += gFis(x2 + 20, yAkhir, xd + 6, yAkhir, { putus: true, warna: GAYA.abu, tebal: 1 });
     isi += teksFis(b, xd + 8, (yAwal + yAkhir) / 2 + 4, `x = ${xt}`, 'start');
   }
-  isi += teksFis(b, x1, yAwal + 40, 'tanpa beban', 'middle', { size: GAYA.teksKecil, italic: true });
+  // bahasa=inggris: naskah berbahasa Inggris — "unloaded", bukan "tanpa beban".
+  const inggris = /^(inggris|english|en)$/i.test(String(cfg.bahasa || ''));
+  isi += teksFis(b, x1, yAwal + 40, inggris ? 'unloaded' : 'tanpa beban', 'middle', { size: GAYA.teksKecil, italic: true });
   return bungkusGambarSVG(isi, b, false);
 }
 
