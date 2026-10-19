@@ -381,7 +381,27 @@ function bingkai() {
 
 /* ── Data ──────────────────────────────────────────────────────────── */
 
+/**
+ * Beri tahu server kanvas mana yang diikuti HP murid ini: server lalu tidak
+ * mengirim goresan dari kanvas lain (goresan murid lain di kanvas pribadinya,
+ * dsb.) yang dulu diterima lalu dibuang sendiri oleh tiap HP. TV kelas tidak
+ * menyaring apa pun (ia mengikuti guru ke kanvas mana saja).
+ */
+let lihatTerakhir = ''
+function laporLihat(paksa = false, tambahan?: string) {
+  if (!sebagaiMurid) return
+  const set = [...new Set([tambahan, idSketsa, kanvasSaya, kanvasPribadi, kanvasGrup].filter((x): x is string => !!x))].sort()
+  if (!set.length) return
+  const kunci = set.join(',')
+  if (!paksa && kunci === lihatTerakhir) return
+  lihatTerakhir = kunci
+  kirim({ t: 'lihat', kanvas: set })
+}
+
 async function muatSketsa(id: string) {
+  // Dilaporkan SEBELUM memuat: goresan yang datang selagi memuat harus tetap
+  // sampai ke sini (diantrekan di ubahTertunda), bukan disaring server.
+  laporLihat(false, id)
   sedangMemuat = id
   try {
     // Versi ringan: gambar tempelan diganti URL yang di-cache browser, jadi
@@ -608,7 +628,11 @@ function terima(p: PesanLangsung) {
     // Sambungan ini sempat tertinggal, putus, atau halaman dibekukan di latar:
     // yang terlewat sudah tersimpan di server — muat dari sana.
     jadwalkanMuatUlang()
-    if (p.t === 'segarkan') void segarkanSaya()
+    if (p.t === 'segarkan') {
+      // Sambungan baru di server belum tahu kanvas yang diikuti: lapor lagi.
+      laporLihat(true)
+      void segarkanSaya()
+    }
     return
   }
   if (p.t === 'izin') {
@@ -1189,6 +1213,7 @@ async function segarkanSaya() {
       }
     }
     perbaruiTombolKanvas()
+    laporLihat()
     tanyaSaya = r.tanya
     perbaruiStatusSaya()
     if (modeTunggu) {
@@ -2060,6 +2085,7 @@ function terimaBahas(t: { murid: string; nama: string; anggota?: string[]; grup?
   timerKabar = window.setTimeout(() => kabar.classList.remove('tampil'), 6000)
   if (punyaku) void segarkanSaya()
   if (kanvasSaya && kanvasSaya !== idSketsa) void muatSketsa(kanvasSaya)
+  else laporLihat()
 }
 
 /* ── Notifikasi (pengingat les, dipanggil, dibahas) ─────────────────── */

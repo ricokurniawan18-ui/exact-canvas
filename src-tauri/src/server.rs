@@ -1212,6 +1212,11 @@ async fn layani(soket: WebSocket, hub: Arc<Hub>, klien: Klien) {
     // yang diizinkan (dibaca sekali per kanvas, saat kanvas izinnya berganti).
     let mut punya: std::collections::HashSet<String> = Default::default();
     let mut kanvas_dibenihi: Option<String> = None;
+    // Kanvas yang diikuti layar ini ({t:'lihat', kanvas:[...]}): pesan goresan
+    // dari kanvas LAIN tidak dikirim ke sini. Dulu setiap HP menerima goresan
+    // semua murid di semua kanvas pribadi lalu membuangnya sendiri — berat di
+    // HP dan di Cloudflare saat kelas ramai. None = belum menyatakan (semua).
+    let mut dilihat: Option<std::collections::HashSet<String>> = None;
     // Berlangganan dulu, baru mengumumkan diri: kalau dibalik, klien yang baru
     // masuk justru tidak pernah menerima daftar yang memuat dirinya sendiri.
     let mut rx = hub.tx.subscribe();
@@ -1246,6 +1251,12 @@ async fn layani(soket: WebSocket, hub: Arc<Hub>, klien: Klien) {
                                 if tulis.send(Message::Text(json!({ "t": "ack", "kunci": k }).to_string().into())).await.is_err() {
                                     break;
                                 }
+                            }
+                            if jenis == "lihat" {
+                                dilihat = v.get("kanvas").and_then(|x| x.as_array()).map(|a| {
+                                    a.iter().filter_map(|x| x.as_str()).take(20).map(|x| x.to_string()).collect()
+                                });
+                                continue;
                             }
                             if jenis == "fokus" {
                                 if let Ok(mut k) = hub.klien.lock() {
@@ -1304,6 +1315,13 @@ async fn layani(soket: WebSocket, hub: Arc<Hub>, klien: Klien) {
             keluar = rx.recv() => {
                 match keluar {
                     Ok(pesan) => {
+                        if !editor {
+                            if let Some(set) = &dilihat {
+                                if pesan_kanvas_lain(&pesan, set) {
+                                    continue;
+                                }
+                            }
+                        }
                         if tulis.send(Message::Text(pesan.into())).await.is_err() {
                             break;
                         }
@@ -1327,6 +1345,45 @@ async fn layani(soket: WebSocket, hub: Arc<Hub>, klien: Klien) {
         k.retain(|x| x.id != id);
     }
     siarkan_klien(&hub);
+}
+
+/// Nilai string sebuah kunci JSON tingkat mana pun, dicari tanpa mengurai
+/// seluruh pesan (dipanggil untuk setiap pesan ke setiap layar).
+fn nilai_kunci<'a>(pesan: &'a str, kunci: &str) -> Option<&'a str> {
+    let pola = format!("\"{kunci}\":\"");
+    let i = pesan.find(&pola)? + pola.len();
+    let j = pesan[i..].find('"')?;
+    Some(&pesan[i..i + j])
+}
+
+/// Pesan goresan langsung untuk kanvas yang TIDAK diikuti layar ini?
+/// Hanya jenis goresan yang disaring; pandangan, data, kabar kelas, dll. tetap lewat.
+fn pesan_kanvas_lain(pesan: &str, dilihat: &std::collections::HashSet<String>) -> bool {
+    let Some(jenis) = nilai_kunci(pesan, "t") else { return false };
+    if !matches!(jenis, "titik" | "goresan" | "goresan-selesai" | "kursor" | "objek" | "instrumen" | "ubah") {
+        return false;
+    }
+    match nilai_kunci(pesan, "idKanvas") {
+        Some(k) => !dilihat.contains(k),
+        None => false,
+    }
+}
+
+#[cfg(test)]
+mod uji_saring_kanvas {
+    use super::pesan_kanvas_lain;
+
+    #[test]
+    fn saring() {
+        let lihat: std::collections::HashSet<String> = ["cnv_a".to_string(), "cnv_b".to_string()].into();
+        assert!(!pesan_kanvas_lain(r#"{"t":"titik","idKanvas":"cnv_a","titik":[[1,2,0.5]]}"#, &lihat));
+        assert!(pesan_kanvas_lain(r#"{"t":"titik","idKanvas":"cnv_z","titik":[[1,2,0.5]]}"#, &lihat));
+        // Pesan dari server (kunci terurut abjad): "t" di belakang.
+        assert!(pesan_kanvas_lain(r#"{"dariMurid":true,"idKanvas":"cnv_z","t":"ubah"}"#, &lihat));
+        // Pandangan tidak pernah disaring: TV mengikuti guru pindah kanvas lewat ini.
+        assert!(!pesan_kanvas_lain(r#"{"t":"pandangan","idKanvas":"cnv_z"}"#, &lihat));
+        assert!(!pesan_kanvas_lain(r#"{"t":"data","kanal":"canvas"}"#, &lihat));
+    }
 }
 
 #[cfg(test)]

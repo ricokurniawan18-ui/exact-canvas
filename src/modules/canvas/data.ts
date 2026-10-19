@@ -154,7 +154,7 @@ function samaButir(a: Berid, b: Berid): boolean {
  * (urutan butir lama berubah, atau butir baru tidak berada di belakang —
  * mis. sesudah urungkan atau "bawa ke depan"): saat itu simpan penuh.
  */
-function selisihKoleksi(lama: Berid[], baru: Berid[]): { hapus: string[]; tambah: Berid[] } | null {
+export function selisihKoleksi(lama: Berid[], baru: Berid[]): { hapus: string[]; tambah: Berid[] } | null {
   const petaLama = new Map(lama.map((x) => [x.id, x]))
   const idBaru = new Set(baru.map((x) => x.id))
   const urutLama = lama.filter((x) => idBaru.has(x.id)).map((x) => x.id)

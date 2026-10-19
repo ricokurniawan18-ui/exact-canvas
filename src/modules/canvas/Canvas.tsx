@@ -10,7 +10,7 @@ import { newId } from '@/lib/id'
 import { ANGGARAN_PDF, padatkanHalaman } from '@/lib/pdf'
 import { IconButton } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
-import { KERTAS_BAWAAN, berkasBaru, bacaKanvas, simpanKanvasSebagian } from './data'
+import { KERTAS_BAWAAN, berkasBaru, bacaKanvas, selisihKoleksi, simpanKanvasSebagian } from './data'
 import { JARAK_HALAMAN, KERTAS, kotakHalaman, letakCoretanGuruTerakhir } from './kertas'
 import {
   JUMLAH_LAPISAN,
@@ -918,6 +918,18 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
   /** Sudut pertama seretan laso kotak; laso bebas tidak memerlukannya. */
   const awalLaso = useRef<{ x: number; y: number } | null>(null)
   const geser = useRef<{ x: number; y: number } | null>(null)
+  /** Coretan saat pilihan mulai digeser — disiarkan sekali saat pena diangkat. */
+  const geserAwal = useRef<Coretan[] | null>(null)
+  /**
+   * Id goresan/objek yang SUDAH tersiar langsung (pesan `ubah`) sejak simpanan
+   * terakhir. Simpanan hanya boleh menandai dirinya "langsung" (HP murid tidak
+   * mengunduh ulang) bila setiap perubahannya ada di sini — perubahan yang
+   * tidak tersiar (mis. lewat jalur yang lupa menyiarkan) tetap memaksa unduh ulang.
+   */
+  const tersiarC = useRef(new Set<string>())
+  const tersiarO = useRef(new Set<string>())
+  const tersiarGagal = useRef(false)
+  const hitungTitik = useRef(0)
   /**
    * Ubah ukuran pilihan laso dari salah satu sudut bingkai. Coretan asal
    * disimpan supaya tiap gerakan menskala dari bentuk awal, bukan dari hasil
@@ -1107,14 +1119,20 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
       // Hanya goresan/bentuk yang berubah (sudah tersiar langsung sebagai `ubah`)?
       // Gambar, teks, lapisan, kertas, dan halaman tidak ikut tersiar langsung,
       // jadi perubahan di sana tetap meminta layar pengikut mengunduh ulang.
+      const semuaTersiar = (lama: { id: string }[], baru: { id: string }[], tersiar: Set<string>) => {
+        const s = selisihKoleksi(lama, baru)
+        return !!s && s.hapus.every((id) => tersiar.has(id)) && s.tambah.every((b) => tersiar.has(b.id))
+      }
       const langsung =
         !!basis &&
+        !tersiarGagal.current &&
         saya.images === basis.images &&
         saya.texts === basis.texts &&
         saya.layers === basis.layers &&
         saya.paper === basis.paper &&
         saya.pages === basis.pages &&
-        Math.abs(saya.strokes.length - basis.strokes.length) <= 300
+        semuaTersiar(basis.strokes, saya.strokes, tersiarC.current) &&
+        semuaTersiar(basis.objects ?? [], saya.objects ?? [], tersiarO.current)
       simpanBerjalan.current = true
       try {
         const tulis = await tulisDenganGabung(idKanvas, saya, basis, { langsung })
@@ -1139,6 +1157,9 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
           terapkanBerkas(gabungkan(saya, kini, tulis))
         }
         basisRef.current = tulis
+        tersiarC.current.clear()
+        tersiarO.current.clear()
+        tersiarGagal.current = false
         setDisimpan(tulis.updated_at)
         percobaanSimpan.current = 0
         setGagalSimpan(false)
@@ -1356,7 +1377,14 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
       if (hapusC.length + hapusO.length + tambahC.length + tambahO.length === 0) return
       // Perubahan raksasa (mis. mengosongkan lapisan berisi ribuan goresan)
       // dibiarkan lewat berkas saja; pesan langsung dijaga tetap kecil.
-      if (tambahC.length > 300) return
+      if (tambahC.length > 300) {
+        tersiarGagal.current = true
+        return
+      }
+      for (const id of hapusC) tersiarC.current.add(id)
+      for (const c of tambahC) tersiarC.current.add(c.id)
+      for (const id of hapusO) tersiarO.current.add(id)
+      for (const o of tambahO) tersiarO.current.add(o.id)
       kirim({
         t: 'ubah',
         idKanvas,
@@ -2025,9 +2053,19 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
     if (c && c.points.length > terkirim.current) {
       // Meta goresan ikut tiap kiriman: TV yang menyambung di tengah goresan
       // tetap bisa menggambarnya tanpa menunggu goresan berikutnya.
+      // Meta (warna, ukuran, alat…) cukup di kiriman pertama lalu sesekali
+      // (untuk layar yang menyambung di tengah goresan) — bukan tiap bingkai.
+      const pakaiMeta = terkirim.current === 0 || ++hitungTitik.current % 15 === 0
       const { points: _abaikan, ...meta } = c
       void _abaikan
-      kirim({ t: 'titik', idKanvas, id: c.id, dari: terkirim.current, titik: c.points.slice(terkirim.current), meta })
+      kirim({
+        t: 'titik',
+        idKanvas,
+        id: c.id,
+        dari: terkirim.current,
+        titik: c.points.slice(terkirim.current),
+        ...(pakaiMeta ? { meta } : {}),
+      })
       terkirim.current = c.points.length
     }
     const o = objekBaru.current ?? bentukSnap.current
@@ -2288,6 +2326,7 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
 
       if (pilihan.size > 0 && adaPilihanDiTitik(d.x, d.y)) {
         geser.current = { x: d.x, y: d.y }
+        geserAwal.current = coretan
         return
       }
       awalLaso.current = { x: d.x, y: d.y }
@@ -2815,6 +2854,10 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
 
     if (geser.current) {
       geser.current = null
+      // Hasil geser disiarkan sekali saat pena diangkat — dulu tidak disiarkan
+      // sama sekali, dan HP murid hanya tahu lewat unduh ulang sesudah simpan.
+      if (geserAwal.current) siarkanPerubahan(geserAwal.current, coretan, objek, objek)
+      geserAwal.current = null
       jadwalkanSimpan(coretan)
       return
     }
