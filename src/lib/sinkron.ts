@@ -113,6 +113,51 @@ function simpanBelumDiakui() {
 
 /** Pesan terakhir dari server — untuk mengenali sambungan yang mati diam-diam. */
 let terakhirTerima = 0
+/** Sudah pernah tersambung: sambungan berikutnya adalah sambungan ULANG. */
+let pernahTersambung = false
+/** Kapan halaman terakhir masuk ke latar (layar terkunci, pindah aplikasi). */
+let tersembunyiSejak = 0
+
+/**
+ * Minta halaman menyegarkan kanvasnya dari simpanan. Pesan langsung yang
+ * terlewat selama putus atau selama halaman dibekukan di latar TIDAK dikirim
+ * ulang oleh server — dulu layar baru benar lagi kalau guru kebetulan menulis
+ * lagi atau murid menekan refresh.
+ */
+function mintaSegarkan(alasan: string) {
+  const p = { t: 'segarkan', alasan } as PesanLangsung
+  pendengar.forEach((h) => h(p))
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      tersembunyiSejak = Date.now()
+      return
+    }
+    const lama = tersembunyiSejak ? Date.now() - tersembunyiSejak : 0
+    tersembunyiSejak = 0
+    if (!opsi || lama < 3_000) return
+    const s = ws
+    if (!s || s.readyState === WebSocket.CLOSED || s.readyState === WebSocket.CLOSING) {
+      // Sedang menunggu jadwal sambung ulang: sambung sekarang juga.
+      if (timerUlang) window.clearTimeout(timerUlang)
+      timerUlang = null
+      sambung()
+      return
+    }
+    if (s.readyState === WebSocket.OPEN) {
+      // Sambungan bisa "terbuka" padahal sudah mati selama di latar: kalau
+      // lama tidak ada kabar, putus dan sambung ulang (onopen menyegarkan);
+      // kalau masih hidup, cukup segarkan kanvasnya.
+      if (Date.now() - terakhirTerima > 12_000) s.close()
+      else {
+        s.send(JSON.stringify({ t: 'ping' }))
+        mintaSegarkan('kembali')
+      }
+    }
+  })
+}
 let timerDenyut: number | null = null
 /** Tanpa kabar selama ini (padahal kita mengirim ping tiap 10 detik): anggap putus. */
 const BATAS_SENYAP_MS = 25_000
@@ -136,6 +181,8 @@ function sambung() {
     terakhirTerima = Date.now()
     mulaiDenyut()
     useSinkron.setState({ status: 'tersambung', serverMati: false })
+    if (pernahTersambung) mintaSegarkan('tersambung-ulang')
+    pernahTersambung = true
     if (antrean.length) {
       const isi = antrean
       antrean = []

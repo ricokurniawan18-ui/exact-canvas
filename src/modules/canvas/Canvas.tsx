@@ -2345,7 +2345,7 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
       dengarkanLangsung((p) => {
         // Server memberi tahu sambungan ini sempat tertinggal: goresan murid
         // yang terlewat sudah ada di simpanan, ambil dari sana.
-        if (p.t === 'tertinggal') {
+        if (p.t === 'tertinggal' || p.t === 'segarkan') {
           void muatUlangGabung()
           return
         }

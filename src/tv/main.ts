@@ -596,9 +596,11 @@ function terima(p: PesanLangsung) {
     if (sebagaiMurid && p.murid === muridId) terimaPanggil(String(p.guru ?? 'the teacher'))
     return
   }
-  if (p.t === 'tertinggal') {
-    // Sambungan ini sempat tertinggal; yang terlewat sudah tersimpan di server.
+  if (p.t === 'tertinggal' || p.t === 'segarkan') {
+    // Sambungan ini sempat tertinggal, putus, atau halaman dibekukan di latar:
+    // yang terlewat sudah tersimpan di server — muat dari sana.
     jadwalkanMuatUlang()
+    if (p.t === 'segarkan') void segarkanSaya()
     return
   }
   if (p.t === 'izin') {
