@@ -353,14 +353,17 @@ function gambarAktif() {
   if (kursor) {
     // Titik pena sebagai penunjuk: murid melihat ke mana guru menunjuk,
     // bukan hanya apa yang sudah ditulis.
+    // Di HP murid lebih kecil dan pudar (layar kecil, titik besar menutupi
+    // tulisan); TV kelas tetap besar supaya terlihat dari belakang ruangan.
+    const [rTitik, aTitik, rLingkar, aLingkar] = sebagaiMurid ? [3, 0.5, 8, 0.12] : [5, 0.85, 14, 0.25]
     ctx.beginPath()
-    ctx.arc(kursor.x, kursor.y, 5 / skala, 0, Math.PI * 2)
+    ctx.arc(kursor.x, kursor.y, rTitik / skala, 0, Math.PI * 2)
     ctx.fillStyle = warnaToken('accent')
-    ctx.globalAlpha = 0.85
+    ctx.globalAlpha = aTitik
     ctx.fill()
-    ctx.globalAlpha = 0.25
+    ctx.globalAlpha = aLingkar
     ctx.beginPath()
-    ctx.arc(kursor.x, kursor.y, 14 / skala, 0, Math.PI * 2)
+    ctx.arc(kursor.x, kursor.y, rLingkar / skala, 0, Math.PI * 2)
     ctx.fill()
     ctx.globalAlpha = 1
   }
