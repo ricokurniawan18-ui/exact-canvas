@@ -834,6 +834,8 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
   // Penangan tombol dipasang sekali; urutannya dibaca lewat ref supaya
   // menyusun ulang bilah alat tidak memasang ulang seluruh pendengar papan tik
   // di tengah orang menggambar.
+  /** Lima alat utama di rel (selain penghapus, yang punya tombol sendiri). */
+  const alatUtama: Alat[] = useMemo(() => urutanAlat.filter((a) => a !== 'penghapus').slice(0, 5), [urutanAlat])
   const urutanRef = useRef(urutanAlat)
   urutanRef.current = urutanAlat
 
@@ -4599,15 +4601,37 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
         cuma satu atau dua kelompok. Yang tetap terlihat di sini hanyalah yang
         menjawab "sedang pakai alat apa, warna apa": sisanya menunggu diminta.
       */}
+      {/* Rel ditaruh di TENGAH tinggi layar (sejajar tangan saat menulis), lewat
+          wadah setinggi kanvas yang memusatkan isinya — bukan top:50% +
+          translate, yang meleset karena rel memakai zoom skala bilah. */}
       <div
-        className="ex-card ex-bilah ex-rel absolute left-3 top-3 z-10 flex flex-col gap-1 p-1"
+        className="pointer-events-none absolute bottom-3 left-3 top-3 z-10 flex flex-col justify-center"
         style={{ display: menuTampil ? undefined : 'none' }}
       >
+      <div
+        className="ex-card ex-bilah ex-rel pointer-events-auto flex flex-col gap-1 p-1"
+        // Rel yang lebih tinggi dari layar digulir, bukan terpotong di atas dan
+        // bawah karena dipusatkan. Dibagi skala bilah karena rel memakai zoom.
+        style={{ maxHeight: 'calc(100% / var(--skala-bilah, 1))', overflowY: 'auto' }}
+      >
+        {/* Lima alat utama tampil langsung — lima slot teratas urutan alat
+            (yang juga dipakai ⌘1–⌘5); susun ulang di panel alat untuk
+            menggantinya. Penghapus punya tombolnya sendiri di bawah. */}
+        {ada('alat') &&
+          alatUtama.map((a) => (
+            <IconButton
+              key={a}
+              nama={infoAlat(a).ikon}
+              label={infoAlat(a).label}
+              aktif={alat === a}
+              onClick={() => setAlat(a)}
+            />
+          ))}
         {ada('alat') && (
         <IconButton
-          nama={infoAlat(alat).ikon}
-          label={`${infoAlat(alat).label} — tools and shapes`}
-          aktif={panelAlat === 'alat'}
+          nama={alatUtama.includes(alat) ? 'tambah' : infoAlat(alat).ikon}
+          label={alatUtama.includes(alat) ? 'More tools and shapes' : `${infoAlat(alat).label} — tools and shapes`}
+          aktif={panelAlat === 'alat' || !alatUtama.includes(alat)}
           onClick={() => bukaPanel('alat')}
         />
         )}
@@ -4717,6 +4741,8 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
             onClick={() => setMenuTampil(false)}
           />
         )}
+      </div>
+
       </div>
 
       {/* Panel isi, muncul di sebelah rel. Tingginya dibatasi tinggi kanvas —
