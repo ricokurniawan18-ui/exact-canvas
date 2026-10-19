@@ -125,8 +125,13 @@ import {
 } from './urutanAlat'
 
 /** Di atas ambang ini coretan lama dipanggang jadi bitmap; hanya yang baru digambar ulang. */
-const AMBANG_PANGGANG = 2000
-const SISA_HIDUP = 400
+// Coretan dipanggang jadi bitmap begitu jumlahnya lewat ambang ini; yang
+// terbaru (SISA_HIDUP) tetap digambar langsung karena paling mungkin dihapus.
+// Panggangan ditambah sedikit-sedikit (lihat gambarDasar), jadi ambangnya
+// boleh rendah — dulu 2000, sehingga kanvas ber-1.000-an goresan menggambar
+// ulang semuanya tiap satu goresan selesai.
+const AMBANG_PANGGANG = 400
+const SISA_HIDUP = 30
 const JEDA_SIMPAN = 800
 
 /**
@@ -973,7 +978,7 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
     h: number
   } | null>(null)
   const simpanTimer = useRef<number | null>(null)
-  const panggang = useRef<{ bitmap: HTMLCanvasElement; kunci: string; sampai: number } | null>(null)
+  const panggang = useRef<{ bitmap: HTMLCanvasElement; kunci: string; sampai: number; isi: Coretan[] } | null>(null)
   /**
    * Sketsa ini sudah berhasil dibaca dari vault.
    *
@@ -1597,11 +1602,23 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
 
     // Tempelan selalu di bawah coretan, apa pun urutan pembuatannya: yang
     // ditempel adalah alas, yang digambar adalah anotasi di atasnya.
+    // Kotak dunia yang terlihat di layar (dengan marjin) — dipakai untuk
+    // melewati tempelan DAN goresan yang tidak menyentuh layar.
+    const margin = 40 / v.tampilan.skala
+    const layarX1 = (0 - v.tampilan.x) / v.tampilan.skala - margin
+    const layarY1 = (0 - v.tampilan.y) / v.tampilan.skala - margin
+    const layarX2 = (el.width / dpr - v.tampilan.x) / v.tampilan.skala + margin
+    const layarY2 = (el.height / dpr - v.tampilan.y) / v.tampilan.skala + margin
+
     ctx.save()
     ctx.translate(v.tampilan.x, v.tampilan.y)
     ctx.scale(v.tampilan.skala, v.tampilan.skala)
     for (const g of gambar) {
       if (!(lapisanInfo[g.layer]?.tampak ?? true)) continue
+      // Halaman PDF/foto di luar layar dilewati: kanvas "Tanya" yang berisi
+      // puluhan halaman dulu menggambar ulang SEMUANYA tiap goresan selesai.
+      const kg = kotakGambar(g)
+      if (kg.x2 < layarX1 || kg.x1 > layarX2 || kg.y2 < layarY1 || kg.y1 > layarY2) continue
       gambarTempelan(ctx, g, () => gambarDasarRef.current?.())
       if (g.id === gambarTerpilih) {
         const sudut = sudutGambar(g)
@@ -1659,11 +1676,6 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
     // mengubah "kunci" di atas dan memaksa panggang ulang) maupun saat
     // digambar langsung di bawah ambang panggang — jadi goresan yang kotaknya
     // tidak menyentuh layar dilewati sama seperti halaman di gambarLatar.
-    const margin = 40 / v.tampilan.skala
-    const layarX1 = (0 - v.tampilan.x) / v.tampilan.skala - margin
-    const layarY1 = (0 - v.tampilan.y) / v.tampilan.skala - margin
-    const layarX2 = (el.width / dpr - v.tampilan.x) / v.tampilan.skala + margin
-    const layarY2 = (el.height / dpr - v.tampilan.y) / v.tampilan.skala + margin
     const terlihatLayar = (c: Coretan) => {
       const k = kotakCoretan(c)
       return k.x2 >= layarX1 && k.x1 <= layarX2 && k.y2 >= layarY1 && k.y1 <= layarY2
@@ -1673,8 +1685,36 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
     // tidak berubah, menambah goresan baru tidak menggambar ulang semuanya.
     if (coretan.length > AMBANG_PANGGANG) {
       const batas = coretan.length - SISA_HIDUP
-      const perluPanggang =
-        !panggang.current || panggang.current.kunci !== kunci || panggang.current.sampai !== batas
+      const lama = panggang.current
+      // Bagian yang sudah dipanggang masih persis sama (tidak ada yang dihapus
+      // atau diubah)? Cukup bandingkan rujukannya — murah, tanpa menggambar.
+      const awalanSama = (n: number) => {
+        if (!lama || lama.isi.length < n) return false
+        for (let i = 0; i < n; i++) if (lama.isi[i] !== coretan[i]) return false
+        return true
+      }
+      if (lama && lama.kunci === kunci && batas > lama.sampai && awalanSama(lama.sampai)) {
+        // Hanya goresan baru yang ditambahkan ke panggangan yang ada.
+        const bctx = lama.bitmap.getContext('2d')
+        if (bctx) {
+          bctx.save()
+          bctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+          bctx.translate(v.tampilan.x, v.tampilan.y)
+          bctx.scale(v.tampilan.skala, v.tampilan.skala)
+          for (let i = lama.sampai; i < batas; i++) {
+            if (terlihat(coretan[i]) && terlihatLayar(coretan[i])) gambarCoretan(bctx, coretan[i])
+          }
+          bctx.restore()
+          panggang.current = { ...lama, sampai: batas, isi: coretan.slice(0, batas) }
+        }
+      }
+      const kini = panggang.current
+      const perluPanggang = !kini || kini.kunci !== kunci || kini.sampai !== batas || !awalanSamaKini(kini, batas)
+      function awalanSamaKini(p: { isi: Coretan[] }, n: number) {
+        if (p.isi.length !== n) return false
+        for (let i = 0; i < n; i++) if (p.isi[i] !== coretan[i]) return false
+        return true
+      }
 
       if (perluPanggang) {
         const bitmap = document.createElement('canvas')
@@ -1689,7 +1729,7 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
             if (terlihat(coretan[i]) && terlihatLayar(coretan[i])) gambarCoretan(bctx, coretan[i])
           }
         }
-        panggang.current = { bitmap, kunci, sampai: batas }
+        panggang.current = { bitmap, kunci, sampai: batas, isi: coretan.slice(0, batas) }
       }
 
       const dipanggang = panggang.current
@@ -1705,6 +1745,18 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
       ctx.scale(v.tampilan.skala, v.tampilan.skala)
       for (let i = batas; i < coretan.length; i++) {
         if (terlihat(coretan[i]) && terlihatLayar(coretan[i])) gambarCoretan(ctx, coretan[i])
+      }
+      // Garis pilihan (laso) juga untuk goresan yang sudah dipanggang.
+      if (pilihan.size) {
+        for (const c of coretan) {
+          if (!pilihan.has(c.id) || !terlihat(c)) continue
+          ctx.save()
+          ctx.strokeStyle = warnaToken('accent')
+          ctx.globalAlpha = 0.5
+          ctx.lineWidth = 1 / v.tampilan.skala
+          ctx.stroke(jalurDari(garisLuar(c)))
+          ctx.restore()
+        }
       }
       ctx.restore()
       gambarSemuaObjek(ctx)
