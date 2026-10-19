@@ -42,6 +42,9 @@ chrono = "0.4"
 p256 = { version = "0.13", features = ["ecdh", "ecdsa"] }
 aes-gcm = "0.10"
 hkdf = "0.12"
+# Data kanvas (JSON goresan, belasan MB) dikompres sebelum naik lewat upload
+# internet Mac ke Cloudflare — sekitar 3-7x lebih kecil.
+tower-http = { version = "0.6", features = ["compression-gzip"] }
 
 [profile.release]
 codegen-units = 1

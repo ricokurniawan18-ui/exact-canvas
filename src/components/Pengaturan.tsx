@@ -592,11 +592,13 @@ function BagianNotif() {
   )
 }
 
-/** Tinta cepat (kanvas latensi rendah + prediksi pena) per perangkat — lihat Canvas.tsx. */
-function TintaCepat() {
+/** Tinta cepat (kanvas latensi rendah + prediksi pena) per perangkat — lihat Canvas.tsx.
+ *  Sementara tidak ditampilkan (Rico belum perlu); bawaannya mati. */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function TintaCepat() {
   const [aktif, setAktif] = useState(() => {
     try {
-      return localStorage.getItem('exact-tinta-cepat') !== '0'
+      return localStorage.getItem('exact-tinta-cepat') === '1'
     } catch {
       return true
     }
@@ -679,7 +681,6 @@ function BagianPerangkat() {
         <span className="ex-label" style={{ color: 'var(--ink-soft)' }}>On the canvas</span>
         {kotak('layar')}
       </div>
-      <TintaCepat />
       <div>
         <button className="ex-btn" data-variant="ghost" onClick={pulihkan}>
           Reset this device to the default layout

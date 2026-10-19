@@ -131,13 +131,14 @@ import {
 // boleh rendah — dulu 2000, sehingga kanvas ber-1.000-an goresan menggambar
 // ulang semuanya tiap satu goresan selesai.
 /**
- * Tinta cepat (kanvas latensi rendah + prediksi pena), bawaan menyala. Bisa
- * dimatikan per perangkat di Pengaturan bila di tablet tertentu tintanya
- * berkedip — berlaku sesudah halaman dimuat ulang.
+ * Tinta cepat (kanvas latensi rendah + prediksi pena). Disembunyikan dan
+ * bawaan MATI atas permintaan Rico (2026-10-19, "belum perlu"); kodenya tetap
+ * ada — nyalakan dengan localStorage 'exact-tinta-cepat' = '1' lalu muat ulang,
+ * atau pasang lagi komponen TintaCepat di Pengaturan.
  */
 export function tintaCepatAktif(): boolean {
   try {
-    return localStorage.getItem('exact-tinta-cepat') !== '0'
+    return localStorage.getItem('exact-tinta-cepat') === '1'
   } catch {
     return true
   }

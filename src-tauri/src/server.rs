@@ -403,6 +403,9 @@ fn rute(hub: Arc<Hub>) -> Router {
         .route("/api/kelas/grup/riwayat", get(crate::kelas::api_grup_riwayat))
         .route("/ws", get(ws_masuk))
         .fallback(aset_lain)
+        // Respons besar (JSON kanvas) dikompres gzip bila peminta mendukungnya;
+        // gambar/PDF yang sudah terkompres dilewati oleh predikat bawaannya.
+        .layer(tower_http::compression::CompressionLayer::new())
         .layer(axum::middleware::from_fn(cors))
         .layer(axum::middleware::from_fn(tandai_asal))
         // Bawaannya 2 MB — sketsa dengan foto atau halaman PDF jauh lebih besar
@@ -808,6 +811,25 @@ fn sketsa_ringan(id: &str, kred: &str) -> Result<String, String> {
                 // Bukan data URL (sudah berupa URL): biarkan; slot cache tetap
                 // terisi supaya indeksnya sejajar dengan urutan gambar.
                 daftar.push(GambarSketsa { mime: String::new(), bytes: Vec::new() });
+            }
+        }
+    }
+    // Titik goresan lama masih berangka 16 digit: dibulatkan untuk layar
+    // pengikut (x,y 0,01; tekanan 0,001 — sama dengan goresan baru). Berkas
+    // aslinya tidak diubah; ini hanya memperkecil yang dikirim ke HP/TV.
+    if let Some(gores) = v.get_mut("strokes").and_then(|s| s.as_array_mut()) {
+        for c in gores {
+            if let Some(pts) = c.get_mut("points").and_then(|p| p.as_array_mut()) {
+                for p in pts {
+                    if let Some(a) = p.as_array_mut() {
+                        for (j, n) in a.iter_mut().enumerate() {
+                            if let Some(f) = n.as_f64() {
+                                let k = if j < 2 { 100.0 } else { 1000.0 };
+                                *n = serde_json::json!((f * k).round() / k);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
