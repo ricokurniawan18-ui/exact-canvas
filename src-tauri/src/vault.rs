@@ -398,6 +398,73 @@ pub fn write_bytes(path: String, bytes: Vec<u8>) -> Result<(), String> {
     fs::write(path, bytes).map_err(|e| e.to_string())
 }
 
+/// Perubahan sebagian satu koleksi (strokes/images/objects/texts): id yang
+/// dihapus, dan butir baru atau yang berubah (diganti di tempat; yang baru
+/// ditambahkan di belakang).
+#[derive(serde::Deserialize, Default)]
+pub struct KoleksiTambalan {
+    #[serde(default)]
+    pub hapus: Vec<String>,
+    #[serde(default)]
+    pub tambah: Vec<serde_json::Value>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct Tambalan {
+    /// `updated_at` versi berkas yang menjadi dasar perubahan ini.
+    pub dasar: i64,
+    pub updated_at: i64,
+    /// Nilai tingkat atas yang kecil: title, layers, paper, pages.
+    #[serde(default)]
+    pub set: serde_json::Map<String, serde_json::Value>,
+    #[serde(default)]
+    pub koleksi: std::collections::HashMap<String, KoleksiTambalan>,
+}
+
+/// Terapkan simpanan sebagian ke berkas sketsa, dengan cek versi yang sama
+/// seperti `canvas_write` (KONFLIK bila berkas berubah sejak `dasar`).
+pub fn canvas_tambal(id: &str, t: Tambalan) -> Result<(), String> {
+    let _g = kunci_tulis();
+    let p = resolve_within(&canvas_dir(), &format!("{id}.json"))?;
+    let teks = fs::read_to_string(&p).map_err(|_| "Sketch file not found.".to_string())?;
+    let kini = updated_at_berkas(&teks);
+    if kini != Some(t.dasar) {
+        return Err(format!("KONFLIK:{}", kini.unwrap_or(0)));
+    }
+    let mut d: serde_json::Value = serde_json::from_str(&teks).map_err(|e| e.to_string())?;
+    if !d.is_object() {
+        return Err("Sketch file is not an object.".into());
+    }
+    for (k, v) in t.set {
+        if matches!(k.as_str(), "title" | "layers" | "paper" | "pages") {
+            d[k] = v;
+        }
+    }
+    for (nama, kol) in t.koleksi {
+        if !matches!(nama.as_str(), "strokes" | "images" | "objects" | "texts") {
+            continue;
+        }
+        if !d[&nama].is_array() {
+            d[&nama] = serde_json::Value::Array(vec![]);
+        }
+        let arr = d[&nama].as_array_mut().expect("array");
+        if !kol.hapus.is_empty() {
+            let ids: std::collections::HashSet<&str> = kol.hapus.iter().map(|s| s.as_str()).collect();
+            arr.retain(|x| !x["id"].as_str().map(|i| ids.contains(i)).unwrap_or(false));
+        }
+        for butir in kol.tambah {
+            let Some(bid) = butir["id"].as_str().map(|s| s.to_string()) else { continue };
+            if let Some(ada) = arr.iter_mut().find(|x| x["id"].as_str() == Some(bid.as_str())) {
+                *ada = butir;
+            } else {
+                arr.push(butir);
+            }
+        }
+    }
+    d["updated_at"] = serde_json::json!(t.updated_at);
+    tulis_berkas_terkunci(id, &d.to_string())
+}
+
 #[cfg(test)]
 mod uji_tulis {
     use super::{canvas_read, canvas_write, updated_at_berkas};
@@ -426,6 +493,30 @@ mod uji_tulis {
         // Sesudah menggabung (dasar 200) diterima.
         canvas_write(id.clone(), r#"{"id":"x","strokes":[{"id":"m"},{"id":"g"}],"updated_at":300}"#.into(), Some(200)).unwrap();
         assert_eq!(updated_at_berkas(&canvas_read(id.clone()).unwrap().unwrap()), Some(300));
+        let _ = super::canvas_delete(id);
+    }
+
+    #[test]
+    fn tambalan_sebagian() {
+        use super::{canvas_tambal, KoleksiTambalan, Tambalan};
+        std::env::set_var("EXACT_CANVAS_VAULT", std::env::temp_dir().join("uji-exact-vault"));
+        let _ = std::fs::create_dir_all(std::env::temp_dir().join("uji-exact-vault"));
+        let id = format!("cnv_ujitambal{}", std::process::id());
+        canvas_write(id.clone(), r#"{"id":"x","title":"T","strokes":[{"id":"a","w":1},{"id":"b","w":1}],"images":[{"id":"g","src":"data:besar"}],"updated_at":10}"#.into(), None).unwrap();
+        let mut koleksi = std::collections::HashMap::new();
+        koleksi.insert("strokes".to_string(), KoleksiTambalan {
+            hapus: vec!["a".into()],
+            tambah: vec![serde_json::json!({"id":"b","w":2}), serde_json::json!({"id":"c","w":1})],
+        });
+        let t = Tambalan { dasar: 10, updated_at: 20, set: serde_json::Map::new(), koleksi };
+        canvas_tambal(&id, t).unwrap();
+        let d: serde_json::Value = serde_json::from_str(&canvas_read(id.clone()).unwrap().unwrap()).unwrap();
+        assert_eq!(d["strokes"], serde_json::json!([{"id":"b","w":2},{"id":"c","w":1}]));
+        assert_eq!(d["images"][0]["src"], "data:besar", "gambar yang tidak dikirim tetap utuh");
+        assert_eq!(d["updated_at"], 20);
+        // Dasar basi ditolak.
+        let basi = Tambalan { dasar: 10, updated_at: 30, set: serde_json::Map::new(), koleksi: Default::default() };
+        assert_eq!(canvas_tambal(&id, basi).unwrap_err(), "KONFLIK:20");
         let _ = super::canvas_delete(id);
     }
 }

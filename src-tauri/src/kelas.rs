@@ -626,7 +626,9 @@ pub fn antre_coretan_murid(hub: Arc<Hub>, id_kanvas: String, ubah: Value) {
             let hasil = tokio::task::spawn_blocking(move || tulis_coretan_murid(&id2, &ops)).await;
             match hasil {
                 Ok(Ok(())) => {
-                    let _ = hub.tx.send(json!({ "t": "data", "kanal": "canvas", "payload": { "id": id_kanvas, "src": "server" } }).to_string());
+                    // `langsung`: semua isinya sudah tersiar sebagai pesan `ubah`
+                    // ke setiap layar — HP tidak perlu mengunduh ulang kanvasnya.
+                    let _ = hub.tx.send(json!({ "t": "data", "kanal": "canvas", "payload": { "id": id_kanvas, "src": "server", "langsung": true } }).to_string());
                 }
                 Ok(Err(e)) => eprintln!("[kelas] coretan murid tidak tersimpan ({id_kanvas}): {e}"),
                 Err(e) => eprintln!("[kelas] coretan murid: {e}"),

@@ -33,6 +33,9 @@ export const kanvas = {
           timeoutMs: 60_000,
           headers: dasar !== undefined ? { 'x-exact-dasar': String(dasar) } : undefined,
         }),
+  /** Simpanan sebagian (hanya di browser): lihat `api_canvas_tambal` di server. */
+  tambal: (id: string, isi: unknown) =>
+    api<void>(`/api/canvas/${encodeURIComponent(id)}`, { method: 'PATCH', json: isi, timeoutMs: 60_000 }),
   daftar: () => (inTauri ? inv<string[]>('canvas_list') : api<string[]>('/api/canvas')),
   hapus: (id: string) =>
     inTauri

@@ -1,6 +1,7 @@
 import { q, x } from '@/lib/db'
 import { pancarkan } from '@/lib/events'
-import { kanvas } from '@/lib/vault'
+import { galatKonflik, kanvas } from '@/lib/vault'
+import { inTauri } from '@/lib/runtime'
 import { newId } from '@/lib/id'
 import { idKlien } from '@/lib/sinkron'
 import { kunciTanggal, tanggalPendek } from '@/lib/tanggal'
@@ -124,7 +125,7 @@ export async function bacaKanvas(id: string): Promise<BerkasKanvas | null> {
   }
 }
 
-export async function simpanKanvas(berkas: BerkasKanvas, dasar?: number): Promise<void> {
+export async function simpanKanvas(berkas: BerkasKanvas, dasar?: number, opsi?: { langsung?: boolean }): Promise<void> {
   await kanvas.tulis(berkas.id, JSON.stringify(berkas), dasar)
   await x(
     `INSERT INTO canvases (id, title, updated_at) VALUES (?, ?, ?)
@@ -133,7 +134,85 @@ export async function simpanKanvas(berkas: BerkasKanvas, dasar?: number): Promis
   )
   // Id dan pengirim ikut disiarkan: editor lain yang membuka sketsa yang sama
   // memuat ulang dan menggabungkan, editor yang mengirimnya sendiri tidak.
-  await pancarkan('canvas', { id: berkas.id, src: idKlien })
+  // `langsung`: perubahannya hanya goresan/bentuk yang sudah tersiar sebagai
+  // pesan `ubah`, jadi layar pengikut (HP murid) tidak perlu mengunduh ulang.
+  await pancarkan('canvas', { id: berkas.id, src: idKlien, ...(opsi?.langsung ? { langsung: true } : {}) })
+}
+
+type Berid = { id: string }
+
+/** Dua butir sama isinya? Gambar dibandingkan lewat `src` dulu (string besar, cepat). */
+function samaButir(a: Berid, b: Berid): boolean {
+  if (a === b) return true
+  const { src: sa, ...ra } = a as Berid & { src?: string }
+  const { src: sb, ...rb } = b as Berid & { src?: string }
+  return sa === sb && JSON.stringify(ra) === JSON.stringify(rb)
+}
+
+/**
+ * Selisih satu koleksi, atau null bila tidak bisa dinyatakan sebagai tambalan
+ * (urutan butir lama berubah, atau butir baru tidak berada di belakang —
+ * mis. sesudah urungkan atau "bawa ke depan"): saat itu simpan penuh.
+ */
+function selisihKoleksi(lama: Berid[], baru: Berid[]): { hapus: string[]; tambah: Berid[] } | null {
+  const petaLama = new Map(lama.map((x) => [x.id, x]))
+  const idBaru = new Set(baru.map((x) => x.id))
+  const urutLama = lama.filter((x) => idBaru.has(x.id)).map((x) => x.id)
+  const urutBaru = baru.filter((x) => petaLama.has(x.id)).map((x) => x.id)
+  if (urutLama.length !== urutBaru.length || urutLama.some((v, i) => v !== urutBaru[i])) return null
+  let adaBaru = false
+  for (const x of baru) {
+    if (!petaLama.has(x.id)) adaBaru = true
+    else if (adaBaru) return null
+  }
+  return {
+    hapus: lama.filter((x) => !idBaru.has(x.id)).map((x) => x.id),
+    tambah: baru.filter((x) => {
+      const l = petaLama.get(x.id)
+      return !l || !samaButir(l, x)
+    }),
+  }
+}
+
+/**
+ * Simpan sketsa. Di browser (tablet lewat internet), kalau versi yang ada di
+ * server (`lama`) diketahui, yang dikirim hanya selisihnya — bukan seluruh
+ * berkas yang bisa puluhan MB karena foto/PDF. Dulu tiap jeda menulis
+ * mengunggah ulang semuanya: tablet tersendat menyusun JSON-nya dan pesan
+ * langsung ke HP murid ikut antre di belakang unggahan itu.
+ */
+export async function simpanKanvasSebagian(
+  berkas: BerkasKanvas,
+  lama: BerkasKanvas | null,
+  dasar?: number,
+  opsi?: { langsung?: boolean },
+): Promise<void> {
+  if (inTauri || !lama || dasar === undefined) return simpanKanvas(berkas, dasar, opsi)
+  const koleksi: Record<string, { hapus: string[]; tambah: Berid[] }> = {}
+  for (const k of ['strokes', 'images', 'objects', 'texts'] as const) {
+    const s = selisihKoleksi((lama[k] ?? []) as Berid[], (berkas[k] ?? []) as Berid[])
+    if (!s) return simpanKanvas(berkas, dasar, opsi)
+    if (s.hapus.length || s.tambah.length) koleksi[k] = s
+  }
+  const set: Record<string, unknown> = {}
+  if (berkas.title !== lama.title) set.title = berkas.title
+  if (JSON.stringify(berkas.layers) !== JSON.stringify(lama.layers)) set.layers = berkas.layers
+  if (berkas.paper !== lama.paper) set.paper = berkas.paper
+  if (berkas.pages !== lama.pages) set.pages = berkas.pages
+  try {
+    await kanvas.tambal(berkas.id, { dasar, updated_at: berkas.updated_at, set, koleksi })
+  } catch (e) {
+    // Konflik ditangani pemanggil (gabung lalu coba lagi); galat lain (mis.
+    // server lama tanpa PATCH) jatuh ke simpanan penuh.
+    if (galatKonflik(e)) throw e
+    return simpanKanvas(berkas, dasar, opsi)
+  }
+  await x(
+    `INSERT INTO canvases (id, title, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET title = excluded.title, updated_at = excluded.updated_at`,
+    [berkas.id, berkas.title, berkas.updated_at],
+  )
+  await pancarkan('canvas', { id: berkas.id, src: idKlien, ...(opsi?.langsung ? { langsung: true } : {}) })
 }
 
 /**

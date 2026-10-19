@@ -10,7 +10,7 @@ import { newId } from '@/lib/id'
 import { ANGGARAN_PDF, padatkanHalaman } from '@/lib/pdf'
 import { IconButton } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
-import { KERTAS_BAWAAN, berkasBaru, bacaKanvas, simpanKanvas } from './data'
+import { KERTAS_BAWAAN, berkasBaru, bacaKanvas, simpanKanvasSebagian } from './data'
 import { JARAK_HALAMAN, KERTAS, kotakHalaman, letakCoretanGuruTerakhir } from './kertas'
 import {
   JUMLAH_LAPISAN,
@@ -45,6 +45,7 @@ import {
   KELUARGA_HURUF,
   WARNA_CORETAN,
   PALET_CORETAN,
+  titikBulat,
   type Alat,
   type BerkasKanvas,
   type Coretan,
@@ -140,20 +141,28 @@ const JEDA_SIMPAN = 800
  *
  * Tidak menyentuh keadaan React: dipakai juga saat sketsa sudah ditinggalkan.
  */
-async function tulisDenganGabung(id: string, saya: BerkasKanvas, basis: BerkasKanvas | null): Promise<BerkasKanvas> {
+async function tulisDenganGabung(
+  id: string,
+  saya: BerkasKanvas,
+  basis: BerkasKanvas | null,
+  opsi?: { langsung?: boolean },
+): Promise<BerkasKanvas> {
   let tulis = saya
   let dasar = basis?.updated_at
+  /** Versi yang sedang ada di server — dasar simpanan sebagian. */
+  let diServer: BerkasKanvas | null = basis
   const baris = basis ? await q1<{ updated_at: number }>('SELECT updated_at FROM canvases WHERE id = ?', [id]).catch(() => null) : null
   if (baris && basis && baris.updated_at !== basis.updated_at) {
     const diVault = await bacaKanvas(id).catch(() => null)
     if (diVault && diVault.updated_at !== basis.updated_at) {
       tulis = { ...gabungkan(basis, saya, diVault), updated_at: saya.updated_at }
       dasar = diVault.updated_at
+      diServer = diVault
     }
   }
   for (let coba = 0; ; coba++) {
     try {
-      await simpanKanvas(tulis, dasar)
+      await simpanKanvasSebagian(tulis, diServer, dasar, opsi)
       return tulis
     } catch (e) {
       if (!basis || !galatKonflik(e) || coba >= 4) throw e
@@ -161,6 +170,7 @@ async function tulisDenganGabung(id: string, saya: BerkasKanvas, basis: BerkasKa
       if (!diVault) throw e
       tulis = { ...gabungkan(basis, tulis, diVault), updated_at: Math.max(Date.now(), diVault.updated_at + 1) }
       dasar = diVault.updated_at
+      diServer = diVault
     }
   }
 }
@@ -1094,9 +1104,20 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
         jumlahHalamanRef.current,
       )
       const basis = basisRef.current
+      // Hanya goresan/bentuk yang berubah (sudah tersiar langsung sebagai `ubah`)?
+      // Gambar, teks, lapisan, kertas, dan halaman tidak ikut tersiar langsung,
+      // jadi perubahan di sana tetap meminta layar pengikut mengunduh ulang.
+      const langsung =
+        !!basis &&
+        saya.images === basis.images &&
+        saya.texts === basis.texts &&
+        saya.layers === basis.layers &&
+        saya.paper === basis.paper &&
+        saya.pages === basis.pages &&
+        Math.abs(saya.strokes.length - basis.strokes.length) <= 300
       simpanBerjalan.current = true
       try {
-        const tulis = await tulisDenganGabung(idKanvas, saya, basis)
+        const tulis = await tulisDenganGabung(idKanvas, saya, basis, { langsung })
         // Sketsa sudah berganti selagi menyimpan: jangan sentuh keadaan sketsa baru.
         if (idKanvasRef.current !== idKanvas) return
         if (tulis !== saya) {
@@ -2682,11 +2703,11 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
         // Titiknya tetap rapat seperti goresan biasa, walau semuanya segaris:
         // penghapus, laso, dan pemotong bekerja per titik, dan garis yang
         // cuma punya dua ujung tidak bisa disentuh di tengahnya.
-        c.points.push([q[0], q[1], tekananDari(s)])
+        c.points.push(titikBulat(q[0], q[1], tekananDari(s)))
         bacaanRef.current = { teks: bacaan, x: q[0], y: q[1] }
         continue
       }
-      c.points.push([d.x, d.y, tekananDari(s)])
+      c.points.push(titikBulat(d.x, d.y, tekananDari(s)))
     }
 
     // Diukur di piksel layar, bukan dunia: yang dinilai adalah tangan yang

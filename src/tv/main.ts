@@ -23,6 +23,7 @@ import {
   kotakGambar,
   kotakSemua,
   muatGambar,
+  titikBulat,
   warnaToken,
   type BerkasKanvas,
   type Coretan,
@@ -580,7 +581,14 @@ function gantiSumber(p: PesanLangsung) {
 
 function terima(p: PesanLangsung) {
   if (p.t === 'data') {
-    if (p.kanal === 'canvas') jadwalkanMuatUlang()
+    if (p.kanal === 'canvas') {
+      // Hanya kanvas yang sedang ditampilkan, dan hanya bila isinya belum
+      // sampai lewat pesan langsung. Dulu SETIAP simpanan kanvas mana pun
+      // (termasuk kanvas pribadi murid lain, tiap 1,2 detik) membuat semua HP
+      // mengunduh ulang kanvasnya sendiri — berat di HP dan di Cloudflare.
+      const d = p.payload as { id?: string; langsung?: boolean } | null | undefined
+      if ((!d?.id || d.id === idSketsa) && !d?.langsung) jadwalkanMuatUlang()
+    }
     if (p.kanal === 'kelas') {
       void segarkanSaya()
       const apa = (p.payload as { apa?: string } | undefined)?.apa
@@ -2921,7 +2929,7 @@ function lanjutGoresan(e: PointerEvent) {
     const [x, y] = kuncianKu ? kunciTitik(kuncianKu, mentah).q : mentah
     const akhir = c.points[c.points.length - 1]
     if (akhir && Math.hypot(akhir[0] - x, akhir[1] - y) * tampilan.skala < 1.2) continue
-    c.points.push([x, y, ev.pointerType === 'pen' && ev.pressure > 0 ? ev.pressure : 0.5])
+    c.points.push(titikBulat(x, y, ev.pointerType === 'pen' && ev.pressure > 0 ? ev.pressure : 0.5))
   }
   // Diukur di piksel layar, bukan dunia: yang dinilai adalah tangan yang
   // berhenti, dan itu tidak berubah artinya saat kanvas di-zoom.

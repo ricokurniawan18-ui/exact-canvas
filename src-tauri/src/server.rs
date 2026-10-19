@@ -358,7 +358,7 @@ fn rute(hub: Arc<Hub>) -> Router {
         .route("/api/canvas", get(api_canvas_list))
         .route(
             "/api/canvas/{id}",
-            get(api_canvas_read).put(api_canvas_write).delete(api_canvas_delete),
+            get(api_canvas_read).put(api_canvas_write).patch(api_canvas_tambal).delete(api_canvas_delete),
         )
         .route("/api/canvas/{id}/ringan", get(api_canvas_ringan))
         .route("/api/canvas/{id}/gambar/{nama}", get(api_canvas_gambar))
@@ -430,7 +430,7 @@ async fn cors(req: axum::extract::Request, next: axum::middleware::Next) -> Resp
 
 fn pasang_cors(h: &mut HeaderMap) {
     h.insert("access-control-allow-origin", "*".parse().unwrap());
-    h.insert("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS".parse().unwrap());
+    h.insert("access-control-allow-methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS".parse().unwrap());
     // Semua header kredensial: aplikasi Mac (asal tauri://localhost) mengirim
     // x-exact-admin; tanpa ini preflight-nya gagal dan tiap aksi admin dari Mac
     // ditolak browser sebelum sampai ke server.
@@ -709,6 +709,27 @@ async fn api_canvas_write(
     match tokio::task::spawn_blocking(move || vault::canvas_write(id, body, dasar)).await.unwrap_or_else(|e| Err(e.to_string())) {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         // Ada yang menyimpan lebih dulu: editor menggabungkan lalu mencoba lagi.
+        Err(e) if e.starts_with("KONFLIK:") => (StatusCode::CONFLICT, e).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
+    }
+}
+
+/// Simpanan sebagian dari editor di browser (tablet): hanya goresan/objek
+/// yang berubah, bukan seluruh berkas yang bisa puluhan MB karena foto/PDF.
+async fn api_canvas_tambal(
+    State(hub): State<Arc<Hub>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(t): Json<vault::Tambalan>,
+) -> Response {
+    if !sah(&hub, &headers, None) {
+        return tolak();
+    }
+    if !guru_sah(&hub, &headers, None, None) {
+        return tolak_admin();
+    }
+    match tokio::task::spawn_blocking(move || vault::canvas_tambal(&id, t)).await.unwrap_or_else(|e| Err(e.to_string())) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) if e.starts_with("KONFLIK:") => (StatusCode::CONFLICT, e).into_response(),
         Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
     }

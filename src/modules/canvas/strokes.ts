@@ -40,6 +40,15 @@ export function alatObjek(a: Alat): a is JenisObjek {
   return OBJEK.some((o) => o.id === a)
 }
 
+/**
+ * Titik goresan dibulatkan: x, y ke 0,01 piksel dunia dan tekanan ke 0,001.
+ * Tak terlihat bedanya, tetapi angka mentah 16 digit membuat berkas sketsa
+ * dan pesan langsung ke HP murid dua-tiga kali lebih besar dari perlu.
+ */
+export function titikBulat(x: number, y: number, tekanan: number): [number, number, number] {
+  return [Math.round(x * 100) / 100, Math.round(y * 100) / 100, Math.round(tekanan * 1000) / 1000]
+}
+
 export interface Coretan {
   id: string
   tool: AlatTulis
