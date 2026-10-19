@@ -22,6 +22,7 @@ import {
   kotakCoretan,
   kotakGambar,
   kotakSemua,
+  aturBatasCacheGambar,
   muatGambar,
   titikBulat,
   warnaToken,
@@ -262,8 +263,25 @@ function hitungTampilan() {
 
 /* ── Gambar ────────────────────────────────────────────────────────── */
 
+/**
+ * HP murid yang lemah (RAM ≤ 3 GB atau ≤ 4 inti, menurut browsernya): kanvas
+ * digambar dengan kerapatan piksel sedikit lebih rendah dan halaman PDF
+ * diminta lebih kecil. Browser yang tidak memberi tahu dianggap biasa.
+ */
+const hpLemah = (() => {
+  const n = navigator as Navigator & { deviceMemory?: number }
+  return (n.deviceMemory ?? 8) <= 3 || (navigator.hardwareConcurrency ?? 8) <= 4
+})()
+if (sebagaiMurid) aturBatasCacheGambar(hpLemah ? 8 : 16)
+
+/** Lebar halaman PDF/foto yang diminta HP murid (server memperkecilnya). TV: ukuran asli. */
+function srcUntukLayar(src: string): string {
+  if (!sebagaiMurid || !src.startsWith('/api/canvas/') || !src.includes('/gambar/')) return src
+  return `${src}${src.includes('?') ? '&' : '?'}w=${hpLemah ? 800 : 1000}`
+}
+
 function siapkan(el: HTMLCanvasElement): CanvasRenderingContext2D | null {
-  const dpr = Math.min(2, window.devicePixelRatio || 1)
+  const dpr = Math.min(sebagaiMurid && hpLemah ? 1.5 : 2, window.devicePixelRatio || 1)
   const { w, h } = ukuran()
   const pw = Math.round(w * dpr)
   const ph = Math.round(h * dpr)
@@ -414,7 +432,7 @@ async function muatSketsa(id: string) {
     sketsa = {
       ...data,
       strokes: data.strokes ?? [],
-      images: data.images ?? [],
+      images: (data.images ?? []).map((g) => ({ ...g, src: srcUntukLayar(g.src) })),
       objects: data.objects ?? [],
       texts: data.texts ?? [],
     }

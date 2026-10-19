@@ -186,14 +186,35 @@ export function gambarKena(g: Gambar, x: number, y: number): boolean {
  * — satu tangkapan layar sudah cukup membuat pan terasa berat.
  */
 const cacheGambar = new Map<string, HTMLImageElement>()
+/**
+ * Paling banyak sekian gambar ditahan di memori (yang paling lama tidak
+ * dipakai dilepas). Bawaan tanpa batas (editor); HP murid membatasinya supaya
+ * HP murah tidak menimbun puluhan halaman PDF yang sudah lewat.
+ */
+let batasCacheGambar = Infinity
+export function aturBatasCacheGambar(n: number): void {
+  batasCacheGambar = n
+}
 
 export function muatGambar(src: string, saatSiap?: () => void): HTMLImageElement {
   const ada = cacheGambar.get(src)
-  if (ada) return ada
+  if (ada) {
+    if (batasCacheGambar !== Infinity) {
+      // Tandai baru dipakai: pindah ke ujung urutan.
+      cacheGambar.delete(src)
+      cacheGambar.set(src, ada)
+    }
+    return ada
+  }
   const img = new Image()
   img.onload = () => saatSiap?.()
   img.src = src
   cacheGambar.set(src, img)
+  while (cacheGambar.size > batasCacheGambar) {
+    const tertua = cacheGambar.keys().next().value
+    if (tertua === undefined) break
+    cacheGambar.delete(tertua)
+  }
   return img
 }
 

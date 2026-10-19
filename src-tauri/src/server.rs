@@ -882,10 +882,48 @@ async fn api_canvas_ringan(State(hub): State<Arc<Hub>>, headers: HeaderMap, Quer
     }
 }
 
+#[derive(Deserialize)]
+pub struct QueryGambar {
+    pub pin: Option<String>,
+    pub sesi: Option<String>,
+    /// Lebar maksimum (px) untuk HP murid: halaman PDF 1600x2250 diperkecil
+    /// supaya HP murah tidak membongkar gambar 14 MB per halaman.
+    pub w: Option<u32>,
+}
+
+/// Versi kecil gambar tempelan, per (sidik isi, lebar). Dibuat sekali lalu
+/// disajikan ke semua HP — dan di-cache Cloudflare karena URL-nya tetap.
+static CACHE_KECIL: Mutex<Option<HashMap<(u64, u32), Arc<Vec<u8>>>>> = Mutex::new(None);
+
+fn gambar_kecil(bytes: &[u8], lebar: u32) -> Option<Vec<u8>> {
+    let mut sidik = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut sidik);
+    let kunci = (sidik.finish(), lebar);
+    if let Some(ada) = CACHE_KECIL.lock().ok().and_then(|g| g.as_ref().and_then(|c| c.get(&kunci).cloned())) {
+        return Some((*ada).clone());
+    }
+    let img = image::load_from_memory(bytes).ok()?;
+    if img.width() <= lebar {
+        return None; // sudah cukup kecil: sajikan aslinya
+    }
+    let tinggi = ((img.height() as u64 * lebar as u64) / img.width() as u64).max(1) as u32;
+    let kecil = img.resize_exact(lebar, tinggi, image::imageops::FilterType::Triangle).to_rgb8();
+    let mut keluar = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut keluar, 80).encode_image(&kecil).ok()?;
+    if let Ok(mut g) = CACHE_KECIL.lock() {
+        let c = g.get_or_insert_with(HashMap::new);
+        if c.len() > 300 {
+            c.clear();
+        }
+        c.insert(kunci, Arc::new(keluar.clone()));
+    }
+    Some(keluar)
+}
+
 async fn api_canvas_gambar(
     State(hub): State<Arc<Hub>>,
     headers: HeaderMap,
-    Query(q): Query<QueryPin>,
+    Query(q): Query<QueryGambar>,
     Path((id, nama)): Path<(String, String)>,
 ) -> Response {
     if !sah_lengkap(&hub, &headers, q.pin.as_deref(), q.sesi.as_deref(), None) {
@@ -899,8 +937,21 @@ async fn api_canvas_gambar(
     match hasil {
         Ok(Ok(daftar)) => match daftar.get(i) {
             Some(g) if !g.bytes.is_empty() => {
-                let mut r = Response::new(Body::from(g.bytes.clone()));
-                r.headers_mut().insert(header::CONTENT_TYPE, g.mime.parse().unwrap_or(header::HeaderValue::from_static("application/octet-stream")));
+                // ?w= : versi kecil untuk HP (lihat QueryGambar).
+                let lebar = q.w.map(|w| w.clamp(400, 2000));
+                let kecil = match lebar {
+                    Some(w) => {
+                        let b = g.bytes.clone();
+                        tokio::task::spawn_blocking(move || gambar_kecil(&b, w)).await.ok().flatten()
+                    }
+                    None => None,
+                };
+                let (isi, mime) = match kecil {
+                    Some(k) => (k, "image/jpeg".to_string()),
+                    None => (g.bytes.clone(), g.mime.clone()),
+                };
+                let mut r = Response::new(Body::from(isi));
+                r.headers_mut().insert(header::CONTENT_TYPE, mime.parse().unwrap_or(header::HeaderValue::from_static("application/octet-stream")));
                 // URL-nya memuat sidik isi, jadi browser boleh menyimpannya selamanya.
                 r.headers_mut().insert(header::CACHE_CONTROL, "public, max-age=31536000, immutable".parse().unwrap());
                 r
@@ -1388,6 +1439,21 @@ fn pesan_kanvas_lain(pesan: &str, dilihat: &std::collections::HashSet<String>) -
     match nilai_kunci(pesan, "idKanvas") {
         Some(k) => !dilihat.contains(k),
         None => false,
+    }
+}
+
+#[cfg(test)]
+mod uji_gambar_kecil {
+    #[test]
+    fn halaman_pdf_diperkecil() {
+        let img = image::RgbImage::from_pixel(1600, 2250, image::Rgb([250, 250, 250]));
+        let mut png = Vec::new();
+        image::DynamicImage::ImageRgb8(img).write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
+        let kecil = super::gambar_kecil(&png, 1000).expect("diperkecil");
+        let hasil = image::load_from_memory(&kecil).unwrap();
+        assert_eq!((hasil.width(), hasil.height()), (1000, 1406));
+        // Gambar yang sudah lebih kecil dari batas tidak diubah.
+        assert!(super::gambar_kecil(&png, 2000).is_none());
     }
 }
 
