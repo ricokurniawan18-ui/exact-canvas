@@ -5359,7 +5359,8 @@ function renderForceDiagramSVG(cfg) {
 
       // gaya normal pada bidang miring adalah hasil hitungan (N = mg cos), jadi besarnya tidak ditulis kecuali besarN=ya
       const sembunyiN = inclineDeg && /^N\d*$/.test(String(f.label).trim()) && !/^(ya|true|1)$/i.test(String(cfg.besarN || ''));
-      const magTxt = f.teks && !sembunyiN ? ` = ${f.teks} N` : '';
+      // besar yang sudah bersatuan ("10 m/s", "20 N") tidak ditambah N lagi
+      const magTxt = f.teks && !sembunyiN ? ` = ${f.teks}${/[a-zA-Z]\s*$/.test(String(f.teks)) ? '' : ' N'}` : '';
       const label = `${f.label}${magTxt}`;
       const vertical = Math.abs(dirx) < 0.3;
       let lx, ly, anchor;
@@ -17865,7 +17866,7 @@ function renderDiagramTag(rawTagContent, depth) {
   // 9 cm, tapi dibaca sebagai 9pt sehingga gambarnya tercetak 12 piksel: nyaris
   // tak terlihat, dan tidak ada pesan galat apa pun. Untuk kedua jenis itu
   // lebar tampilan harus ditulis "lebargambar".
-  const LEBAR_ADALAH_UKURAN = { bangunruang: 1, ruang: 1, bangun: 1 };
+  const LEBAR_ADALAH_UKURAN = { bangunruang: 1, ruang: 1, bangun: 1, dimensitiga: 1 };
   const lebarTampilan = params.lebargambar
     || (LEBAR_ADALAH_UKURAN[type] ? null : params.lebar);
   const widthPt = lebarTampilan ? numOrDefault(lebarTampilan, 260) : null;
