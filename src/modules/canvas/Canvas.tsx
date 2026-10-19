@@ -147,6 +147,18 @@ async function tulisDenganGabung(
   basis: BerkasKanvas | null,
   opsi?: { langsung?: boolean },
 ): Promise<BerkasKanvas> {
+  // Di browser (tablet): kirim selisih terhadap `basis` dalam mode gabung —
+  // server menerapkannya di atas versi terbarunya, jadi tidak perlu
+  // mengunduh ulang berkas (bisa puluhan MB) hanya untuk memeriksa versi.
+  // Bila selisih tidak bisa dinyatakan (urutan berubah), jatuh ke jalur penuh.
+  if (!inTauri && basis) {
+    try {
+      await simpanKanvasSebagian(saya, basis, basis.updated_at, { ...opsi, gabung: true })
+      return saya
+    } catch {
+      /* lanjut ke jalur penuh di bawah */
+    }
+  }
   let tulis = saya
   let dasar = basis?.updated_at
   /** Versi yang sedang ada di server — dasar simpanan sebagian. */
@@ -1253,8 +1265,14 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
   useEffect(
     () =>
       dengarkan('canvas', (payload) => {
-        const p = payload as { id?: string; src?: string; hapus?: boolean } | null | undefined
+        const p = payload as { id?: string; src?: string; hapus?: boolean; langsung?: boolean } | null | undefined
         if (!p || p.id !== idKanvas || p.src === idKlien || p.hapus) return
+        // Isinya sudah tiba sebagai pesan `ubah` dan sudah diterapkan di layar:
+        // jangan mengunduh ulang seluruh berkas (puluhan MB bila ada PDF) —
+        // dulu ini terjadi tiap 1,2 detik selama murid mencoret, dan tablet
+        // tersendat di tengah tulisan guru. Simpanan berikutnya (mode gabung)
+        // tetap menyatukannya di server.
+        if (p.langsung && !inTauri) return
         void muatUlangGabung()
       }),
     [idKanvas, muatUlangGabung],

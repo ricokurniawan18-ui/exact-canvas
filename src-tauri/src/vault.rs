@@ -413,6 +413,12 @@ pub struct KoleksiTambalan {
 pub struct Tambalan {
     /// `updated_at` versi berkas yang menjadi dasar perubahan ini.
     pub dasar: i64,
+    /// Gabung tanpa cek versi: selisih koleksi (tambah/ganti/hapus per id)
+    /// diterapkan di atas berkas terbaru, termasuk goresan murid yang masuk di
+    /// sela-sela — itulah hasil penggabungan tiga arah untuk koleksi, tanpa
+    /// editor harus mengunduh ulang berkas puluhan MB dulu.
+    #[serde(default)]
+    pub gabung: bool,
     pub updated_at: i64,
     /// Nilai tingkat atas yang kecil: title, layers, paper, pages.
     #[serde(default)]
@@ -428,7 +434,7 @@ pub fn canvas_tambal(id: &str, t: Tambalan) -> Result<(), String> {
     let p = resolve_within(&canvas_dir(), &format!("{id}.json"))?;
     let teks = fs::read_to_string(&p).map_err(|_| "Sketch file not found.".to_string())?;
     let kini = updated_at_berkas(&teks);
-    if kini != Some(t.dasar) {
+    if !t.gabung && kini != Some(t.dasar) {
         return Err(format!("KONFLIK:{}", kini.unwrap_or(0)));
     }
     let mut d: serde_json::Value = serde_json::from_str(&teks).map_err(|e| e.to_string())?;
@@ -508,15 +514,21 @@ mod uji_tulis {
             hapus: vec!["a".into()],
             tambah: vec![serde_json::json!({"id":"b","w":2}), serde_json::json!({"id":"c","w":1})],
         });
-        let t = Tambalan { dasar: 10, updated_at: 20, set: serde_json::Map::new(), koleksi };
+        let t = Tambalan { dasar: 10, gabung: false, updated_at: 20, set: serde_json::Map::new(), koleksi };
         canvas_tambal(&id, t).unwrap();
         let d: serde_json::Value = serde_json::from_str(&canvas_read(id.clone()).unwrap().unwrap()).unwrap();
         assert_eq!(d["strokes"], serde_json::json!([{"id":"b","w":2},{"id":"c","w":1}]));
         assert_eq!(d["images"][0]["src"], "data:besar", "gambar yang tidak dikirim tetap utuh");
         assert_eq!(d["updated_at"], 20);
         // Dasar basi ditolak.
-        let basi = Tambalan { dasar: 10, updated_at: 30, set: serde_json::Map::new(), koleksi: Default::default() };
+        let basi = Tambalan { dasar: 10, gabung: false, updated_at: 30, set: serde_json::Map::new(), koleksi: Default::default() };
         assert_eq!(canvas_tambal(&id, basi).unwrap_err(), "KONFLIK:20");
+        // Mode gabung: dasar basi tetap diterapkan di atas versi terbaru, goresan lain tidak tersentuh.
+        let mut k2 = std::collections::HashMap::new();
+        k2.insert("strokes".to_string(), KoleksiTambalan { hapus: vec![], tambah: vec![serde_json::json!({"id":"d"})] });
+        canvas_tambal(&id, Tambalan { dasar: 10, gabung: true, updated_at: 40, set: serde_json::Map::new(), koleksi: k2 }).unwrap();
+        let d: serde_json::Value = serde_json::from_str(&canvas_read(id.clone()).unwrap().unwrap()).unwrap();
+        assert_eq!(d["strokes"], serde_json::json!([{"id":"b","w":2},{"id":"c","w":1},{"id":"d"}]));
         let _ = super::canvas_delete(id);
     }
 }

@@ -185,7 +185,7 @@ export async function simpanKanvasSebagian(
   berkas: BerkasKanvas,
   lama: BerkasKanvas | null,
   dasar?: number,
-  opsi?: { langsung?: boolean },
+  opsi?: { langsung?: boolean; gabung?: boolean },
 ): Promise<void> {
   if (inTauri || !lama || dasar === undefined) return simpanKanvas(berkas, dasar, opsi)
   const koleksi: Record<string, { hapus: string[]; tambah: Berid[] }> = {}
@@ -200,7 +200,7 @@ export async function simpanKanvasSebagian(
   if (berkas.paper !== lama.paper) set.paper = berkas.paper
   if (berkas.pages !== lama.pages) set.pages = berkas.pages
   try {
-    await kanvas.tambal(berkas.id, { dasar, updated_at: berkas.updated_at, set, koleksi })
+    await kanvas.tambal(berkas.id, { dasar, gabung: !!opsi?.gabung, updated_at: berkas.updated_at, set, koleksi })
   } catch (e) {
     // Konflik ditangani pemanggil (gabung lalu coba lagi); galat lain (mis.
     // server lama tanpa PATCH) jatuh ke simpanan penuh.
