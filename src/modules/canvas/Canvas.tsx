@@ -130,6 +130,19 @@ import {
 // Panggangan ditambah sedikit-sedikit (lihat gambarDasar), jadi ambangnya
 // boleh rendah — dulu 2000, sehingga kanvas ber-1.000-an goresan menggambar
 // ulang semuanya tiap satu goresan selesai.
+/**
+ * Tinta cepat (kanvas latensi rendah + prediksi pena), bawaan menyala. Bisa
+ * dimatikan per perangkat di Pengaturan bila di tablet tertentu tintanya
+ * berkedip — berlaku sesudah halaman dimuat ulang.
+ */
+export function tintaCepatAktif(): boolean {
+  try {
+    return localStorage.getItem('exact-tinta-cepat') !== '0'
+  } catch {
+    return true
+  }
+}
+
 const AMBANG_PANGGANG = 400
 const SISA_HIDUP = 30
 const JEDA_SIMPAN = 800
@@ -308,6 +321,8 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
   const v = useViewport()
   const dasarRef = useRef<HTMLCanvasElement | null>(null)
   const aktifRef = useRef<HTMLCanvasElement | null>(null)
+  /** Titik prediksi pena (bukan bagian goresan) — digambar di ujung tinta saja. */
+  const prediksiRef = useRef<[number, number, number][]>([])
   const wadahRef = useRef<HTMLDivElement | null>(null)
   const berkasRef = useRef<HTMLInputElement | null>(null)
 
@@ -1468,7 +1483,7 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
 
   /* ── Menggambar ────────────────────────────────────────────────── */
 
-  const siapkanKanvas = useCallback((el: HTMLCanvasElement | null) => {
+  const siapkanKanvas = useCallback((el: HTMLCanvasElement | null, rendahLatensi = false) => {
     if (!el) return null
     const dpr = window.devicePixelRatio || 1
     const kotak = el.getBoundingClientRect()
@@ -1478,7 +1493,11 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
       el.width = w
       el.height = h
     }
-    const ctx = el.getContext('2d')
+    // Lapisan tinta yang sedang ditulis memakai kanvas latensi rendah: Chrome
+    // menampilkannya tanpa menunggu antrean komposisi halaman, jadi tinta tidak
+    // tertinggal satu-dua bingkai di belakang ujung pena. Opsi ini hanya
+    // berlaku pada getContext PERTAMA untuk kanvas itu.
+    const ctx = rendahLatensi && tintaCepatAktif() ? el.getContext('2d', { desynchronized: true }) : el.getContext('2d')
     if (!ctx) return null
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     return ctx
@@ -1910,7 +1929,7 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
   ])
 
   const gambarAktif = useCallback(() => {
-    const ctx = siapkanKanvas(aktifRef.current)
+    const ctx = siapkanKanvas(aktifRef.current, true)
     const el = aktifRef.current
     if (!ctx || !el) return
     const dpr = window.devicePixelRatio || 1
@@ -1929,7 +1948,11 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
         `${Math.max(13, 14 / v.tampilan.skala)}px ui-monospace, monospace`,
       )
     } else if (aktifCoretan.current) {
-      gambarCoretan(ctx, aktifCoretan.current)
+      // Ujung prediksi (titik yang diperkirakan Chrome dari arah gerak pena)
+      // ikut digambar supaya tinta terasa menempel — hanya di layar, tidak disimpan.
+      const c = aktifCoretan.current
+      const pred = prediksiRef.current
+      gambarCoretan(ctx, pred.length && !c.steady ? { ...c, points: [...c.points, ...pred] } : c)
     }
     if (objekBaru.current) {
       gambarObjek(
@@ -2818,6 +2841,16 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
       }
       c.points.push(titikBulat(d.x, d.y, tekananDari(s)))
     }
+    // Titik prediksi untuk bingkai berikutnya (lihat gambarAktif).
+    if (!kuncian && tintaCepatAktif() && typeof native.getPredictedEvents === 'function') {
+      prediksiRef.current = native
+        .getPredictedEvents()
+        .slice(0, 3)
+        .map((s) => {
+          const d = v.keDunia(s.clientX, s.clientY)
+          return titikBulat(d.x, d.y, tekananDari(s))
+        })
+    } else prediksiRef.current = []
 
     // Diukur di piksel layar, bukan dunia: yang dinilai adalah tangan yang
     // berhenti, dan itu tidak berubah artinya saat kanvas di-zoom.
@@ -2831,6 +2864,7 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
   }
 
   const naik = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    prediksiRef.current = []
     if (e.pointerType === 'touch') {
       sentuh.current.delete(e.pointerId)
       posisiTurunJari.current.delete(e.pointerId)

@@ -592,6 +592,41 @@ function BagianNotif() {
   )
 }
 
+/** Tinta cepat (kanvas latensi rendah + prediksi pena) per perangkat — lihat Canvas.tsx. */
+function TintaCepat() {
+  const [aktif, setAktif] = useState(() => {
+    try {
+      return localStorage.getItem('exact-tinta-cepat') !== '0'
+    } catch {
+      return true
+    }
+  })
+  return (
+    <label className="flex items-start gap-2" style={{ fontSize: 'var(--fs-label)' }}>
+      <input
+        type="checkbox"
+        checked={aktif}
+        onChange={(e) => {
+          setAktif(e.target.checked)
+          try {
+            localStorage.setItem('exact-tinta-cepat', e.target.checked ? '1' : '0')
+          } catch {
+            /* tidak tersedia */
+          }
+          toast('Reload the page to apply.')
+        }}
+        style={{ accentColor: 'var(--accent)', width: 18, height: 18, marginTop: 1 }}
+      />
+      <span>
+        Fast ink (low-latency drawing with pen prediction)
+        <span className="ex-label block" style={{ color: 'var(--ink-soft)' }}>
+          Keeps the ink right under the pen tip. Turn off only if ink flickers on this device.
+        </span>
+      </span>
+    </label>
+  )
+}
+
 function BagianPerangkat() {
   const skala = useTampilan((s) => s.skala)
   const sembunyi = useTampilan((s) => s.sembunyi)
@@ -644,6 +679,7 @@ function BagianPerangkat() {
         <span className="ex-label" style={{ color: 'var(--ink-soft)' }}>On the canvas</span>
         {kotak('layar')}
       </div>
+      <TintaCepat />
       <div>
         <button className="ex-btn" data-variant="ghost" onClick={pulihkan}>
           Reset this device to the default layout
