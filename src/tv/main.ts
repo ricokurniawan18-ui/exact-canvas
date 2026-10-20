@@ -858,6 +858,7 @@ async function mulai() {
     pasangGestur()
     pasangCoret()
     pasangLayarPenuh()
+    void pasangJalur()
     // Masuk pertama hari ini: minta nilai ulangan terbaru & konfirmasi jadwal les.
     window.setTimeout(() => void bukaHarian(true), 1500)
     pasangNotif()
@@ -1566,7 +1567,9 @@ function pasangBilahMurid() {
    * Practice di sana, jadi murid tidak perlu masuk dua kali. */
   el('tombol-latihan').onclick = () => {
     const sesi = sesiAktif()
-    const tujuan = sesi ? `${ALAMAT_PRACTICE}/api/auth/canvas?sesi=${encodeURIComponent(sesi)}` : ALAMAT_PRACTICE
+    // Di Wi-Fi les lewat alamat lokal: Practice di Mac yang sama juga lewat lokal.
+    const dasar = diLokal ? `http://${location.hostname}:8770` : ALAMAT_PRACTICE
+    const tujuan = sesi ? `${dasar}/api/auth/canvas?sesi=${encodeURIComponent(sesi)}` : dasar
     window.open(tujuan, '_blank', 'noopener')
   }
 }
@@ -2854,6 +2857,87 @@ async function bukaInfo(tab: TabInfo) {
 }
 
 /** Tombol ⛶ sukarela: hanya tampil di perangkat yang mendukung layar penuh. */
+/* ── Wi-Fi les ↔ online ───────────────────────────────────────────── */
+
+/** Halaman ini dibuka lewat alamat lokal Mac (http://192.168.x.x:4747). */
+const diLokal = location.protocol === 'http:' && /^\d+\.\d+\.\d+\.\d+$/.test(location.hostname)
+
+/** Alamat halaman ini di `dasar` lain, membawa sesi supaya tidak perlu masuk lagi. */
+function alamatPindah(dasar: string): string {
+  const p = new URLSearchParams(location.search)
+  p.set('murid', '1')
+  const sesi = sesiAktif()
+  if (sesi) p.set('sesi', sesi)
+  return `${dasar.replace(/\/$/, '')}/tv?${p}`
+}
+
+/**
+ * Anak yang duduk di Wi-Fi les tapi masuk lewat Cloudflare bisa pindah ke
+ * alamat lokal Mac (⚡ Local) — tanpa bolak-balik ke server Singapura — dan
+ * kembali (🌐 Online) kalau keluar dari Wi-Fi les. Server yang memutuskan
+ * siapa yang ada di Wi-Fi les (IP publiknya sama dengan Mac).
+ */
+async function pasangJalur() {
+  if (tertanam) return
+  const tombol = el('tombol-jalur') as HTMLButtonElement
+  let info: { publik: string | null; lokal: { url: string; nama: string }[] }
+  try {
+    info = await api('/api/lokal')
+  } catch {
+    return
+  }
+  if (diLokal) {
+    if (!info.publik) return
+    const publik = info.publik
+    tombol.textContent = '🌐 Online'
+    tombol.title = 'Switch back to the internet connection (use this when you leave the classroom Wi-Fi)'
+    tombol.hidden = false
+    tombol.onclick = () => (location.href = alamatPindah(publik))
+    return
+  }
+  if (!info.lokal.length) return
+  const lokal = info.lokal
+  tombol.textContent = '⚡ Local'
+  tombol.title = 'Faster: connect straight to the teacher through the classroom Wi-Fi'
+  tombol.hidden = false
+  tombol.onclick = () => {
+    if (lokal.length === 1) location.href = alamatPindah(lokal[0].url)
+    else pilihWifi(lokal)
+  }
+}
+
+/** Mac ada di beberapa jaringan: anak memilih Wi-Fi yang sedang ia pakai. */
+function pilihWifi(lokal: { url: string; nama: string }[]) {
+  const latar = document.createElement('div')
+  latar.style.cssText =
+    'position:fixed;inset:0;z-index:60;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;padding:16px'
+  const kotak = document.createElement('div')
+  kotak.style.cssText =
+    'background:var(--paper,#fff);color:var(--ink,#111);border-radius:16px;padding:18px;max-width:340px;width:100%;display:flex;flex-direction:column;gap:10px;font:inherit'
+  const judul = document.createElement('div')
+  judul.textContent = 'Which Wi-Fi is your phone on?'
+  judul.style.cssText = 'font-weight:600;font-size:17px'
+  const catatan = document.createElement('small')
+  catatan.textContent = "If the page doesn't open, press Back and choose the other one."
+  catatan.style.color = 'var(--ink-faint,#666)'
+  kotak.append(judul)
+  for (const j of lokal) {
+    const b = document.createElement('button')
+    b.textContent = `📶 ${j.nama}`
+    b.style.cssText = 'padding:12px;border-radius:10px;border:1px solid var(--line-strong,#ccc);background:transparent;color:inherit;font:inherit;font-size:16px;text-align:left'
+    b.onclick = () => (location.href = alamatPindah(j.url))
+    kotak.append(b)
+  }
+  const batal = document.createElement('button')
+  batal.textContent = 'Cancel'
+  batal.style.cssText = 'padding:8px;border:0;background:transparent;color:inherit;font:inherit'
+  batal.onclick = () => latar.remove()
+  kotak.append(catatan, batal)
+  latar.append(kotak)
+  latar.onclick = (e) => e.target === latar && latar.remove()
+  document.body.append(latar)
+}
+
 function pasangLayarPenuh() {
   const tombol = el('tombol-layar-penuh') as HTMLButtonElement
   if (!document.fullscreenEnabled) return

@@ -348,11 +348,13 @@ pub fn share_qr(text: String) -> Result<String, String> {
 /* ── Rute ──────────────────────────────────────────────────────────── */
 
 fn rute(hub: Arc<Hub>) -> Router {
+    crate::lokal::panaskan();
     Router::new()
         .route("/", get(halaman_utama))
         .route("/admin", get(halaman_admin))
         .route("/tv", get(halaman_tv))
         .route("/api/boot", get(api_boot))
+        .route("/api/lokal", get(api_lokal))
         .route("/api/vault", get(api_vault))
         .route("/api/admin/cek", get(api_admin_cek))
         .route("/api/canvas", get(api_canvas_list))
@@ -661,6 +663,28 @@ async fn aset_lain(State(hub): State<Arc<Hub>>, uri: axum::http::Uri) -> Respons
 /// Tanpa PIN dengan sengaja: cuma angka acak, tidak membocorkan apa pun.
 async fn api_boot(State(hub): State<Arc<Hub>>) -> Response {
     Json(json!({ "boot": hub.token_app })).into_response()
+}
+
+/// Tombol "⚡ Local" / "🌐 Online" di HP murid. Lewat Cloudflare: alamat
+/// lokal Mac yang bisa dijangkau murid ini (kosong kalau ia tidak di Wi-Fi
+/// les). Di jaringan lokal: alamat publik untuk kembali online.
+async fn api_lokal(State(hub): State<Arc<Hub>>, headers: HeaderMap, Query(q): Query<QueryPin>) -> Response {
+    if !sah_lengkap(&hub, &headers, q.pin.as_deref(), q.sesi.as_deref(), None) {
+        return tolak();
+    }
+    let publik = ALAMAT_PUBLIK.lock().ok().and_then(|a| a.clone());
+    let jalur = match headers.get("cf-connecting-ip").and_then(|v| v.to_str().ok()) {
+        Some(ip) => {
+            let ip = ip.trim().to_string();
+            tokio::task::spawn_blocking(move || crate::lokal::untuk(&ip)).await.unwrap_or_default()
+        }
+        None => Vec::new(),
+    };
+    let lokal: Vec<Value> = jalur
+        .iter()
+        .map(|j| json!({ "url": format!("http://{}:{}", j.ip, hub.port), "nama": j.nama }))
+        .collect();
+    Json(json!({ "publik": publik, "lokal": lokal })).into_response()
 }
 
 /* ── API vault ─────────────────────────────────────────────────────── */

@@ -4,6 +4,7 @@
 mod akun;
 mod db;
 mod kelas;
+mod lokal;
 mod menu;
 mod office;
 mod info;
