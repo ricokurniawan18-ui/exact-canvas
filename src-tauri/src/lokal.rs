@@ -57,6 +57,17 @@ fn ssid(iface: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// Nama jaringan tanpa SSID (Mac tersambung lewat kabel ke router Wi-Fi):
+/// berkas `jaringan.txt` di folder data, baris `192.168.50=Exact course LT 2B`.
+fn nama_dari_berkas(ip: &str) -> Option<String> {
+    let isi = std::fs::read_to_string(crate::vault::root().join("jaringan.txt")).ok()?;
+    isi.lines().find_map(|b| {
+        let (awal, nama) = b.split_once('=')?;
+        let awal = awal.trim().trim_end_matches(".x").trim_end_matches('.');
+        (!awal.is_empty() && ip.starts_with(&format!("{awal}."))).then(|| nama.trim().to_string())
+    })
+}
+
 fn segarkan() -> Peta {
     let ifaces: Vec<(String, String)> = (0..8)
         .map(|n| format!("en{n}"))
@@ -81,7 +92,7 @@ fn segarkan() -> Peta {
         .filter(|h| h.2.is_some())
         .map(|(_, ip, _, ssid)| {
             let wifi = ssid.is_some();
-            let nama = ssid.unwrap_or_else(|| {
+            let nama = ssid.or_else(|| nama_dari_berkas(&ip)).unwrap_or_else(|| {
                 let awal: Vec<&str> = ip.split('.').take(3).collect();
                 format!("Other Wi-Fi ({}.x)", awal.join("."))
             });
