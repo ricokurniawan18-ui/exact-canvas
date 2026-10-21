@@ -5359,8 +5359,9 @@ function renderForceDiagramSVG(cfg) {
 
       // gaya normal pada bidang miring adalah hasil hitungan (N = mg cos), jadi besarnya tidak ditulis kecuali besarN=ya
       const sembunyiN = inclineDeg && /^N\d*$/.test(String(f.label).trim()) && !/^(ya|true|1)$/i.test(String(cfg.besarN || ''));
-      // besar yang sudah bersatuan ("10 m/s", "20 N") tidak ditambah N lagi
-      const magTxt = f.teks && !sembunyiN ? ` = ${f.teks}${/[a-zA-Z]\s*$/.test(String(f.teks)) ? '' : ' N'}` : '';
+      // N hanya untuk besar yang berupa angka ("20", "10\sqrt{3}", "?"); yang
+      // sudah bersatuan ("10 m/s", "8 m/s²", "20 N") dibiarkan apa adanya.
+      const magTxt = f.teks && !sembunyiN ? ` = ${f.teks}${/[\d?)}]\s*$/.test(String(f.teks)) ? ' N' : ''}` : '';
       const label = `${f.label}${magTxt}`;
       const vertical = Math.abs(dirx) < 0.3;
       let lx, ly, anchor;
