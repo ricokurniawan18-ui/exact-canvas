@@ -5332,16 +5332,15 @@ function renderForceDiagramSVG(cfg) {
 
       // Sudut gaya digambar sebagai busur + nilainya (kecuali gaya yang searah
       // sumbu, atau sudut=tidak): soal vektor tanpa sudut tidak bisa dikerjakan.
-      // Mode titik: dari sumbu X positif (ke atas = berlawanan jarum jam, ke bawah
-      // = searah jarum jam, nilai sudut lancipnya); benda berkotak: dari garis
+      // Diukur dari setengah sumbu X yang terdekat (kanan untuk kuadran I/IV,
+      // kiri untuk II/III), nilainya sudut lancip — gaya buku: gaya 143° ditulis
+      // 37° dari sumbu X negatif, bukan 143°. Benda berkotak: dari garis
       // mendatar di pangkal panah.
       const aMut = norm(f.angle);
       const sejajarSumbu = Math.abs(((aMut % 90) + 90) % 90) < 1e-6;
       if (String(cfg.sudut || '').toLowerCase() !== 'tidak' && !sejajarSumbu && !inclineDeg) {
-        const ref = titik ? 0 : (dirx >= 0 ? 0 : 180);
+        const ref = dirx >= 0 ? 0 : 180;
         let d = aMut - ref; d = ((d + 540) % 360) - 180;                     // selisih bertanda (-180,180]
-        if (titik && aMut > 180) d = aMut - 360;                              // titik: ke bawah = searah jarum jam dari +X
-        else if (titik) d = aMut;
         const px = titik ? 0 : x1, py = titik ? 0 : y1;
         const r = (titik ? 24 : 20) + (titik ? 9 : 0) * nSudut++;
         const t0 = (ref * Math.PI) / 180, t1 = ((ref + d) * Math.PI) / 180, tm = ((ref + d / 2) * Math.PI) / 180;
