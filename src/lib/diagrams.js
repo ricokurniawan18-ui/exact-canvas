@@ -2120,6 +2120,12 @@ const SOLID_PRESETS = {
   },
   tabung: (p) => {
     const r = numOrDefault(p.jari, 4), tAsli = numOrDefault(p.tinggi, 8), ry = r * 0.35;
+    // Label huruf (jari=r cm; tinggi=h cm) untuk soal aljabar: teksnya yang
+    // ditulis, ukuran gambarnya bawaan — dulu huruf diabaikan dan angka
+    // bawaan "r = 4", "h = 8" tercetak seolah diketahui.
+    const angka = (v) => v == null || String(v).trim() === '' || /^-?\d+([.,]\d+)?$/.test(String(v).trim());
+    const teksJari = angka(p.jari) ? `r = ${r}` : String(p.jari).trim();
+    const teksTinggi = angka(p.tinggi) ? `t = ${tAsli}` : String(p.tinggi).trim();
     // Tinggi yang DIGAMBAR dibatasi relatif terhadap alasnya (gambar memang
     // "NOT TO SCALE"): tabung 4 x 40 yang digambar sebangun jadi batang
     // setipis jarum, tak ada tempat untuk huruf dan elips alasnya.
@@ -2132,10 +2138,10 @@ const SOLID_PRESETS = {
       ],
       dots: [[r, t]],
       labels: [
-        { pos: [2 * r, t / 2], text: `t = ${tAsli}`, n: [1, 0] },
+        { pos: [2 * r, t / 2], text: teksTinggi, n: [1, 0] },
         // Di bawah garis jari-jari, di dalam muka tutup: di atasnya bertabrakan
         // dengan tepi elips yang pipih.
-        { pos: [r * 1.5, t], text: `r = ${r}`, n: [0, -1] },
+        { pos: [r * 1.5, t], text: teksJari, n: [0, -1] },
       ],
       vertices: [{ pos: [r, t], name: 'O', n: [-0.7, -0.7] }],
     };
