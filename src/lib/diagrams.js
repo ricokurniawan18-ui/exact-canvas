@@ -6192,8 +6192,121 @@ function renderMultiloopSVG(cfg) {
   return bungkusGambarSVG(isi, b, false);
 }
 
+// Jaringan resistor bebas (jembatan, belah ketupat, resistor miring) yang
+// tidak bisa disusun dari seri/paralel: titik=A:0:0,.c:2:2 (y ke atas;
+// nama berawalan titik tidak ditulis), hambatan=A-.c:6,.c-B:8 Ω (angka
+// polos diberi Ω), kabel=.c-.d (kawat biasa), terminal=A,B (bulatan
+// kosong). Simpul bercabang tiga ke atas diberi noktah.
+function uraiJaringan(cfg) {
+  const pts = {};
+  parseVertexList(cfg.titik).forEach((p) => { if (p.name) pts[p.name] = p; });
+  const ruas = (raw, berlabel) => String(raw || '').split(',').map((s) => s.trim()).filter(Boolean).map((tok) => {
+    const k = tok.indexOf(':');
+    const ujung = (k > -1 ? tok.slice(0, k) : tok).split('-').map((s) => s.trim());
+    let label = k > -1 ? tok.slice(k + 1).trim() : '';
+    // "6@kiri": sisi label dipaksa (kiri/kanan/atas/bawah) bila sisi otomatis menabrak ruas lain.
+    const ms = label.match(/@\s*(kiri|kanan|atas|bawah)\s*$/i);
+    const sisi = ms ? ms[1].toLowerCase() : '';
+    if (ms) label = label.slice(0, ms.index).trim();
+    if (/^\d+(?:[.,]\d+)?$/.test(label)) label += ' Ω';
+    const ohm = parseFloat(label.replace(',', '.'));
+    return { a: ujung[0], b: ujung[1], label: berlabel ? label : '', ohm, sisi };
+  }).filter((r) => pts[r.a] && pts[r.b]);
+  const terminal = String(cfg.terminal || '').split(',').map((s) => s.trim()).filter((n) => pts[n]);
+  return { pts, hambatan: ruas(cfg.hambatan, true), kabel: ruas(cfg.kabel, false), terminal };
+}
+
+function renderJaringanSVG(cfg) {
+  const { pts, hambatan, kabel, terminal } = uraiJaringan(cfg);
+  const S = 52;
+  const P = (n) => ({ x: pts[n].x * S, y: -pts[n].y * S });
+  const semua = Object.keys(pts).map(P);
+  const pusat = { x: semua.reduce((a, p) => a + p.x, 0) / (semua.length || 1), y: semua.reduce((a, p) => a + p.y, 0) / (semua.length || 1) };
+  const b = kotakBatas();
+  let isi = '';
+  const garis = (p, q) => `<line x1="${p.x.toFixed(1)}" y1="${p.y.toFixed(1)}" x2="${q.x.toFixed(1)}" y2="${q.y.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+  kabel.forEach((r) => { const p = P(r.a), q = P(r.b); isi += garis(p, q); b.titik(p.x, p.y); b.titik(q.x, q.y); });
+  hambatan.forEach((r) => {
+    const p = P(r.a), q = P(r.b);
+    const dx = q.x - p.x, dy = q.y - p.y, L = Math.hypot(dx, dy) || 1;
+    const ux = dx / L, uy = dy / L;
+    const w = Math.min(32, L * 0.55), h = 12;
+    const m = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
+    isi += garis(p, { x: m.x - ux * w / 2, y: m.y - uy * w / 2 }) + garis({ x: m.x + ux * w / 2, y: m.y + uy * w / 2 }, q);
+    const sudut = (Math.atan2(dy, dx) * 180) / Math.PI;
+    isi += `<rect x="${(-w / 2).toFixed(1)}" y="${(-h / 2).toFixed(1)}" width="${w.toFixed(1)}" height="${h}" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.5" transform="translate(${m.x.toFixed(1)},${m.y.toFixed(1)}) rotate(${sudut.toFixed(1)})"/>`;
+    b.titik(p.x, p.y); b.titik(q.x, q.y);
+    if (r.label) {
+      // Label di sisi yang menjauhi pusat jaringan; ruas yang melewati pusat
+      // (diagonal tengah) labelnya ke atas.
+      let nx = -uy, ny = ux;
+      const ke = (m.x - pusat.x) * nx + (m.y - pusat.y) * ny;
+      if (ke < 0 || (Math.abs(ke) < 4 && ny > 0)) { nx = -nx; ny = -ny; }
+      const arah = { kiri: [-1, 0], kanan: [1, 0], atas: [0, -1], bawah: [0, 1] }[r.sisi];
+      if (arah && nx * arah[0] + ny * arah[1] < 0) { nx = -nx; ny = -ny; }
+      const jarak = h / 2 + 9 + Math.abs(nx) * 10;
+      const tx = m.x + nx * jarak, ty = m.y + ny * jarak + 4;
+      const anchor = Math.abs(nx) < 0.35 ? 'middle' : nx > 0 ? 'start' : 'end';
+      isi += `<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" font-size="11" text-anchor="${anchor}" fill="${GAYA.hitam}">${escText(r.label)}</text>`;
+      b.teks(tx, ty, r.label, 11, anchor);
+    }
+  });
+  const derajat = {};
+  hambatan.concat(kabel).forEach((r) => { derajat[r.a] = (derajat[r.a] || 0) + 1; derajat[r.b] = (derajat[r.b] || 0) + 1; });
+  Object.keys(pts).forEach((n) => {
+    const p = P(n);
+    const term = terminal.includes(n);
+    if (term) isi += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+    else if ((derajat[n] || 0) >= 3) isi += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.8" fill="${GAYA.hitam}"/>`;
+    if (n.startsWith('.')) return;
+    let vx = p.x - pusat.x, vy = p.y - pusat.y; const v = Math.hypot(vx, vy) || 1; vx /= v; vy /= v;
+    const tx = p.x + vx * 13, ty = p.y + vy * 13 + 4;
+    const anchor = Math.abs(vx) < 0.4 ? 'middle' : vx > 0 ? 'start' : 'end';
+    isi += `<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" font-size="12" font-style="italic" text-anchor="${anchor}" fill="${GAYA.hitam}">${escText(n)}</text>`;
+    b.teks(tx, ty, n, 12, anchor);
+  });
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Hambatan pengganti antara dua terminal jaringan (analisis simpul): kawat
+// menyatukan simpul, lalu sistem Laplacian dipecahkan dengan eliminasi Gauss
+// untuk arus 1 A masuk di terminal pertama dan keluar di terminal kedua.
+function hambatanJaringan(cfg) {
+  const { pts, hambatan, kabel, terminal } = uraiJaringan(cfg);
+  if (terminal.length !== 2 || !hambatan.length || hambatan.some((r) => !(r.ohm > 0))) return null;
+  const induk = {};
+  const akar = (n) => (induk[n] && induk[n] !== n ? (induk[n] = akar(induk[n])) : n);
+  Object.keys(pts).forEach((n) => { induk[n] = n; });
+  kabel.forEach((r) => { induk[akar(r.a)] = akar(r.b); });
+  const simpul = [...new Set(Object.keys(pts).map(akar))];
+  const idx = {}; simpul.forEach((n, i) => { idx[n] = i; });
+  const sA = idx[akar(terminal[0])], sB = idx[akar(terminal[1])];
+  if (sA === sB) return 0;
+  const N = simpul.length;
+  const G = Array.from({ length: N }, () => new Array(N).fill(0));
+  hambatan.forEach((r) => {
+    const i = idx[akar(r.a)], j = idx[akar(r.b)];
+    if (i === j) return;
+    const g = 1 / r.ohm;
+    G[i][i] += g; G[j][j] += g; G[i][j] -= g; G[j][i] -= g;
+  });
+  // B dibumikan (V = 0): buang baris/kolomnya, injeksikan 1 A di A.
+  const sisa = simpul.map((_, i) => i).filter((i) => i !== sB);
+  const M = sisa.map((i) => sisa.map((j) => G[i][j]).concat(i === sA ? 1 : 0));
+  const n = M.length;
+  for (let c = 0; c < n; c++) {
+    let p = c; for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    if (Math.abs(M[p][c]) < 1e-12) return null;   // ada bagian yang tidak tersambung
+    [M[c], M[p]] = [M[p], M[c]];
+    for (let r = 0; r < n; r++) if (r !== c) { const f = M[r][c] / M[c][c]; for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k]; }
+  }
+  const a = sisa.indexOf(sA);
+  return M[a][n] / M[a][a];
+}
+
 function renderCircuitSVG(cfg) {
   if (String(cfg.tipe || '').toLowerCase() === 'multiloop') return renderMultiloopSVG(cfg);
+  if (String(cfg.tipe || '').toLowerCase() === 'jaringan') return renderJaringanSVG(cfg);
   const tipe = cfg.tipe || 'seri';
   const comps = String(cfg.komponen || '').split(',').map((s) => s.trim()).filter(Boolean).map(parseCircuitComponent);
   let akar;
@@ -17712,6 +17825,10 @@ function luasArsirNumerik(cfg) {
 function nilaiPenggantiRangkaian(cfg) {
   const tipe = String(cfg.tipe || 'seri').toLowerCase();
   if (tipe === 'multiloop') return null;
+  if (tipe === 'jaringan') {
+    const R = hambatanJaringan(cfg);
+    return R != null && isFinite(R) ? { nama: 'hambatan pengganti', nilai: R, satuan: 'Ω' } : null;
+  }
   let akar;
   if (cfg.susunan) akar = uraiPohonRangkaian(cfg.susunan);
   else {
