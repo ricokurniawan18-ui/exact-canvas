@@ -6213,11 +6213,13 @@ function uraiJaringan(cfg) {
     return { a: ujung[0], b: ujung[1], label: berlabel ? label : '', ohm, sisi };
   }).filter((r) => pts[r.a] && pts[r.b]);
   const terminal = String(cfg.terminal || '').split(',').map((s) => s.trim()).filter((n) => pts[n]);
-  return { pts, hambatan: ruas(cfg.hambatan, true), kabel: ruas(cfg.kabel, false), terminal };
+  // baterai=X-Y:12 V: pelat panjang (+) menghadap Y.
+  return { pts, hambatan: ruas(cfg.hambatan, true), kabel: ruas(cfg.kabel, false), baterai: ruas(cfg.baterai, true), terminal };
 }
 
 function renderJaringanSVG(cfg) {
-  const { pts, hambatan, kabel, terminal } = uraiJaringan(cfg);
+  const { pts, hambatan, kabel, baterai, terminal } = uraiJaringan(cfg);
+  baterai.forEach((r) => { r.label = r.label.replace(/ Ω$/, ' V'); });
   const S = 52;
   const P = (n) => ({ x: pts[n].x * S, y: -pts[n].y * S });
   const semua = Object.keys(pts).map(P);
@@ -6226,15 +6228,21 @@ function renderJaringanSVG(cfg) {
   let isi = '';
   const garis = (p, q) => `<line x1="${p.x.toFixed(1)}" y1="${p.y.toFixed(1)}" x2="${q.x.toFixed(1)}" y2="${q.y.toFixed(1)}" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
   kabel.forEach((r) => { const p = P(r.a), q = P(r.b); isi += garis(p, q); b.titik(p.x, p.y); b.titik(q.x, q.y); });
-  hambatan.forEach((r) => {
+  hambatan.map((r) => Object.assign({ sel: false }, r)).concat(baterai.map((r) => Object.assign({ sel: true }, r))).forEach((r) => {
     const p = P(r.a), q = P(r.b);
     const dx = q.x - p.x, dy = q.y - p.y, L = Math.hypot(dx, dy) || 1;
     const ux = dx / L, uy = dy / L;
-    const w = Math.min(32, L * 0.55), h = 12;
+    const w = r.sel ? 7 : Math.min(32, L * 0.55), h = r.sel ? 26 : 12;
     const m = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
     isi += garis(p, { x: m.x - ux * w / 2, y: m.y - uy * w / 2 }) + garis({ x: m.x + ux * w / 2, y: m.y + uy * w / 2 }, q);
     const sudut = (Math.atan2(dy, dx) * 180) / Math.PI;
-    isi += `<rect x="${(-w / 2).toFixed(1)}" y="${(-h / 2).toFixed(1)}" width="${w.toFixed(1)}" height="${h}" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.5" transform="translate(${m.x.toFixed(1)},${m.y.toFixed(1)}) rotate(${sudut.toFixed(1)})"/>`;
+    const tr = `transform="translate(${m.x.toFixed(1)},${m.y.toFixed(1)}) rotate(${sudut.toFixed(1)})"`;
+    if (r.sel) {
+      // Pelat pendek tebal (−) di sisi X, pelat panjang tipis (+) di sisi Y.
+      isi += `<g ${tr}><line x1="-3.5" y1="-6" x2="-3.5" y2="6" stroke="${GAYA.hitam}" stroke-width="4"/><line x1="3.5" y1="-13" x2="3.5" y2="13" stroke="${GAYA.hitam}" stroke-width="1.6"/></g>`;
+    } else {
+      isi += `<rect x="${(-w / 2).toFixed(1)}" y="${(-h / 2).toFixed(1)}" width="${w.toFixed(1)}" height="${h}" fill="${GAYA.putih}" stroke="${GAYA.hitam}" stroke-width="1.5" ${tr}/>`;
+    }
     b.titik(p.x, p.y); b.titik(q.x, q.y);
     if (r.label) {
       // Label di sisi yang menjauhi pusat jaringan; ruas yang melewati pusat
@@ -6252,7 +6260,7 @@ function renderJaringanSVG(cfg) {
     }
   });
   const derajat = {};
-  hambatan.concat(kabel).forEach((r) => { derajat[r.a] = (derajat[r.a] || 0) + 1; derajat[r.b] = (derajat[r.b] || 0) + 1; });
+  hambatan.concat(kabel, baterai).forEach((r) => { derajat[r.a] = (derajat[r.a] || 0) + 1; derajat[r.b] = (derajat[r.b] || 0) + 1; });
   Object.keys(pts).forEach((n) => {
     const p = P(n);
     const term = terminal.includes(n);
@@ -6272,8 +6280,8 @@ function renderJaringanSVG(cfg) {
 // menyatukan simpul, lalu sistem Laplacian dipecahkan dengan eliminasi Gauss
 // untuk arus 1 A masuk di terminal pertama dan keluar di terminal kedua.
 function hambatanJaringan(cfg) {
-  const { pts, hambatan, kabel, terminal } = uraiJaringan(cfg);
-  if (terminal.length !== 2 || !hambatan.length || hambatan.some((r) => !(r.ohm > 0))) return null;
+  const { pts, hambatan, kabel, baterai, terminal } = uraiJaringan(cfg);
+  if (baterai.length || terminal.length !== 2 || !hambatan.length || hambatan.some((r) => !(r.ohm > 0))) return null;
   const induk = {};
   const akar = (n) => (induk[n] && induk[n] !== n ? (induk[n] = akar(induk[n])) : n);
   Object.keys(pts).forEach((n) => { induk[n] = n; });
