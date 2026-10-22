@@ -6220,7 +6220,9 @@ function uraiJaringan(cfg) {
 function renderJaringanSVG(cfg) {
   const { pts, hambatan, kabel, baterai, terminal } = uraiJaringan(cfg);
   baterai.forEach((r) => { r.label = r.label.replace(/ Ω$/, ' V'); });
-  const S = 52;
+  // Skala rapat + huruf 13: gambar jaringan dikecilkan pas selebar kolom,
+  // dengan skala lebih longgar labelnya tercetak terlalu kecil.
+  const S = 42;
   const P = (n) => ({ x: pts[n].x * S, y: -pts[n].y * S });
   const semua = Object.keys(pts).map(P);
   const pusat = { x: semua.reduce((a, p) => a + p.x, 0) / (semua.length || 1), y: semua.reduce((a, p) => a + p.y, 0) / (semua.length || 1) };
@@ -6252,11 +6254,11 @@ function renderJaringanSVG(cfg) {
       if (ke < 0 || (Math.abs(ke) < 4 && ny > 0)) { nx = -nx; ny = -ny; }
       const arah = { kiri: [-1, 0], kanan: [1, 0], atas: [0, -1], bawah: [0, 1] }[r.sisi];
       if (arah && nx * arah[0] + ny * arah[1] < 0) { nx = -nx; ny = -ny; }
-      const jarak = h / 2 + 9 + Math.abs(nx) * 10;
+      const jarak = h / 2 + 10 + Math.abs(nx) * 12;
       const tx = m.x + nx * jarak, ty = m.y + ny * jarak + 4;
       const anchor = Math.abs(nx) < 0.35 ? 'middle' : nx > 0 ? 'start' : 'end';
-      isi += `<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" font-size="11" text-anchor="${anchor}" fill="${GAYA.hitam}">${escText(r.label)}</text>`;
-      b.teks(tx, ty, r.label, 11, anchor);
+      isi += `<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" font-size="13" text-anchor="${anchor}" fill="${GAYA.hitam}">${escText(r.label)}</text>`;
+      b.teks(tx, ty, r.label, 13, anchor);
     }
   });
   const derajat = {};
@@ -6270,8 +6272,8 @@ function renderJaringanSVG(cfg) {
     let vx = p.x - pusat.x, vy = p.y - pusat.y; const v = Math.hypot(vx, vy) || 1; vx /= v; vy /= v;
     const tx = p.x + vx * 13, ty = p.y + vy * 13 + 4;
     const anchor = Math.abs(vx) < 0.4 ? 'middle' : vx > 0 ? 'start' : 'end';
-    isi += `<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" font-size="12" font-style="italic" text-anchor="${anchor}" fill="${GAYA.hitam}">${escText(n)}</text>`;
-    b.teks(tx, ty, n, 12, anchor);
+    isi += `<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" font-size="14" font-style="italic" text-anchor="${anchor}" fill="${GAYA.hitam}">${escText(n)}</text>`;
+    b.teks(tx, ty, n, 14, anchor);
   });
   return bungkusGambarSVG(isi, b, false);
 }
