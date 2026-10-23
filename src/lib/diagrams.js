@@ -11271,7 +11271,7 @@ function renderSiklusKarbonSVG(cfg) {
     baris.forEach((s2, k) => { isi += `<text x="${x}" y="${y + 4 + (k - (baris.length - 1) / 2) * 12}" text-anchor="middle" font-size="10.5" fill="${GAYA.hitam}">${escText(s2)}</text>`; });
   });
   let hp = 0;
-  const hurufProses = 'WXYZVUT';
+  const hurufProses = 'WXYZVUTS';   // 8 panah: pembakaran ikut berhuruf (S)
   const panah = (x1, y1, x2, y2, teks, lx, ly, anchor) => {
     isi += arrowSVG(x1, y1, x2, y2, { headLen: 7, strokeWidth: 1.5 });
     isi += teksFis(b, lx, ly, huruf ? hurufProses[hp++] : teks, anchor || 'middle', { size: 9.5, bold: huruf });
