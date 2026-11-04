@@ -447,6 +447,7 @@ function LayarAdmin({
             })
           }}
         >
+          <img src="/eksa-halo.svg" alt="" width={64} height={72} className="mx-auto" />
           <h1 className="ex-module-title flex items-center gap-2">
             <Icon nama="gembok" ukuran={15} /> Assistant teacher sign-in
           </h1>
@@ -487,6 +488,7 @@ function LayarAdmin({
           })
         }}
       >
+        <img src="/eksa-halo.svg" alt="" width={64} height={72} className="mx-auto" />
         <h1 className="ex-module-title flex items-center gap-2">
           <Icon nama="gembok" ukuran={15} /> Teacher sign-in
         </h1>

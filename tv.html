@@ -35,6 +35,9 @@
       /* body punya cursor: none sendiri (aturan layar TV di atas), jadi pembatalnya
          harus kena body juga — kalau tidak, murid di laptop/PC tak melihat kursor. */
       .hp, .hp body { cursor: auto; }
+      .eksa { width: 64px; height: 72px; align-self: center; margin: 0 auto; display: block; }
+      /* Keyboard HP terbuka atau layar pendek: tempatnya untuk isian. */
+      @media (max-height: 560px) { .eksa { display: none; } }
       #masuk, #akun, #setuju { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; padding: 24px; background: var(--bg); overflow: hidden; }
       #masuk.tampil, #akun.tampil, #setuju.tampil { display: flex; }
       #masuk form, #akun form, #setuju form { width: 100%; max-width: 360px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
@@ -298,6 +301,7 @@
     </div>
     <div id="pilih">
       <div class="kotak">
+        <img class="eksa" src="/eksa-halo.svg" alt="" />
         <h1>Exact Canvas</h1>
         <p>How should this screen be used?</p>
         <button id="pilih-murid" class="utama">🙋 Join as a student</button>
@@ -309,6 +313,7 @@
     </div>
     <div id="akun">
       <form id="form-akun" autocomplete="on">
+        <img class="eksa" src="/eksa-halo.svg" alt="" />
         <h1>Exact Canvas</h1>
         <div class="tab">
           <button type="button" id="tab-masuk" class="aktif">Sign in</button>
@@ -333,6 +338,7 @@
     </div>
     <div id="masuk">
       <form id="form-masuk">
+        <img class="eksa" src="/eksa-halo.svg" alt="" />
         <h1>Join the lesson</h1>
         <div class="siapa"><span id="masuk-siapa"></span><button type="button" id="masuk-keluar">Not you? Sign out</button></div>
         <button type="submit">Join</button>
