@@ -12817,6 +12817,7 @@ const DIAGRAM_TYPE_ALIASES = {
   bagianlingkaran: 'bagianlingkaran', juring: 'bagianlingkaran', tembereng: 'bagianlingkaran', lingkaranbagian: 'bagianlingkaran', circleparts: 'bagianlingkaran',
   gelasukur: 'gelasukur', silinderukur: 'gelasukur', measuringcylinder: 'gelasukur',
   neraca: 'neraca', neracatigalengan: 'neraca', triplebeam: 'neraca', balance: 'neraca',
+  penggaris: 'penggaris', ruler: 'penggaris', mistar: 'penggaris', timbangan: 'timbangan', timbanganjarum: 'timbangan', kitchenscale: 'timbangan', takaran: 'takaran', gelastakar: 'takaran', measuringjug: 'takaran', jug: 'takaran',
   buret: 'buret', burette: 'buret', buret_bacaan: 'buret', stopwatch: 'stopwatch', stopclock: 'stopwatch', stopjam: 'stopwatch',
   bandul: 'bandul', pendulum: 'bandul', ayunan: 'bandul',
   osiloskop: 'osiloskop', cro: 'osiloskop', oscilloscope: 'osiloskop',
@@ -13723,6 +13724,182 @@ function renderStopwatchSVG(cfg) {
     isi += `<text x="${(-w / 2 + 22).toFixed(1)}" y="30" font-size="9" text-anchor="middle" fill="${GAYA.hitam}">${en ? 'min' : 'menit'}</text>`;
     isi += `<text x="${(w / 2 - 26).toFixed(1)}" y="30" font-size="9" text-anchor="middle" fill="${GAYA.hitam}">${en ? 's' : 'detik'}</text>`;
   }
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// ---------------------------------------------------------------------
+// Alat ukur SD: penggaris berbenda, timbangan jarum, gelas takar.
+// Bacaannya tidak ditulis; siswa membaca sendiri.
+// ---------------------------------------------------------------------
+
+// Penggaris dengan benda di atasnya. panjang=15 (ujung skala), angka=1 (jarak angka; bawaan 1 bila
+// panjang ≤ 20, selain itu 10), satuan=cm, benda=pensil|krayon|raket|buku|pita, mulai=0, ujung=12 (letak
+// ujung kanan benda). Penggaris 100 cm diberi tulisan "1 metre" di ujungnya.
+function renderPenggarisSVG(cfg) {
+  const panjang = Math.max(1, numOrDefault(cfg.panjang, 15));
+  const satuan = String(cfg.satuan || 'cm').trim();
+  const angka = numOrDefault(cfg.angka, panjang <= 20 ? 1 : 10);
+  const mulai = numOrDefault(cfg.mulai, 0), ujung = numOrDefault(cfg.ujung, NaN);
+  const en = inggris(cfg);
+  const L = 320, px = L / panjang, x = (v) => v * px;
+  const b = kotakBatas();
+  let isi = '';
+  const yR = 0, hR = 30;
+  const ekor = panjang === 100 && satuan === 'cm' ? 38 : 8;
+  isi += `<rect x="-26" y="${yR}" width="${L + 26 + ekor}" height="${hR}" fill="#f4f4f4" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+  const halus = panjang <= 20 ? 10 : 1;           // garis kecil tiap mm (penggaris pendek) atau tiap 1 satuan
+  for (let k = 0; k <= Math.round(panjang * halus); k++) {
+    const v = k / halus;
+    const besar = Math.abs(v / angka - Math.round(v / angka)) < 1e-9;
+    const tengah = halus === 10 ? k % 5 === 0 : k % 5 === 0;
+    const p = besar ? 12 : tengah ? 8 : 4.5;
+    isi += gFis(x(v), yR, x(v), yR + p, { tebal: besar ? 1.1 : 0.6 });
+    const meter = panjang === 100 && satuan === 'cm' && Math.abs(v - 100) < 1e-9;
+    if (besar && !meter) isi += `<text x="${x(v).toFixed(1)}" y="${yR + 24}" font-size="9" text-anchor="middle" fill="${GAYA.hitam}">${String(Math.round(v * 100) / 100).replace('.', ',')}</text>`;
+    if (meter) isi += `<text x="${(x(v) + 3).toFixed(1)}" y="${yR + 24}" font-size="7.5" text-anchor="start" fill="${GAYA.hitam}">${en ? '1 METRE' : '1 METER'}</text>`;
+  }
+  // satuan di kiri angka 0, di bagian penggaris yang tidak berskala
+  if (!(panjang === 100 && satuan === 'cm')) isi += `<text x="-6" y="${yR + 24}" font-size="8" text-anchor="end" fill="${GAYA.hitam}">${escText(satuan)}</text>`;
+  b.titik(-28, yR - 2); b.titik(L + ekor + 2, yR + hR + 2);
+  if (isFinite(ujung) && ujung > mulai) {
+    const x0 = x(mulai), x1 = x(ujung), w = x1 - x0, yb = -10, h = 26;   // benda di atas penggaris, alas di yb
+    const benda = String(cfg.benda || 'pita').toLowerCase();
+    const isiAbu = '#cfcfcf';
+    let s = '';
+    if (/pensil|pencil/.test(benda)) {
+      s += `<rect x="${x0}" y="${yb - 16}" width="${(w * 0.08).toFixed(1)}" height="16" fill="#e0a0a0" stroke="${GAYA.hitam}" stroke-width="1"/>`;
+      s += `<rect x="${(x0 + w * 0.08).toFixed(1)}" y="${yb - 16}" width="${(w * 0.04).toFixed(1)}" height="16" fill="#bbbbbb" stroke="${GAYA.hitam}" stroke-width="1"/>`;
+      s += `<rect x="${(x0 + w * 0.12).toFixed(1)}" y="${yb - 16}" width="${(w * 0.74).toFixed(1)}" height="16" fill="#f2e2a0" stroke="${GAYA.hitam}" stroke-width="1"/>`;
+      s += gFis(x0 + w * 0.12, yb - 8, x0 + w * 0.86, yb - 8, { tebal: 0.5 });
+      s += `<path d="M${(x0 + w * 0.86).toFixed(1)} ${yb - 16} L${x1.toFixed(1)} ${yb - 8} L${(x0 + w * 0.86).toFixed(1)} ${yb} Z" fill="#f6e7c8" stroke="${GAYA.hitam}" stroke-width="1"/>`;
+      s += `<path d="M${(x1 - w * 0.04).toFixed(1)} ${(yb - 9.8).toFixed(1)} L${x1.toFixed(1)} ${yb - 8} L${(x1 - w * 0.04).toFixed(1)} ${(yb - 6.2).toFixed(1)} Z" fill="${GAYA.hitam}"/>`;
+    } else if (/krayon|crayon/.test(benda)) {
+      s += `<rect x="${x0}" y="${yb - 18}" width="${(w * 0.8).toFixed(1)}" height="18" rx="2" fill="${isiAbu}" stroke="${GAYA.hitam}" stroke-width="1"/>`;
+      s += `<rect x="${(x0 + w * 0.15).toFixed(1)}" y="${yb - 18}" width="${(w * 0.5).toFixed(1)}" height="18" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="0.8"/>`;
+      s += `<path d="M${(x0 + w * 0.8).toFixed(1)} ${yb - 18} L${x1.toFixed(1)} ${yb - 11} L${x1.toFixed(1)} ${yb - 7} L${(x0 + w * 0.8).toFixed(1)} ${yb} Z" fill="${isiAbu}" stroke="${GAYA.hitam}" stroke-width="1"/>`;
+    } else if (/raket|racket/.test(benda)) {
+      const kepala = w * 0.38, cx = x1 - kepala / 2, cy = yb - 20;
+      s += `<rect x="${x0}" y="${cy - 5}" width="${(w * 0.22).toFixed(1)}" height="10" rx="2" fill="#777" stroke="${GAYA.hitam}" stroke-width="1"/>`;
+      s += gFis(x0 + w * 0.22, cy, x1 - kepala - 4, cy, { tebal: 2.2 });
+      s += `<path d="M${(x1 - kepala - 8).toFixed(1)} ${cy} L${(x1 - kepala + 2).toFixed(1)} ${cy - 10} M${(x1 - kepala - 8).toFixed(1)} ${cy} L${(x1 - kepala + 2).toFixed(1)} ${cy + 10}" stroke="${GAYA.hitam}" stroke-width="1.6" fill="none"/>`;
+      s += `<ellipse cx="${cx.toFixed(1)}" cy="${cy}" rx="${(kepala / 2).toFixed(1)}" ry="19" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="2.4"/>`;
+      for (let k = -3; k <= 3; k++) {
+        const dx = (k / 4) * (kepala / 2), dy = Math.sqrt(Math.max(0, 1 - (k / 4) ** 2)) * 17;
+        s += gFis(cx + dx, cy - dy, cx + dx, cy + dy, { tebal: 0.5 });
+        const yy = cy + (k / 4) * 17, ddx = Math.sqrt(Math.max(0, 1 - (k / 4) ** 2)) * (kepala / 2 - 2);
+        s += gFis(cx - ddx, yy, cx + ddx, yy, { tebal: 0.5 });
+      }
+      b.titik(x0, cy - 21);
+    } else if (/buku|book/.test(benda)) {
+      s += `<rect x="${x0}" y="${yb - 22}" width="${w.toFixed(1)}" height="22" fill="${isiAbu}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+      s += `<rect x="${x0}" y="${yb - 22}" width="${Math.min(10, w * 0.1).toFixed(1)}" height="22" fill="#9a9a9a" stroke="${GAYA.hitam}" stroke-width="1"/>`;
+    } else {
+      s += `<rect x="${x0}" y="${yb - 14}" width="${w.toFixed(1)}" height="14" fill="${isiAbu}" stroke="${GAYA.hitam}" stroke-width="1.2"/>`;
+    }
+    isi += s;
+    isi += gFis(x0, yb, x0, yR, { putus: true, tebal: 0.8 }) + gFis(x1, yb - 4, x1, yR, { putus: true, tebal: 0.8 });
+    b.titik(x0, yb - h - 16); b.titik(x1, yb);
+  }
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Timbangan jarum (timbangan dapur). maks=10, satuan=kg|g, nilai=4.5 (letak jarum), angka=1 (jarak angka),
+// garis=10 (banyak garis kecil per angka), benda=Box A (tulisan di kotak di atas piring) atau benda=labu.
+function renderTimbanganSVG(cfg) {
+  const maks = Math.max(1, numOrDefault(cfg.maks, 10));
+  const satuan = String(cfg.satuan || 'kg').trim();
+  const angka = numOrDefault(cfg.angka, maks <= 10 ? 1 : maks / 4);
+  const garis = Math.max(1, Math.round(numOrDefault(cfg.garis, maks <= 5 ? 10 : maks <= 10 ? 10 : 5)));
+  const nilai = numOrDefault(cfg.nilai, 0);
+  const b = kotakBatas();
+  let isi = '';
+  const R = 50, cy = 0;
+  // badan dan piring
+  isi += `<path d="M${-R - 12} ${R + 18} L${-R - 2} ${-R - 6} L${R + 2} ${-R - 6} L${R + 12} ${R + 18} Z" fill="#4a4a4a" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+  isi += `<rect x="-10" y="${-R - 16}" width="20" height="10" fill="#8a8a8a" stroke="${GAYA.hitam}" stroke-width="1"/>`;
+  isi += `<path d="M${-R - 30} ${-R - 16} L${R + 30} ${-R - 16} L${R + 20} ${-R - 24} L${-R - 20} ${-R - 24} Z" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+  const benda = String(cfg.benda || '').trim();
+  const yP = -R - 24;
+  if (/^(labu|pumpkin)$/i.test(benda)) {
+    isi += `<ellipse cx="0" cy="${yP - 18}" rx="32" ry="18" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+    isi += `<path d="M-12 ${yP - 35} Q-20 ${yP - 18} -12 ${yP - 1} M12 ${yP - 35} Q20 ${yP - 18} 12 ${yP - 1} M0 ${yP - 36} L0 ${yP}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.1"/>`;
+    isi += `<path d="M0 ${yP - 36} Q2 ${yP - 44} 6 ${yP - 46}" fill="none" stroke="${GAYA.hitam}" stroke-width="2.2"/>`;
+    b.titik(-34, yP - 48);
+  } else {
+    const lk = Math.max(80, benda.length * 7 + 16);
+    isi += `<rect x="${-lk / 2}" y="${yP - 26}" width="${lk}" height="26" rx="2" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1.3"/>`;
+    if (benda) isi += `<text x="0" y="${yP - 9}" font-size="12" text-anchor="middle" fill="${GAYA.hitam}">${escText(benda)}</text>`;
+    b.titik(-lk / 2 - 2, yP - 28); b.titik(lk / 2 + 2, yP);
+  }
+  // muka jam
+  isi += `<circle cx="0" cy="${cy}" r="${R + 4}" fill="#2a2a2a"/><circle cx="0" cy="${cy}" r="${R}" fill="#ffffff" stroke="${GAYA.hitam}" stroke-width="1"/>`;
+  const sudut = (v) => (v / maks) * 2 * Math.PI;
+  const nTick = Math.round((maks / angka) * garis);
+  for (let k = 0; k < nTick; k++) {
+    const v = (k / nTick) * maks, a = sudut(v);
+    const besar = k % garis === 0, tengah = garis % 2 === 0 && k % (garis / 2) === 0;
+    const p = besar ? 9 : tengah ? 6.5 : 4;
+    isi += gFis(Math.sin(a) * R, cy - Math.cos(a) * R, Math.sin(a) * (R - p), cy - Math.cos(a) * (R - p), { tebal: besar ? 1.2 : 0.6 });
+    if (besar) {
+      const lbl = String(Math.round(v * 1000) / 1000).replace('.', ',');
+      isi += `<text x="${(Math.sin(a) * (R - 17)).toFixed(1)}" y="${(cy - Math.cos(a) * (R - 17) + 3.5).toFixed(1)}" font-size="9.5" text-anchor="middle" fill="${GAYA.hitam}">${lbl}</text>`;
+    }
+  }
+  isi += `<text x="0" y="${cy - 12}" font-size="9" text-anchor="middle" fill="${GAYA.hitam}">${escText(satuan)}</text>`;
+  const a = sudut(nilai);
+  isi += gFis(-Math.sin(a) * 8, cy + Math.cos(a) * 8, Math.sin(a) * (R - 6), cy - Math.cos(a) * (R - 6), { tebal: 2.2 });
+  isi += `<circle cx="0" cy="${cy}" r="3.5" fill="${GAYA.hitam}"/>`;
+  b.titik(-R - 32, -R - 26); b.titik(R + 32, R + 20);
+  return bungkusGambarSVG(isi, b, false);
+}
+
+// Gelas takar ber-ml. kapasitas=1000, angka=100 (jarak garis berangka), garis=1 (garis kecil di antara
+// angka, mis. 2 = tiap 50 ml), nilai=650 (tinggi air). bentuk=gelas: deretan gelas biasa, jumlah=3,
+// label=310 ml (tulisan di badan gelas), isi=0.85.
+function renderTakaranSVG(cfg) {
+  const b = kotakBatas();
+  let isi = '';
+  if (/gelas|glass|cup/i.test(String(cfg.bentuk || ''))) {
+    const n = Math.max(1, Math.min(8, Math.round(numOrDefault(cfg.jumlah, 1))));
+    const label = String(cfg.label || '').trim();
+    const f = Math.max(0, Math.min(1, numOrDefault(cfg.isi, 0.85)));
+    for (let i = 0; i < n; i++) {
+      const x = i * 78, w0 = 56, w1 = 44, h = 70;
+      const yI = h * (1 - f);
+      const xa = (y) => (w0 - (w0 - w1) * (y / h)) / 2;
+      isi += `<path d="M${x - xa(yI)} ${yI} L${x + xa(yI)} ${yI} L${x + w1 / 2} ${h} L${x - w1 / 2} ${h} Z" fill="#cfcfcf"/>`;
+      isi += `<path d="M${x - w0 / 2} 0 L${x - w1 / 2} ${h} L${x + w1 / 2} ${h} L${x + w0 / 2} 0" fill="none" stroke="${GAYA.hitam}" stroke-width="1.4"/>`;
+      if (label) isi += `<text x="${x}" y="${h * 0.55}" font-size="11" text-anchor="middle" fill="${GAYA.hitam}" stroke="#ffffff" stroke-width="2.5" paint-order="stroke">${escText(label)}</text>`;
+      b.titik(x - w0 / 2 - 2, -2); b.titik(x + w0 / 2 + 2, h + 2);
+    }
+    return bungkusGambarSVG(isi, b, false);
+  }
+  const kap = Math.max(1, numOrDefault(cfg.kapasitas, 1000));
+  const angka = numOrDefault(cfg.angka, kap <= 250 ? 50 : 100);
+  const garis = Math.max(1, Math.round(numOrDefault(cfg.garis, 1)));
+  const nilai = Math.max(0, Math.min(kap, numOrDefault(cfg.nilai, 0)));
+  const en = inggris(cfg);
+  const H = 150, W = 120, puncak = 14;      // tinggi skala, lebar badan, ruang kosong di atas garis kapasitas
+  const y = (v) => H - (v / kap) * H;
+  // air
+  isi += `<rect x="2" y="${y(nilai).toFixed(1)}" width="${W - 4}" height="${(H - y(nilai)).toFixed(1)}" fill="#d6d6d6"/>`;
+  if (nilai > 0) isi += gFis(2, y(nilai), W - 2, y(nilai), { tebal: 1.1 });
+  // badan + pegangan + paruh
+  isi += `<path d="M-6 ${-puncak - 6} L0 ${-puncak} L0 ${H} Q0 ${H + 6} 6 ${H + 6} L${W - 6} ${H + 6} Q${W} ${H + 6} ${W} ${H} L${W} ${-puncak}" fill="none" stroke="${GAYA.hitam}" stroke-width="1.6"/>`;
+  isi += `<path d="M${W} ${H * 0.12} L${W + 22} ${H * 0.12} Q${W + 32} ${H * 0.12} ${W + 32} ${H * 0.25} L${W + 32} ${H * 0.55} Q${W + 32} ${H * 0.68} ${W + 22} ${H * 0.68} L${W} ${H * 0.68}" fill="none" stroke="${GAYA.hitam}" stroke-width="5" stroke-linejoin="round"/>`;
+  // skala
+  const xs = W * 0.42;
+  const nG = Math.round((kap / angka) * garis);
+  for (let k = 1; k <= nG; k++) {
+    const v = (k / nG) * kap, besar = k % garis === 0;
+    isi += gFis(xs, y(v), xs + (besar ? 10 : 6), y(v), { tebal: besar ? 1.1 : 0.7 });
+    if (besar) {
+      const teks = v === 1000 ? (en ? '1 litre' : '1 liter') : `${Math.round(v)} ml`;
+      isi += `<text x="${xs + 13}" y="${(y(v) + 3.5).toFixed(1)}" font-size="9" fill="${GAYA.hitam}" stroke="#ffffff" stroke-width="2" paint-order="stroke">${teks}</text>`;
+    }
+  }
+  isi += gFis(xs, y(kap), xs, H, { tebal: 0.9 });
+  b.titik(-8, -puncak - 8); b.titik(W + 36, H + 8);
   return bungkusGambarSVG(isi, b, false);
 }
 
@@ -18339,6 +18516,9 @@ function renderDiagramTag(rawTagContent, depth) {
     else if (type === 'singgungpersekutuan') svg = renderSinggungPersekutuanSVG(params);
     else if (type === 'termometer') svg = renderTermometerSVG(params);
     else if (type === 'buret') svg = renderBuretSVG(params);
+    else if (type === 'penggaris') svg = renderPenggarisSVG(params);
+    else if (type === 'timbangan') svg = renderTimbanganSVG(params);
+    else if (type === 'takaran') svg = renderTakaranSVG(params);
     else if (type === 'stopwatch') svg = renderStopwatchSVG(params);
     else if (type === 'konduksi') svg = renderKonduksiSVG(params);
     else if (type === 'bimetal') svg = renderBimetalSVG(params);
@@ -18590,7 +18770,7 @@ if (typeof module !== 'undefined') {
     componentSVG, parseCircuitComponent, CIRCUIT_KINDS,
     renderLabApparatusSVG, LAB_APPARATUS,
     renderCircleTheoremSVG, renderNetSVG, renderViewsSVG, CIRCLE_THEOREMS, SOLID_NETS, SOLID_VIEWS,
-    renderPunnettSVG, renderDichotomousKeySVG, renderPlantSVG, renderLorentzSVG, renderMuatanSVG, renderKepingSVG, renderGantungSVG, renderGarisSejajarSVG, formatSudutGS, parsePertidaksamaan, renderLuasArsirSVG, renderDimensiTigaSVG, renderOrbitalSVG, konfigurasiElektron, renderStasionerSVG, renderRiakSVG, renderElektromagnetSVG, renderCerminSVG, renderAlatOptikSVG, renderStrukturOrganikSVG, uraiRumusOrganik, renderTegarSVG, renderRodaSVG, renderPVSVG, renderSinggungPersekutuanSVG, renderTermometerSVG, renderTermometerBacaSVG, renderBuretSVG, renderStopwatchSVG, renderKonduksiSVG, renderBimetalSVG, renderElektroskopSVG, renderResonansiSVG, renderPantulBunyiSVG, renderDopplerSVG, uraiLingkaranKartesius, renderLokusSVG, renderKurvaNormalSVG, renderArgandSVG, renderGerbangLogikaSVG, uraiLogika, nilaiLogika, renderMaxwellBoltzmannSVG, renderBornHaberSVG, renderSiklusHessSVG, renderSpektrumSVG, renderTingkatAtomSVG, renderPeluruhanSVG, renderMesinFungsiSVG, renderKubusIsometrikSVG, renderBenzenaSVG, rumusSubskrip, renderRuangGabunganSVG, hitungDiagram, angkaDalamTeks, renderEnergyFlowSVG, renderMatchingSVG, renderFoodWebSVG, splitGenotype, gametesOf, combineGametes, phenotypeOf,
+    renderPunnettSVG, renderDichotomousKeySVG, renderPlantSVG, renderLorentzSVG, renderMuatanSVG, renderKepingSVG, renderGantungSVG, renderGarisSejajarSVG, formatSudutGS, parsePertidaksamaan, renderLuasArsirSVG, renderDimensiTigaSVG, renderOrbitalSVG, konfigurasiElektron, renderStasionerSVG, renderRiakSVG, renderElektromagnetSVG, renderCerminSVG, renderAlatOptikSVG, renderStrukturOrganikSVG, uraiRumusOrganik, renderTegarSVG, renderRodaSVG, renderPVSVG, renderSinggungPersekutuanSVG, renderTermometerSVG, renderTermometerBacaSVG, renderBuretSVG, renderStopwatchSVG, renderPenggarisSVG, renderTimbanganSVG, renderTakaranSVG, renderKonduksiSVG, renderBimetalSVG, renderElektroskopSVG, renderResonansiSVG, renderPantulBunyiSVG, renderDopplerSVG, uraiLingkaranKartesius, renderLokusSVG, renderKurvaNormalSVG, renderArgandSVG, renderGerbangLogikaSVG, uraiLogika, nilaiLogika, renderMaxwellBoltzmannSVG, renderBornHaberSVG, renderSiklusHessSVG, renderSpektrumSVG, renderTingkatAtomSVG, renderPeluruhanSVG, renderMesinFungsiSVG, renderKubusIsometrikSVG, renderBenzenaSVG, rumusSubskrip, renderRuangGabunganSVG, hitungDiagram, angkaDalamTeks, renderEnergyFlowSVG, renderMatchingSVG, renderFoodWebSVG, splitGenotype, gametesOf, combineGametes, phenotypeOf,
     renderFigureHTML, renderImageHTML, setImageResolver, resetFigureCounter, applyAnnotations,
     extractDiagramTags, substituteDiagramTokens, setModeSiswaDiagram, setBahasaDiagram, teksInggris, terjemahkanLabelSVG, KAMUS_LABEL_INGGRIS, GEOMETRY_PRESETS, SOLID_PRESETS, LEWIS_PRESETS, VSEPR_PRESETS,
   };
