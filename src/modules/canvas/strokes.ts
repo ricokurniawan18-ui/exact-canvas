@@ -49,6 +49,47 @@ export function titikBulat(x: number, y: number, tekanan: number): [number, numb
   return [Math.round(x * 100) / 100, Math.round(y * 100) / 100, Math.round(tekanan * 1000) / 1000]
 }
 
+/**
+ * Pangkas "ekor" di ujung goresan: titik yang tercatat saat pena sedang
+ * diangkat. Tekanannya sudah turun jauh, tetapi ujung pena masih bergeser
+ * beberapa milimeter, sehingga garis tampak memanjang atau melengkung di
+ * ujungnya (keluhan Rico, 2026-11-14: "setelah menulis kaya kepanjangan").
+ *
+ * Sengaja hati-hati:
+ * - hanya titik paling ujung yang tekanannya < separuh tekanan normal goresan;
+ * - yang dibuang paling panjang 4 × tebal goresan atau 15% panjangnya, dan
+ *   paling banyak 40% titiknya;
+ * - goresan pendek (titik, koma) dan input tanpa tekanan sungguhan (mouse,
+ *   jari, driver Wacom yang belum terpasang: tekanan selalu 0,5) tidak disentuh.
+ */
+export function pangkasEkor(points: [number, number, number][], size: number): [number, number, number][] {
+  const n = points.length
+  if (n < 8) return points
+  const tekanan = points.map((p) => p[2])
+  const min = Math.min(...tekanan)
+  const maks = Math.max(...tekanan)
+  if (maks - min < 0.05) return points // tidak ada tekanan sungguhan
+  // Tekanan normal: median 80% titik pertama (ujung yang terangkat tidak ikut).
+  const awal = tekanan.slice(0, Math.max(3, Math.floor(n * 0.8))).sort((a, b) => a - b)
+  const acuan = awal[Math.floor(awal.length / 2)]
+  if (acuan <= 0) return points
+  const jarak = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1])
+  let total = 0
+  for (let i = 1; i < n; i++) total += jarak(points[i - 1], points[i])
+  const batasPanjang = Math.max(size * 4, total * 0.15)
+  const batasTitik = Math.floor(n * 0.4)
+  let potong = n
+  let panjang = 0
+  while (potong - 1 >= n - batasTitik && points[potong - 1][2] < acuan * 0.5) {
+    const tambah = potong - 2 >= 0 ? jarak(points[potong - 2], points[potong - 1]) : 0
+    if (panjang + tambah > batasPanjang) break
+    panjang += tambah
+    potong--
+  }
+  if (potong === n || potong < 4) return points
+  return points.slice(0, potong)
+}
+
 export interface Coretan {
   id: string
   tool: AlatTulis

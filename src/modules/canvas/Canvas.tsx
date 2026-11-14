@@ -46,6 +46,7 @@ import {
   WARNA_CORETAN,
   PALET_CORETAN,
   titikBulat,
+  pangkasEkor,
   type Alat,
   type BerkasKanvas,
   type Coretan,
@@ -2999,6 +3000,10 @@ export function Canvas({ idKanvas, judul = 'Sketch' }: Props) {
     const terkunci = kuncianAktif.current !== null
     kuncianAktif.current = null
     bacaanRef.current = null
+    // Ekor saat pena diangkat dibuang sebelum goresan disimpan dan disiarkan
+    // (pesan 'ubah' membawa goresan utuh, jadi layar murid ikut terpangkas).
+    // Garis di tepi instrumen tidak disentuh: panjangnya memang yang diminta.
+    if (!terkunci && !bentuk) c.points = pangkasEkor(c.points, c.size)
     if (bentuk) {
       // Coretan aslinya dibuang, bukan disimpan di bawah bentuk: yang diminta
       // adalah bentuknya, dan satu ⌘Z mengembalikan kanvas ke sebelum goresan.
