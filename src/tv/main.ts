@@ -438,6 +438,9 @@ async function muatSketsa(id: string) {
     }
     if (idSketsa !== id) bebas = false
     idSketsa = id
+    // Yang terakhir dilihat = yang dibuka saat Mac mati (isinya disimpan sw.js).
+    // Riwayat hari lampau tidak dihitung: itu cuma mampir.
+    if (sebagaiMurid && muridId && !luring && !melihatRiwayat) tulisSimpanan(KUNCI_TERAKHIR, { murid: muridId, id })
     // Goresan hidup yang sudah masuk berkas tidak perlu digambar dua kali.
     const ada = new Set(sketsa.strokes.map((c) => c.id))
     for (const k of Array.from(goresanHidup.keys())) if (ada.has(k)) goresanHidup.delete(k)
@@ -826,6 +829,7 @@ async function mulai() {
     // Murid masuk dengan akun; PIN kelas hanya diketik sekali saat mendaftar
     // dan tidak pernah ada di alamat HP-nya.
     document.documentElement.classList.add('hp')
+    pasangLuring()
     await layarAkun()
     await layarMasuk()
     kabariInduk('siap', { murid: muridId, nama: namaSaya })
@@ -885,7 +889,11 @@ async function mulai() {
     // Ditunggu, bukan dilepas: kanvas sendiri/grup harus sudah terpasang
     // sebelum jatuh ke sketsa terakhir kelas di bawah — kalau tidak, muatan
     // sketsa kelas bisa datang belakangan dan menimpa kanvas anak itu.
-    await segarkanSaya()
+    if (luring) {
+      await bukaCatatanTerakhir()
+    } else {
+      await segarkanSaya()
+    }
     window.setInterval(() => void segarkanSaya(), 20_000)
   }
 
@@ -901,8 +909,25 @@ async function mulai() {
       }
       serverDikenal = s.server
     }
+    // Dibuka tanpa Mac, dan Mac kini menjawab: mulai ulang lewat alur biasa
+    // (masuk kelas, kanvas terbaru, izin coret).
+    // Dibatasi sekali per menit: kalau "luring" tadi cuma karena sinyal lambat
+    // (Mac sebenarnya hidup), jangan sampai halaman memuat ulang terus-menerus.
+    if (luring && s.status === 'tersambung') {
+      let terakhir = 0
+      try {
+        terakhir = Number(sessionStorage.getItem('exact-muat-ulang-luring') ?? 0)
+        sessionStorage.setItem('exact-muat-ulang-luring', String(Date.now()))
+      } catch {
+        /* abaikan */
+      }
+      if (Date.now() - terakhir > 60_000) {
+        location.reload()
+        return
+      }
+    }
     if (s.serverMati) tampilkanPesan('Sharing was turned off on the Mac.<small>Turn it on again in Settings → Share on this network.</small>')
-    else if (s.status === 'menyambung') tampilkanStatus('Reconnecting…', true)
+    else if (s.status === 'menyambung') tampilkanStatus(luring ? PESAN_LURING : 'Reconnecting…', true)
     else if (s.status === 'tersambung') {
       tampilkanPesan(null)
       tampilkanStatus(namaSumber ? `Following ${namaSumber}` : 'Connected — waiting for the teacher')
@@ -920,7 +945,7 @@ async function mulai() {
   // Murid yang sudah punya kanvasnya sendiri tidak perlu sketsa terakhir
   // kelas — itu cuma cadangan supaya layar tidak kosong (TV, atau jaringan
   // sedang putus saat masuk; siklus segarkanSaya berikutnya membetulkannya).
-  const awal = sebagaiMurid && kanvasSaya ? null : await sketsaTerbaru()
+  const awal = sebagaiMurid && (kanvasSaya || luring) ? null : await sketsaTerbaru()
   if (awal) {
     await muatSketsa(awal)
     // Belum ada sumber: muat satu halaman penuh supaya layar tidak kosong.
@@ -990,6 +1015,73 @@ const el = (id: string) => document.getElementById(id) as HTMLElement
 /** peran 'guru' = guru pembantu: dialihkan ke editor (/admin) dengan sesi yang sama. */
 type Akun = { id: string; nama: string; hp: string; disetujui?: boolean; peran?: string | null }
 
+/* ── Tanpa Mac ─────────────────────────────────────────────────────── */
+
+/**
+ * Mac guru mati (tunnel Cloudflare menjawab 5xx) atau HP sedang tanpa
+ * internet: anak tetap bisa membuka halaman ini dan melihat kanvas terakhir
+ * yang ia lihat — halaman dan isi kanvasnya disimpan service worker (sw.js),
+ * akun dan id kanvasnya di sini. Hanya lihat: coret, tanya, dsb. butuh Mac.
+ * Begitu Mac menjawab lagi, halaman memuat ulang ke alur biasa.
+ */
+let luring = false
+const KUNCI_AKUN = 'exact-murid-akun'
+const KUNCI_TERAKHIR = 'exact-murid-kanvas-terakhir'
+const PESAN_LURING = "Offline — the teacher's Mac is off. Showing your last notes (view only)."
+
+/** Galat ini berarti Mac tidak terjangkau — bukan Mac yang menolak (401 dsb.). */
+function galatLuring(err: unknown): boolean {
+  const s = (err as { status?: unknown } | null)?.status
+  return typeof s !== 'number' || s >= 500
+}
+
+function bacaSimpanan<T>(kunci: string): T | null {
+  try {
+    const t = localStorage.getItem(kunci)
+    return t ? (JSON.parse(t) as T) : null
+  } catch {
+    return null
+  }
+}
+
+function tulisSimpanan(kunci: string, nilai: unknown): void {
+  try {
+    if (nilai === null) localStorage.removeItem(kunci)
+    else localStorage.setItem(kunci, JSON.stringify(nilai))
+  } catch {
+    /* penyimpanan browser dimatikan */
+  }
+}
+
+function simpanAkun(a: Akun): void {
+  tulisSimpanan(KUNCI_AKUN, { id: a.id, nama: a.nama, hp: a.hp, disetujui: a.disetujui, peran: a.peran ?? null })
+}
+
+/** Daftarkan service worker (juga dipakai notifikasi) supaya halaman ini terbuka tanpa Mac. */
+function pasangLuring(): void {
+  if (!('serviceWorker' in navigator) || !window.isSecureContext) return
+  navigator.serviceWorker.register('/sw.js').catch(() => undefined)
+  // Minta browser tidak membuang simpanan ini saat ruang HP menipis.
+  void navigator.storage?.persist?.().catch(() => false)
+}
+
+/** Tampilkan kanvas terakhir yang dilihat murid ini di perangkat ini. */
+async function bukaCatatanTerakhir(): Promise<void> {
+  const t = bacaSimpanan<{ murid: string; id: string }>(KUNCI_TERAKHIR)
+  if (!t || t.murid !== muridId) {
+    tampilkanPesan("The teacher's Mac is off.<small>No notes are saved on this device yet. They will be next time you open the class while the Mac is on.</small>")
+    return
+  }
+  await muatSketsa(t.id)
+  if (!sketsa) {
+    tampilkanPesan("The teacher's Mac is off.<small>Your last notes could not be opened on this device.</small>")
+    return
+  }
+  pandanganSumber = null
+  muatSatuHalaman()
+  tampilkanStatus(PESAN_LURING, true)
+}
+
 /**
  * Akun yang belum diterima guru menunggu di sini, bertanya tiap beberapa
  * detik. Tanpa langkah ini siapa pun yang tahu PIN bisa masuk kelas.
@@ -1042,13 +1134,26 @@ async function layarAkun(): Promise<void> {
   if (sesiAktif()) {
     try {
       const a = await api<Akun>('/api/akun/saya')
+      simpanAkun(a)
       if (keEditorBilaGuru(a)) return new Promise<void>(() => {})
       muridId = a.id
       namaSaya = a.nama
       await tungguPersetujuan(a)
       return
-    } catch {
-      simpanSesi('')
+    } catch (err) {
+      // Mac tidak terjangkau: sesinya JANGAN dibuang (dulu begitu, jadi tiap
+      // Mac mati anak harus masuk ulang). Akun tersimpan dipakai untuk lihat saja.
+      if (galatLuring(err)) {
+        const a = bacaSimpanan<Akun>(KUNCI_AKUN)
+        if (a?.id && a.disetujui && a.peran !== 'guru') {
+          muridId = a.id
+          namaSaya = a.nama
+          luring = true
+          return
+        }
+      } else {
+        simpanSesi('')
+      }
     }
   }
   await new Promise<void>((selesai) => {
@@ -1113,6 +1218,7 @@ async function layarAkun(): Promise<void> {
               json: { hp: hp.value.trim(), sandi: sandi.value },
             })
         simpanSesi(a.token)
+        simpanAkun(a)
         muridId = a.id
         namaSaya = a.nama
         try {
@@ -1125,7 +1231,12 @@ async function layarAkun(): Promise<void> {
         await tungguPersetujuan(a)
         selesai()
       } catch (err) {
-        galat.textContent = err instanceof Error ? err.message : String(err)
+        // Tanpa ini galatnya berisi halaman HTML galat Cloudflare (530).
+        galat.textContent = galatLuring(err)
+          ? "The teacher's Mac is off or you are offline. Try again later."
+          : err instanceof Error
+            ? err.message
+            : String(err)
       } finally {
         kirim.disabled = false
       }
@@ -1141,6 +1252,9 @@ async function keluarAkun() {
     /* sesi sudah tidak ada */
   }
   simpanSesi('')
+  // HP bisa dipakai bergantian: catatan anak ini tidak boleh terbuka untuk berikutnya.
+  tulisSimpanan(KUNCI_AKUN, null)
+  tulisSimpanan(KUNCI_TERAKHIR, null)
   location.reload()
 }
 
@@ -1156,19 +1270,29 @@ function layarMasuk(): Promise<void> {
   return new Promise((selesai) => {
     const masuk = el('masuk')
     const form = el('form-masuk') as HTMLFormElement
-    el('masuk-siapa').textContent = `Hi, ${namaSaya}`
+    el('masuk-siapa').textContent = luring ? `Hi, ${namaSaya} — the teacher's Mac is off, you can still read your last notes` : `Hi, ${namaSaya}`
     el('masuk-keluar').onclick = () => void keluarAkun()
+    if (luring) {
+      const tombol = form.querySelector('button[type="submit"]')
+      if (tombol) tombol.textContent = 'Open my notes'
+    }
     masuk.classList.add('tampil')
     form.onsubmit = async (e) => {
       e.preventDefault()
       bunyi('diam')
       // Layar penuh tidak lagi diminta otomatis saat masuk (sering bermasalah,
       // dan iPhone tidak mendukungnya); murid memakai tombol ⛶ bila mau.
-      try {
-        await api('/api/kelas/masuk', { method: 'POST', json: { murid: muridId, nama: namaSaya } })
-      } catch (err) {
-        tampilkanStatus(`Could not join: ${err instanceof Error ? err.message : String(err)}`, true)
-        return
+      if (!luring) {
+        try {
+          await api('/api/kelas/masuk', { method: 'POST', json: { murid: muridId, nama: namaSaya } })
+        } catch (err) {
+          // Mac mati di antara layar akun dan ketukan ini: tetap masuk, lihat saja.
+          if (!galatLuring(err)) {
+            tampilkanStatus(`Could not join: ${err instanceof Error ? err.message : String(err)}`, true)
+            return
+          }
+          luring = true
+        }
       }
       masuk.classList.remove('tampil')
       selesai()
@@ -1178,7 +1302,9 @@ function layarMasuk(): Promise<void> {
 
 /** Ambil grup/arah dan status pertanyaan sendiri dari server. */
 async function segarkanSaya() {
-  if (!sebagaiMurid) return
+  // Tanpa Mac: belum masuk kelas, jadi jangan pasang kanvas/izin coret di sini —
+  // begitu Mac menjawab, halaman memuat ulang ke alur biasa (lihat mulai()).
+  if (!sebagaiMurid || luring) return
   try {
     const r = await api<{
       grup: { id: string; nama: string; target: string | null } | null

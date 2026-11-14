@@ -12,6 +12,7 @@ Data uji dibuat dengan awalan `uji_` dan dibersihkan sendiri di akhir.
 | `uji-akun.mjs` | Akun murid: daftar/masuk/sesi tanpa PIN, izin coret, goresan murid diteruskan & disimpan server, reset sandi. `ADMIN=<sandi admin>`. |
 | `uji-hp-akun.mjs` | Halaman HP di Chrome headless: daftar dari formulir → menunggu persetujuan → diterima → Join → ganti ruangan → izin coret → menggambar → tersimpan → sign out. `ADMIN=<sandi admin>`. |
 | `uji-beban.mjs` | 40 HP, 3 ruangan, 4 grup, semua mengantri; guru menulis 60 paket/dtk; laporan latensi & CPU/RSS proses. |
+| `uji-luring.mjs` | Buka tanpa Mac: server tiruan (mati → 530 ala Cloudflare) + Chrome headless; catatan terakhir tetap tampil, sesi tidak dibuang, Mac hidup → muat ulang. Tidak butuh aplikasi Mac: `npx vite build && node scripts/uji/uji-luring.mjs dist`. |
 
 Semua skrip memakai `ADMIN` (bawaan `exact2026`) untuk endpoint yang butuh kata sandi admin.
 Pemeriksaan siaran disaring per id/murid uji, jadi murid sungguhan yang sedang aktif tidak mengganggu.
